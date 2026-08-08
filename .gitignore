@@ -1,0 +1,23 @@
+# --- AMBIENTE VIRTUALE E CONFIGURAZIONI IDE ---
+venv/
+.idea/
+.installed
+__pycache__/
+*.pyc
+
+# --- MODELLI E PESI YOLO (File pesanti) ---
+models/*.pt
+*.pt
+*.onnx
+*.engine
+
+# --- DATASET E ACQUISIZIONI ---
+datasets/
+*.jpg
+*.jpeg
+*.png
+*.csv
+
+# --- TEMPORANEI E CACHE ---
+.pytest_cache/
+*.tmp
