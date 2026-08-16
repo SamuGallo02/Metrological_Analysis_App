@@ -1,298 +1,210 @@
 """
-Modulo per l'Analisi Stereo-Fotogrammetrica Metrologica
-=======================================================
-Esegue la rilevazione, la segmentazione tramite YOLO e il calcolo delle dimensioni 3D
-sulle coppie di immagini stereo integrando la logica di 'cup dimension'.
+Modulo di Analisi Fotogrammetrica e Segmentazione
+=================================================
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Tuple, Optional, Set
 
 import cv2
 import numpy as np
-import torch
-from ultralytics import YOLO
+
+try:
+    from ultralytics import YOLO
+except ImportError:
+    YOLO = None
+
+
+def select_computation_device() -> str:
+    """Determina l'acceleratore hardware ottimale disponibile nel sistema."""
+    try:
+        import torch
+        if torch.cuda.is_available():
+            return "cuda"
+        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            return "mps"
+    except Exception:
+        pass
+    return "cpu"
+
+
+def list_model_classes(model_path: str) -> List[str]:
+    """Carica un modello YOLO e restituisce l'elenco esatto delle classi conosciute."""
+    if YOLO is None:
+        raise ImportError("Modulo 'ultralytics' non disponibile nel contesto di esecuzione.")
+
+    model = YOLO(model_path)
+    names = model.names
+    if isinstance(names, dict):
+        return [names[k] for k in sorted(names)]
+    return list(names)
+
+
+@dataclass(frozen=True)
+class StereoConfig:
+    """Parametri geometrici del sistema stereo-fotogrammetrico."""
+    baseline_mm: float = 60.0
+    focal_length_px: float = 1400.0
+    mm_per_px_at_1m: Optional[float] = None
 
 
 @dataclass
-class DetectionResult:
+class ObjectDetection:
+    """Rappresentazione metrologica di un oggetto rilevato."""
+    pair_timestamp: str
     label: str
     confidence: float
+    bbox_xyxy: Tuple[int, int, int, int]
+    contour: np.ndarray
+    ellipse: Tuple[Tuple[float, float], Tuple[float, float], float]
     length_mm: float
     width_mm: float
-    distance_cm: float
-
-
-# Alias per retrocompatibilità
-ObjectDetection = DetectionResult
+    depth_mm: Optional[float] = None
+    track_id: Optional[str] = None  # es. "P-1"
 
 
 @dataclass
 class PairResult:
+    """Risultato dell'elaborazione di una coppia di fotogrammi stereo."""
     timestamp: str
-    left_image: cv2.Mat
-    right_image: cv2.Mat
-    overlay_image: cv2.Mat
-    mask_overlay_left: cv2.Mat
-    detections: List[DetectionResult]
-
-
-@dataclass
-class StereoConfig:
-    focal_length: float = 140.0
-    baseline_cm: float = 10.0
-    depth_w: int = 640
-    depth_h: int = 360
+    right_image: np.ndarray
+    left_image: Optional[np.ndarray] = None
+    detections: List[ObjectDetection] = field(default_factory=list)
+    overlay_image: Optional[np.ndarray] = None
 
 
 class ObjectAnalyzer:
-    def __init__(self, model_path: str, config: StereoConfig = StereoConfig()) -> None:
-        self.config = config
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+    """Pipeline per la rilevazione, segmentazione e misurazione di elementi target."""
 
+    def __init__(
+            self,
+            model_path: str,
+            stereo_config: Optional[StereoConfig] = None,
+            device: Optional[str] = None
+    ) -> None:
+        if YOLO is None:
+            raise ImportError("Modulo 'ultralytics' non disponibile nel contesto di esecuzione.")
+
+        self.device = device or select_computation_device()
         self.model = YOLO(model_path)
-        self.model.to(self.device)
-        self.model.fuse()
+        self.stereo_config = stereo_config or StereoConfig()
 
-        self.stereo = cv2.StereoSGBM_create(
-            minDisparity=0,
-            numDisparities=96,
-            blockSize=7,
-            P1=8 * 3 * 7**2,
-            P2=32 * 3 * 7**2,
-            disp12MaxDiff=1,
-            uniquenessRatio=8,
-            speckleWindowSize=50,
-            speckleRange=16,
-            mode=cv2.STEREO_SGBM_MODE_SGBM_3WAY,
-        )
+    def _estimate_depth(
+            self,
+            right_img: np.ndarray,
+            left_img: np.ndarray,
+            bbox: Tuple[int, int, int, int]
+    ) -> Optional[float]:
+        return None
 
-    def _get_depth_map(self, img_left_gray: cv2.Mat, img_right_gray: cv2.Mat) -> np.ndarray:
-        small_left = cv2.resize(img_left_gray, (self.config.depth_w, self.config.depth_h))
-        small_right = cv2.resize(img_right_gray, (self.config.depth_w, self.config.depth_h))
-
-        disparity = self.stereo.compute(small_left, small_right).astype(np.float32) / 16.0
-
-        with np.errstate(divide="ignore", invalid="ignore"):
-            depth_small = np.where(
-                disparity > 0,
-                (self.config.focal_length * self.config.baseline_cm) / disparity,
-                0,
-            )
-
-        h, w = img_left_gray.shape[:2]
-        return cv2.resize(depth_small, (w, h), interpolation=cv2.INTER_LINEAR)
-
-    def _get_distance_from_mask(self, depth_map: np.ndarray, mask_bin: np.ndarray) -> Optional[float]:
-        ys, xs = np.where(mask_bin == 255)
-        if len(xs) == 0:
-            return None
-
-        indices = np.random.choice(len(xs), min(300, len(xs)), replace=False)
-        values = [depth_map[ys[idx], xs[idx]] for idx in indices if depth_map[ys[idx], xs[idx]] > 0]
-
-        if not values:
-            return None
-
-        arr = np.array(values)
-        q1, q3 = np.percentile(arr, [25, 75])
-        iqr = q3 - q1
-
-        filtered = arr[(arr >= q1 - 1.5 * iqr) & (arr <= q3 + 1.5 * iqr)]
-        return float(np.median(filtered if len(filtered) > 0 else arr))
-
-    def _pixels_to_cm(self, pixels: float, distance_cm: float) -> float:
-        return (pixels * distance_cm) / self.config.focal_length
-
-    def _get_dimensions_cup_style(
-        self, mask_bin: np.ndarray, distance_cm: float, depth_map: np.ndarray
-    ) -> Tuple[Optional[float], Optional[float], Optional[np.ndarray]]:
-        """Calcola dimensioni (in mm) usando l'algoritmo geometrico 3D da 'cup dimension'."""
-        contours, _ = cv2.findContours(mask_bin, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        if not contours:
-            return None, None, None
-
-        contours = sorted(contours, key=cv2.contourArea, reverse=True)
-        contour = contours[0]
-
-        if cv2.contourArea(contour) < 100:
-            return None, None, None
-
-        epsilon = 0.01 * cv2.arcLength(contour, True)
-        contour = cv2.approxPolyDP(contour, epsilon, True)
-
-        if len(contour) >= 5:
-            ellipse = cv2.fitEllipse(contour)
-            (cx, cy), (w_px, h_px), angle = ellipse
-            rect = ((cx, cy), (w_px, h_px), angle)
-        else:
-            rect = cv2.minAreaRect(contour)
-            (cx, cy), (w_px, h_px), angle = rect
-
-        box_pts = cv2.boxPoints(rect).astype(np.int32)
-
-        if w_px < h_px:
-            w_px, h_px = h_px, w_px
-
-        cx, cy = int(cx), int(cy)
-        top_y = max(0, cy - int(h_px / 2))
-        bot_y = min(depth_map.shape[0] - 1, cy + int(h_px / 2))
-
-        d_top = depth_map[top_y, np.clip(cx, 0, depth_map.shape[1] - 1)]
-        d_bot = depth_map[bot_y, np.clip(cx, 0, depth_map.shape[1] - 1)]
-
-        h_cm_2d = self._pixels_to_cm(h_px, distance_cm)
-        w_cm_2d = self._pixels_to_cm(w_px, distance_cm)
-
-        delta_d = abs(float(d_top) - float(d_bot)) if (d_top > 0 and d_bot > 0) else 0.0
-
-        h_cm = np.sqrt(h_cm_2d**2 + delta_d**2)
-
-        # Conversione finale da centimetri a millimetri per reportistica
-        return float(h_cm * 10.0), float(w_cm_2d * 10.0), box_pts
+    def _get_scale_factor(self, depth_mm: Optional[float]) -> float:
+        cfg = self.stereo_config
+        if depth_mm and cfg.focal_length_px:
+            return depth_mm / cfg.focal_length_px
+        if cfg.mm_per_px_at_1m:
+            return cfg.mm_per_px_at_1m
+        return 1.0
 
     def analyze_pair(
-        self, timestamp: str, right_path: Path, left_path: Path, target_label: Optional[str] = None
+            self,
+            timestamp: str,
+            right_path: Path,
+            left_path: Path,
+            target_label: Optional[str] = None,
     ) -> PairResult:
-        img_left = cv2.imread(str(left_path))
-        img_right = cv2.imread(str(right_path))
+        """
+        Esegue la rilevazione sulla CAMERA SINISTRA (lx).
+        """
+        right_img = cv2.imread(str(right_path))
+        left_img = cv2.imread(str(left_path))
 
-        if img_left is None or img_right is None:
-            raise ValueError(f"Impossibile caricare le immagini per il timestamp: {timestamp}")
+        if right_img is None or left_img is None:
+            raise FileNotFoundError(f"Errore nella lettura dei file: {right_path} o {left_path}")
 
-        gray_left = cv2.cvtColor(img_left, cv2.COLOR_BGR2GRAY)
-        gray_right = cv2.cvtColor(img_right, cv2.COLOR_BGR2GRAY)
+        result = PairResult(timestamp=timestamp, right_image=right_img, left_image=left_img)
 
-        depth_map = self._get_depth_map(gray_left, gray_right)
+        # Predict eseguito su LEFT_IMG
+        predictions = self.model.predict(left_img, device=self.device, verbose=False)[0]
+        target_label_lower = target_label.strip().lower() if target_label else None
 
-        results = self.model.predict(
-            source=img_left,
-            conf=0.35,
-            iou=0.5,
-            retina_masks=True,
-            verbose=False,
-            device=0 if self.device == "cuda" else "cpu",
-        )
-
-        detections: List[DetectionResult] = []
-        left_mask_visual = img_left.copy()
-        h_img, w_img = img_left.shape[:2]
-
-        for r in results:
-            if r.boxes is None or len(r.boxes) == 0:
-                continue
-
-            for i, box in enumerate(r.boxes):
-                cls_id = int(box.cls[0])
-                label = self.model.names[cls_id]
-
-                # Filtro obbligatorio sulla singola classe selezionata
-                if target_label and label.lower().strip() != target_label.lower().strip():
+        if predictions.masks is not None:
+            for mask_xy, box in zip(predictions.masks.xy, predictions.boxes):
+                contour = mask_xy.astype(np.int32).reshape(-1, 1, 2)
+                if len(contour) < 5:
                     continue
 
-                conf = float(box.conf[0])
-                x1, y1, x2, y2 = map(int, box.xyxy[0])
+                ellipse = cv2.fitEllipse(contour)
+                _, (major_px, minor_px), _ = ellipse
 
-                length_mm, width_mm, distance_cm = 0.0, 0.0, 0.0
-                box_pts = None
+                bbox = tuple(int(v) for v in box.xyxy[0].tolist())
+                confidence = float(box.conf[0])
+                cls_id = int(box.cls[0])
 
-                # --- ELABORAZIONE MASCHERA SECONDO LO SCRIPT CUP DIMENSION ---
-                if r.masks is not None and len(r.masks) > i:
-                    try:
-                        mask = r.masks.data.cpu().numpy()[i]
-                        mask_resized = cv2.resize(mask, (w_img, h_img), interpolation=cv2.INTER_LINEAR)
-                        mask_bin = (mask_resized > 0.5).astype(np.uint8) * 255
-
-                        # 1. Pulizia morfologica avanzata
-                        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
-                        mask_bin = cv2.morphologyEx(mask_bin, cv2.MORPH_OPEN, kernel, iterations=2)
-                        mask_bin = cv2.morphologyEx(mask_bin, cv2.MORPH_CLOSE, kernel, iterations=2)
-
-                        # 2. Selezione componente connessa maggiore (filtra il rumore secondario)
-                        num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(mask_bin)
-                        if num_labels > 1:
-                            largest = 1 + np.argmax(stats[1:, cv2.CC_STAT_AREA])
-                            clean_mask = np.zeros_like(mask_bin)
-                            clean_mask[labels == largest] = 255
-                            mask_bin = clean_mask
-
-                        # 3. Sfocatura e binarizzazione di precisione
-                        mask_bin = cv2.GaussianBlur(mask_bin, (5, 5), 0)
-                        _, mask_bin = cv2.threshold(mask_bin, 127, 255, cv2.THRESH_BINARY)
-
-                        dist_est = self._get_distance_from_mask(depth_map, mask_bin)
-
-                        if dist_est is not None:
-                            distance_cm = dist_est
-                            l_mm, w_mm, b_pts = self._get_dimensions_cup_style(mask_bin, distance_cm, depth_map)
-                            if l_mm is not None and w_mm is not None:
-                                length_mm, width_mm = l_mm, w_mm
-                                box_pts = b_pts
-
-                        # 4. Sovrapposizione grafica della maschera verde su immagine di SINISTRA
-                        mask_overlay = left_mask_visual.copy()
-                        mask_overlay[mask_bin == 255] = (0, 255, 0)
-                        left_mask_visual = cv2.addWeighted(mask_overlay, 0.35, left_mask_visual, 0.65, 0)
-                    except Exception:
-                        pass
-
-                # --- DISEGNO ELEMENTI GRAFICI SU IMMAGINE DI SINISTRA ---
-
-                # Bounding Box rettangolare YOLO
-                cv2.rectangle(left_mask_visual, (x1, y1), (x2, y2), (0, 255, 0), 2)
-
-                # Contorno orientato del box metrologico (Giallo) e centroide
-                if box_pts is not None:
-                    cv2.drawContours(left_mask_visual, [box_pts], 0, (0, 255, 255), 2)
-
-                # Etichette e misurazioni
-                dist_str = f"{distance_cm:.1f}cm" if distance_cm > 0 else "N/A"
-                text_top = f"{label} {conf:.2f} | {dist_str}"
-
-                (w_text, _), _ = cv2.getTextSize(text_top, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 2)
-                cv2.rectangle(left_mask_visual, (x1, max(0, y1 - 25)), (x1 + w_text, y1), (0, 0, 0), -1)
-                cv2.putText(
-                    left_mask_visual,
-                    text_top,
-                    (x1, max(15, y1 - 7)),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.55,
-                    (0, 255, 0),
-                    2,
+                class_name = (
+                    predictions.names.get(cls_id, f"Class_{cls_id}")
+                    if hasattr(predictions, "names")
+                    else f"Class_{cls_id}"
                 )
 
-                if length_mm > 0:
-                    text_dim = f"H:{length_mm/10.0:.1f}cm W:{width_mm/10.0:.1f}cm ({length_mm:.1f}x{width_mm:.1f}mm)"
-                    (w_dim, _), _ = cv2.getTextSize(text_dim, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 2)
-                    cv2.rectangle(left_mask_visual, (x1, y1), (x1 + w_dim, y1 + 20), (0, 0, 0), -1)
-                    cv2.putText(
-                        left_mask_visual,
-                        text_dim,
-                        (x1, y1 + 15),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        0.55,
-                        (0, 200, 255),
-                        2,
-                    )
+                if target_label_lower is not None and class_name.strip().lower() != target_label_lower:
+                    continue
 
-                detections.append(
-                    DetectionResult(
-                        label=label,
-                        confidence=conf,
-                        length_mm=length_mm,
-                        width_mm=width_mm,
-                        distance_cm=distance_cm,
-                    )
+                depth_mm = self._estimate_depth(right_img, left_img, bbox)
+                scale = self._get_scale_factor(depth_mm)
+
+                detection = ObjectDetection(
+                    pair_timestamp=timestamp,
+                    label=class_name,
+                    confidence=confidence,
+                    bbox_xyxy=bbox,
+                    contour=contour,
+                    ellipse=ellipse,
+                    length_mm=major_px * scale,
+                    width_mm=minor_px * scale,
+                    depth_mm=depth_mm,
                 )
+                result.detections.append(detection)
 
-        return PairResult(
-            timestamp=timestamp,
-            left_image=img_left,
-            right_image=img_right,
-            overlay_image=left_mask_visual,
-            mask_overlay_left=left_mask_visual,
-            detections=detections,
+        return result
+
+
+def render_overlay(
+    image: np.ndarray,
+    detections: List[ObjectDetection],
+    filter_ids: Optional[Set[str]] = None
+) -> np.ndarray:
+    """
+    Disegna maschere ed etichette. Se filter_ids è fornito, mostra SOLO
+    gli oggetti aventi track_id presente in filter_ids.
+    """
+    overlay = image.copy()
+
+    for detection in detections:
+        if filter_ids is not None and detection.track_id not in filter_ids:
+            continue
+
+        cv2.drawContours(overlay, [detection.contour], -1, (0, 255, 0), 2)
+        cv2.ellipse(overlay, detection.ellipse, (0, 165, 255), 2)
+
+        id_str = f"[{detection.track_id}] " if detection.track_id else ""
+        caption = f"{id_str}{detection.label}"
+
+        # Sfondo nero per rendere la scritta sempre ben visibile
+        txt_size, _ = cv2.getTextSize(caption, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
+        tx, ty = detection.bbox_xyxy[0], max(detection.bbox_xyxy[1] - 8, 20)
+        cv2.rectangle(overlay, (tx, ty - txt_size[1] - 4), (tx + txt_size[0] + 4, ty + 4), (0, 0, 0), -1)
+
+        cv2.putText(
+            overlay,
+            caption,
+            (tx + 2, ty),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            (0, 255, 0),
+            2,
         )
+
+    return overlay
