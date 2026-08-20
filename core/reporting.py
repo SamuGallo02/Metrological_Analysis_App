@@ -3,6 +3,8 @@ Modulo di Reporting e Statistiche Aggregate
 =========================================
 Elabora i risultati per la generazione di dataframe, report CSV e
 statistiche aggregate per ogni singolo ID monitorato.
+
+Autore: Samuele Gallo
 """
 
 from __future__ import annotations

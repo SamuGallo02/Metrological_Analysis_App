@@ -1,6 +1,8 @@
 """
 Modulo di Analisi Fotogrammetrica e Segmentazione
 =================================================
+
+Autore: Samuele Gallo
 """
 
 from __future__ import annotations
@@ -48,7 +50,6 @@ class StereoConfig:
     """Parametri geometrici del sistema stereo-fotogrammetrico."""
     baseline_mm: float = 60.0
     focal_length_px: float = 1400.0
-    mm_per_px_at_1m: Optional[float] = None
 
 
 @dataclass
@@ -60,9 +61,10 @@ class ObjectDetection:
     bbox_xyxy: Tuple[int, int, int, int]
     contour: np.ndarray
     ellipse: Tuple[Tuple[float, float], Tuple[float, float], float]
-    length_mm: float
-    width_mm: float
+    length_mm: Optional[float]
+    width_mm: Optional[float]
     depth_mm: Optional[float] = None
+    contact_distance_mm: Optional[float] = None  # distanza reale (triangolazione stereo) al punto di contatto/base del soggetto
     track_id: Optional[str] = None  # es. "P-1"
 
 
@@ -83,7 +85,7 @@ class ObjectAnalyzer:
             self,
             model_path: str,
             stereo_config: Optional[StereoConfig] = None,
-            device: Optional[str] = None
+            device: Optional[str] = None,
     ) -> None:
         if YOLO is None:
             raise ImportError("Modulo 'ultralytics' non disponibile nel contesto di esecuzione.")
@@ -92,21 +94,76 @@ class ObjectAnalyzer:
         self.model = YOLO(model_path)
         self.stereo_config = stereo_config or StereoConfig()
 
-    def _estimate_depth(
-            self,
-            right_img: np.ndarray,
-            left_img: np.ndarray,
-            bbox: Tuple[int, int, int, int]
-    ) -> Optional[float]:
-        return None
+        # Matcher stereo persistente: creato una sola volta, riusato su ogni coppia.
+        # NOTA: presuppone immagini gia' RETTIFICATE (assi ottici paralleli, linee
+        # epipolari orizzontali). Con due lenti fissate meccanicamente sullo stesso
+        # piano questo e' spesso una buona approssimazione, ma per la massima
+        # precisione servirebbe una calibrazione stereo completa (cv2.stereoCalibrate
+        # + cv2.stereoRectify) per correggere eventuali disallineamenti/distorsioni
+        # residue. Se in futuro avrai le matrici di calibrazione reali, e' qui che
+        # andrebbe applicata la rettifica prima del calcolo di disparita'.
+        self._stereo_matcher = cv2.StereoSGBM_create(
+            minDisparity=0,
+            numDisparities=128,
+            blockSize=7,
+            P1=8 * 3 * 7 ** 2,
+            P2=32 * 3 * 7 ** 2,
+            disp12MaxDiff=1,
+            uniquenessRatio=10,
+            speckleWindowSize=100,
+            speckleRange=32,
+        )
 
-    def _get_scale_factor(self, depth_mm: Optional[float]) -> float:
+    def _compute_disparity_map(self, left_img: np.ndarray, right_img: np.ndarray) -> Optional[np.ndarray]:
+        """Calcola la mappa di disparita' tra le due lenti (sinistra come riferimento)."""
+        if self.stereo_config.baseline_mm <= 0 or self.stereo_config.focal_length_px <= 0:
+            return None
+
+        gray_left = cv2.cvtColor(left_img, cv2.COLOR_BGR2GRAY)
+        gray_right = cv2.cvtColor(right_img, cv2.COLOR_BGR2GRAY)
+
+        raw_disparity = self._stereo_matcher.compute(gray_left, gray_right)
+        return raw_disparity.astype(np.float32) / 16.0  # StereoSGBM restituisce disparita' in fixed-point 4 bit
+
+    def _depth_from_disparity(
+            self,
+            disparity_map: Optional[np.ndarray],
+            x: int,
+            y: int,
+            window: int = 3,
+    ) -> Optional[float]:
+        """
+        Stima la profondita' reale (mm) nel punto (x, y) dell'immagine sinistra
+        tramite triangolazione: depth = (baseline_mm * focal_length_px) / disparita'.
+        Campiona una piccola finestra attorno al punto (mediana) per robustezza
+        al rumore locale della corrispondenza stereo.
+        """
+        if disparity_map is None:
+            return None
+
+        h, w = disparity_map.shape
+        x0, x1 = max(0, x - window), min(w, x + window + 1)
+        y0, y1 = max(0, y - window), min(h, y + window + 1)
+        region = disparity_map[y0:y1, x0:x1]
+
+        valid = region[region > 0]  # disparita' <= 0 = corrispondenza non trovata/non valida
+        if valid.size == 0:
+            return None
+
+        disparity_px = float(np.median(valid))
+        return (self.stereo_config.baseline_mm * self.stereo_config.focal_length_px) / disparity_px
+
+    def _get_scale_factor(self, depth_mm: Optional[float]) -> Optional[float]:
+        """
+        Ritorna il fattore mm/px da applicare alle dimensioni in pixel, oppure
+        None se non c'e' una profondita' stereo valida in quel punto — MAI un
+        fallback approssimato, che introdurrebbe errore proporzionale a quanto
+        il soggetto e' realmente distante dall'assunzione implicita.
+        """
         cfg = self.stereo_config
         if depth_mm and cfg.focal_length_px:
             return depth_mm / cfg.focal_length_px
-        if cfg.mm_per_px_at_1m:
-            return cfg.mm_per_px_at_1m
-        return 1.0
+        return None
 
     def analyze_pair(
             self,
@@ -125,6 +182,10 @@ class ObjectAnalyzer:
             raise FileNotFoundError(f"Errore nella lettura dei file: {right_path} o {left_path}")
 
         result = PairResult(timestamp=timestamp, right_image=right_img, left_image=left_img)
+
+        # Mappa di disparita' calcolata UNA volta per coppia (non per rilevamento):
+        # e' l'operazione piu' costosa, va riusata per tutti i soggetti del frame.
+        disparity_map = self._compute_disparity_map(left_img, right_img)
 
         # Predict eseguito su LEFT_IMG
         predictions = self.model.predict(left_img, device=self.device, verbose=False)[0]
@@ -152,8 +213,22 @@ class ObjectAnalyzer:
                 if target_label_lower is not None and class_name.strip().lower() != target_label_lower:
                     continue
 
-                depth_mm = self._estimate_depth(right_img, left_img, bbox)
+                depth_mm = self._depth_from_disparity(
+                    disparity_map, (bbox[0] + bbox[2]) // 2, (bbox[1] + bbox[3]) // 2
+                )
                 scale = self._get_scale_factor(depth_mm)
+                length_mm = major_px * scale if scale is not None else None
+                width_mm = minor_px * scale if scale is not None else None
+
+                # Distanza al punto di contatto: profondita' REALE (triangolazione
+                # stereo) nel punto in cui il soggetto tocca la superficie sottostante
+                # (base del bounding box). Se la corrispondenza stereo non riesce in
+                # quel punto (es. zona poco tessiturizzata), resta None: nessuna
+                # stima geometrica di ripiego, per non introdurre errore da un
+                # angolo di inclinazione difficile da misurare con precisione.
+                contact_distance_mm = self._depth_from_disparity(
+                    disparity_map, (bbox[0] + bbox[2]) // 2, bbox[3]
+                )
 
                 detection = ObjectDetection(
                     pair_timestamp=timestamp,
@@ -162,9 +237,10 @@ class ObjectAnalyzer:
                     bbox_xyxy=bbox,
                     contour=contour,
                     ellipse=ellipse,
-                    length_mm=major_px * scale,
-                    width_mm=minor_px * scale,
+                    length_mm=length_mm,
+                    width_mm=width_mm,
                     depth_mm=depth_mm,
+                    contact_distance_mm=contact_distance_mm,
                 )
                 result.detections.append(detection)
 

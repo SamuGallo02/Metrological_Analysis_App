@@ -3,13 +3,15 @@ Modulo per la Gestione delle Classi di Oggetto Analizzabili
 =============================================================
 Mantiene un elenco persistente (file JSON) delle categorie di oggetto
 selezionabili nella GUI per filtrare i rilevamenti YOLO (es. "persone",
-"macchine", "granchi"...). L'elenco e' modificabile a runtime tramite
+"veicoli", "animali"...). L'elenco e' modificabile a runtime tramite
 add_class()/remove_class() ed e' salvato su disco tra una sessione e l'altra.
 
 Nota: il nome della classe deve corrispondere (case-insensitive) all'etichetta
 restituita dal modello YOLO in uso (predictions.names), altrimenti il filtro
 non trovera' corrispondenze. Se il modello e' in inglese (es. "person", "car"),
 inserisci l'etichetta cosi' come il modello la restituisce.
+
+Autore: Samuele Gallo
 """
 
 from __future__ import annotations

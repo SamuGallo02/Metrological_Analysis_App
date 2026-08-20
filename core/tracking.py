@@ -3,6 +3,8 @@ Modulo di Tracking Multi-Frame Avanzato (IoU + Centroide)
 ==========================================================
 Garantisce la continuita temporale degli ID evitando re-assegnazioni errate
 grazie all'algoritmo di corrispondenza ottimale (Hungarian Matching / Greedy IoU).
+
+Autore: Samuele Gallo
 """
 
 from __future__ import annotations

@@ -1,13 +1,17 @@
 """
-Modulo dell'Interfaccia Grafica Principale (GUI)
-==============================================
-Filtra automaticamente i fotogrammi mostrando solo il frame iniziale
-e i frame in cui si verifica una variazione nel set degli ID rilevati.
+Modulo dell'Interfaccia Grafica Principale (GUI) con Gestione del Training YOLO,
+Supporto per la Modifica Manuale dei Rilevamenti tramite SpinBox,
+Statistiche per Classe e Prefissi ID Puliti e Compatti (es. Ce-1).
+
+Autore: Samuele Gallo
 """
 
 from __future__ import annotations
 
+import os
 import shutil
+import socket
+import webbrowser
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple, Union
 
@@ -20,10 +24,13 @@ from PySide6.QtWidgets import (
     QDialog,
     QDoubleSpinBox,
     QFileDialog,
+    QFormLayout,
+    QGroupBox,
     QHBoxLayout,
     QHeaderView,
     QInputDialog,
     QLabel,
+    QLineEdit,
     QListWidget,
     QListWidgetItem,
     QMainWindow,
@@ -32,6 +39,7 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QSizePolicy,
+    QSpinBox,
     QSplitter,
     QTableWidget,
     QTableWidgetItem,
@@ -47,13 +55,79 @@ from core.object_classes import ALL_OBJECTS, add_class, load_classes, remove_cla
 from core.pairing import StereoPairFinder
 from core.reporting import compute_summary, detections_to_dataframe, export_csv
 from core.tracking import ObjectTracker
+from gui.gui_components import HardwareAccelerationWidget
 
 MODELS_DIR = Path("models")
 DATASETS_DIR = Path("datasets")
+TDATASET_DIR = Path("tDataset")
+
+
+def check_internet_connection() -> bool:
+    """Verifica rapida della presenza di una connessione internet attiva."""
+    try:
+        socket.create_connection(("8.8.8.8", 53), timeout=2)
+        return True
+    except OSError:
+        return False
+
+
+def get_hardware_info() -> Tuple[str, str]:
+    """Rileva l'hardware disponibile per l'addestramento YOLO (GPU PyTorch/CUDA, MPS o CPU)."""
+    try:
+        import torch
+        if torch.cuda.is_available():
+            device_name = torch.cuda.get_device_name(0)
+            vram_gb = torch.cuda.get_device_properties(0).total_memory / (1024 ** 3)
+            return "0", f"GPU CUDA ({device_name} - {vram_gb:.1f} GB VRAM)"
+        elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            return "mps", "Apple Silicon GPU (MPS)"
+    except ImportError:
+        pass
+    return "cpu", "CPU di sistema (Non ottimizzata per training intensivi)"
+
+
+def generate_adaptive_prefixes(class_labels: List[str]) -> Dict[str, str]:
+    """
+    Genera un dizionario {nome_classe: prefisso_univoco_formattato} in modo adattivo.
+    Formatta il prefisso in TitleCase (es. 'B', 'Ce').
+    """
+    cleaned_map = {label: "".join(c for c in label.lower() if c.isalnum()) or "obj" for label in set(class_labels)}
+    prefixes: Dict[str, str] = {}
+
+    for original_label, cleaned in cleaned_map.items():
+        length = 1
+        while True:
+            candidate = cleaned[:length]
+
+            conflict = False
+            for other_label, other_cleaned in cleaned_map.items():
+                if original_label != other_label:
+                    if other_cleaned.startswith(candidate):
+                        conflict = True
+                        break
+
+            if not conflict or length >= len(cleaned):
+                prefixes[original_label] = candidate.capitalize()
+                break
+
+            length += 1
+
+    final_prefixes: Dict[str, str] = {}
+    seen_prefixes: Dict[str, int] = {}
+
+    for label in class_labels:
+        base_pref = prefixes.get(label, "Obj")
+        if base_pref in seen_prefixes:
+            seen_prefixes[base_pref] += 1
+            final_prefixes[label] = f"{base_pref}{seen_prefixes[base_pref]}"
+        else:
+            seen_prefixes[base_pref] = 1
+            final_prefixes[label] = base_pref
+
+    return final_prefixes
 
 
 class ClickableImageLabel(QLabel):
-    """QLabel che emette un segnale al click, usata per aprire l'anteprima ingrandita."""
     clicked = Signal()
 
     def mousePressEvent(self, event) -> None:
@@ -73,6 +147,290 @@ def scan_datasets(datasets_dir: Path = DATASETS_DIR) -> List[str]:
     return sorted(f.name for f in datasets_dir.iterdir() if f.is_dir())
 
 
+# --- WORKER PER IL TRAINING DI YOLO ---
+class TrainingWorker(QThread):
+    log_signal = Signal(str)
+    finished_signal = Signal(str)
+    error_signal = Signal(str)
+
+    def __init__(self, data_yaml: str, base_model: str, epochs: int, imgsz: int, batch: int, device: str) -> None:
+        super().__init__()
+        self.data_yaml = data_yaml
+        self.base_model = base_model
+        self.epochs = epochs
+        self.imgsz = imgsz
+        self.batch = batch
+        self.device = device
+
+    def run(self) -> None:
+        try:
+            from ultralytics import YOLO
+
+            self.log_signal.emit(f"Caricamento modello base: {self.base_model}...")
+            model = YOLO(self.base_model)
+
+            self.log_signal.emit(f"Avvio addestramento su device '{self.device}' per {self.epochs} epoche...")
+            results = model.train(
+                data=self.data_yaml,
+                epochs=self.epochs,
+                imgsz=self.imgsz,
+                batch=self.batch,
+                device=self.device,
+                project="runs/train",
+                name="custom_yolo_model",
+                exist_ok=True
+            )
+
+            best_model_path = Path(results.save_dir) / "weights" / "best.pt"
+            if best_model_path.exists():
+                MODELS_DIR.mkdir(exist_ok=True)
+                dest_path = MODELS_DIR / f"trained_{self.base_model}"
+                shutil.copy2(best_model_path, dest_path)
+                self.finished_signal.emit(str(dest_path))
+            else:
+                self.error_signal.emit("Training terminato ma non è stato trovato il file dei pesi salvato.")
+
+        except Exception as exc:
+            self.error_signal.emit(str(exc))
+
+
+# --- FINESTRA DI GESTIONE TRAINING ---
+class TrainingDialog(QDialog):
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Gestione Training Nuovo Agente YOLO")
+        self.setMinimumSize(680, 580)
+
+        TDATASET_DIR.mkdir(exist_ok=True, parents=True)
+        MODELS_DIR.mkdir(exist_ok=True, parents=True)
+
+        self.device_code, self.device_desc = get_hardware_info()
+        self.is_online = check_internet_connection()
+        self.worker: Optional[TrainingWorker] = None
+
+        self._build_ui()
+        self._populate_tdatasets()
+        self._check_model_download_status()
+
+    def _build_ui(self) -> None:
+        layout = QVBoxLayout(self)
+
+        hw_box = QWidget()
+        hw_box.setStyleSheet("background-color: #2b2b2b; border-radius: 6px; padding: 10px;")
+        hw_layout = QVBoxLayout(hw_box)
+
+        lbl_hw = QLabel(f"<b>Hardware Rilevato:</b> {self.device_desc}")
+        hw_layout.addWidget(lbl_hw)
+
+        if self.device_code == "cpu" and self.is_online:
+            lbl_colab_info = QLabel("<i>Nota: L'addestramento su CPU può richiedere molto tempo. È consigliata la GPU di Google Colab.</i>")
+            lbl_colab_info.setStyleSheet("color: #ffca28;")
+            hw_layout.addWidget(lbl_colab_info)
+
+            btn_colab = QPushButton("Apri Google Colab per Training Cloud")
+            btn_colab.setStyleSheet("background-color: #f57c00; color: white; font-weight: bold; margin-top: 5px;")
+            btn_colab.clicked.connect(self._open_colab)
+            hw_layout.addWidget(btn_colab)
+
+        layout.addWidget(hw_box)
+
+        # Pannello diagnostico esteso: permette di verificare lo stato CUDA
+        # nel dettaglio e, se necessario, reinstallare PyTorch con supporto
+        # GPU direttamente da qui prima di avviare un training pesante.
+        self.hw_widget = HardwareAccelerationWidget(self)
+        layout.addWidget(self.hw_widget)
+
+        form_layout = QFormLayout()
+
+        tdataset_layout = QHBoxLayout()
+        self.combo_tdatasets = QComboBox()
+        self.combo_tdatasets.currentIndexChanged.connect(self._on_tdataset_selected)
+
+        btn_add_tdataset = QPushButton("Aggiungi Cartella...")
+        btn_add_tdataset.setToolTip("Copia una nuova cartella dataset all'interno di tDataset/")
+        btn_add_tdataset.clicked.connect(self._add_tdataset_folder)
+
+        tdataset_layout.addWidget(self.combo_tdatasets, stretch=1)
+        tdataset_layout.addWidget(btn_add_tdataset)
+        form_layout.addRow("Dataset (training):", tdataset_layout)
+
+        self.lbl_yaml_path = QLabel("Nessun data.yaml trovato")
+        self.lbl_yaml_path.setStyleSheet("color: #aaaaaa; font-style: italic;")
+        form_layout.addRow("File di Configurazione:", self.lbl_yaml_path)
+
+        model_layout = QHBoxLayout()
+        self.combo_base_model = QComboBox()
+        self.model_options = [
+            "yolo11n-seg.pt", "yolo11s-seg.pt", "yolo11m-seg.pt", "yolo11l-seg.pt",
+            "yolov8n-seg.pt", "yolov8s-seg.pt", "yolov8m-seg.pt", "yolov8l-seg.pt",
+            "yolo11n.pt", "yolo11s.pt", "yolo11m.pt", "yolo11l.pt"
+        ]
+        self.combo_base_model.addItems(self.model_options)
+        self.combo_base_model.currentIndexChanged.connect(self._check_model_download_status)
+
+        self.lbl_download_status = QLabel("")
+        model_layout.addWidget(self.combo_base_model, stretch=1)
+        model_layout.addWidget(self.lbl_download_status)
+        form_layout.addRow("Modello Base:", model_layout)
+
+        self.spin_epochs = QSpinBox()
+        self.spin_epochs.setRange(1, 1000)
+        self.spin_epochs.setValue(50)
+        form_layout.addRow("Numero Epoche:", self.spin_epochs)
+
+        self.spin_imgsz = QSpinBox()
+        self.spin_imgsz.setRange(320, 2048)
+        self.spin_imgsz.setSingleStep(32)
+        self.spin_imgsz.setValue(640)
+        form_layout.addRow("Dimensione Immagini (px):", self.spin_imgsz)
+
+        self.spin_batch = QSpinBox()
+        self.spin_batch.setRange(1, 128)
+        self.spin_batch.setValue(8)
+        form_layout.addRow("Batch Size:", self.spin_batch)
+
+        layout.addLayout(form_layout)
+
+        layout.addWidget(QLabel("Console di avanzamento:"))
+        self.txt_console = QTextEdit()
+        self.txt_console.setReadOnly(True)
+        self.txt_console.setStyleSheet("background-color: #121212; color: #00ff00; font-family: monospace;")
+        layout.addWidget(self.txt_console, stretch=1)
+
+        btn_layout = QHBoxLayout()
+        self.btn_start = QPushButton("AVVIA TRAINING LOCALE")
+        self.btn_start.setStyleSheet("background-color: #2e7d32; color: white; font-weight: bold; padding: 8px;")
+        self.btn_start.clicked.connect(self._start_training)
+
+        btn_close = QPushButton("Chiudi")
+        btn_close.clicked.connect(self.reject)
+
+        btn_layout.addWidget(self.btn_start)
+        btn_layout.addWidget(btn_close)
+        layout.addLayout(btn_layout)
+
+    def _populate_tdatasets(self) -> None:
+        self.combo_tdatasets.clear()
+        if not TDATASET_DIR.exists():
+            return
+
+        subdirs = [d for d in TDATASET_DIR.iterdir() if d.is_dir()]
+        if not subdirs:
+            self.combo_tdatasets.addItem("Nessun dataset presente", userData=None)
+            self.lbl_yaml_path.setText("Manca data.yaml")
+            return
+
+        for folder in sorted(subdirs, key=lambda x: x.name):
+            yaml_file = folder / "data.yaml"
+            if not yaml_file.exists():
+                yaml_file = folder / "data.yml"
+
+            if yaml_file.exists():
+                self.combo_tdatasets.addItem(f"{folder.name} (✓ data.yaml)", userData=str(yaml_file))
+            else:
+                self.combo_tdatasets.addItem(f"{folder.name} (✗ Manca data.yaml)", userData=None)
+
+        self._on_tdataset_selected()
+
+    def _on_tdataset_selected(self) -> None:
+        yaml_path = self.combo_tdatasets.currentData()
+        if yaml_path:
+            self.lbl_yaml_path.setText(f"<font color='green'>{yaml_path}</font>")
+        else:
+            self.lbl_yaml_path.setText("<font color='red'>Nessun file data.yaml trovato in questa cartella</font>")
+
+    def _add_tdataset_folder(self) -> None:
+        TDATASET_DIR.mkdir(parents=True, exist_ok=True)
+        initial_dir = str(TDATASET_DIR.resolve())
+
+        source_dir = QFileDialog.getExistingDirectory(self, "Seleziona cartella dataset da importare", initial_dir)
+        if not source_dir:
+            return
+
+        source_path = Path(source_dir)
+        if source_path.parent.resolve() == TDATASET_DIR.resolve():
+            self._populate_tdatasets()
+            for i in range(self.combo_tdatasets.count()):
+                if source_path.name in self.combo_tdatasets.itemText(i):
+                    self.combo_tdatasets.setCurrentIndex(i)
+                    break
+            return
+
+        dest_path = TDATASET_DIR / source_path.name
+        if dest_path.exists():
+            reply = QMessageBox.question(
+                self, "Cartella Esistente",
+                f"La cartella '{source_path.name}' esiste già in tDataset/. Sovrascrivere?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+            try:
+                shutil.rmtree(dest_path)
+            except Exception as e:
+                QMessageBox.critical(self, "Errore", f"Impossibile sovrascrivere:\n{e}")
+                return
+
+        try:
+            shutil.copytree(source_path, dest_path)
+            QMessageBox.information(self, "Importazione Completata", f"Dataset '{source_path.name}' importato con successo.")
+            self._populate_tdatasets()
+            for i in range(self.combo_tdatasets.count()):
+                if source_path.name in self.combo_tdatasets.itemText(i):
+                    self.combo_tdatasets.setCurrentIndex(i)
+                    break
+        except Exception as e:
+            QMessageBox.critical(self, "Errore di Copia", f"Impossibile importare il dataset:\n{e}")
+
+    def _check_model_download_status(self) -> None:
+        model_name = self.combo_base_model.currentText()
+        local_path = MODELS_DIR / model_name
+        if local_path.is_file():
+            self.lbl_download_status.setText("<font color='#4caf50'><b>✓ Scaricato</b></font>")
+        else:
+            self.lbl_download_status.setText("<font color='#ff9800'><b>↓ Da scaricare</b></font>")
+
+    def _open_colab(self) -> None:
+        webbrowser.open("https://colab.research.google.com/#create=true")
+
+    def _start_training(self) -> None:
+        yaml_path = self.combo_tdatasets.currentData()
+        if not yaml_path or not Path(yaml_path).is_file():
+            QMessageBox.warning(self, "Dataset Invalido", "Seleziona un dataset contenente un file data.yaml valido.")
+            return
+
+        model_name = self.combo_base_model.currentText()
+        model_path = str(MODELS_DIR / model_name) if (MODELS_DIR / model_name).is_file() else model_name
+
+        self.btn_start.setEnabled(False)
+        self.txt_console.append(">>> Inizializzazione del processo di training...")
+
+        self.worker = TrainingWorker(
+            data_yaml=yaml_path,
+            base_model=model_path,
+            epochs=self.spin_epochs.value(),
+            imgsz=self.spin_imgsz.value(),
+            batch=self.spin_batch.value(),
+            device=self.device_code
+        )
+        self.worker.log_signal.connect(self.txt_console.append)
+        self.worker.finished_signal.connect(self._on_training_finished)
+        self.worker.error_signal.connect(self._on_training_error)
+        self.worker.start()
+
+    def _on_training_finished(self, output_path: str) -> None:
+        self.btn_start.setEnabled(True)
+        self.txt_console.append(f"\n>>> TRAINING COMPLETATO CON SUCCESSO!\n>>> Salvato in: {output_path}")
+        self._check_model_download_status()
+        QMessageBox.information(self, "Training Completato", f"Modello salvato in:\n{output_path}")
+
+    def _on_training_error(self, err_msg: str) -> None:
+        self.btn_start.setEnabled(True)
+        self.txt_console.append(f"\n>>> ERRORE DURANTE IL TRAINING:\n{err_msg}")
+        QMessageBox.critical(self, "Errore Training", f"Si è verificato un errore:\n{err_msg}")
+
+
+# --- WORKER DI ANALISI CON FORMATTAZIONE ID ESATTA (es. Ce-1, B-1) ---
 class AnalysisWorker(QThread):
     progress = Signal(int, int)
     pair_done = Signal(object, int)
@@ -105,6 +463,8 @@ class AnalysisWorker(QThread):
             analyzer = ObjectAnalyzer(self.model_path, self.stereo_config)
             tracker = ObjectTracker()
 
+            seen_classes: Set[str] = set()
+
             for i, pair in enumerate(pairs, start=1):
                 if self._stop_requested:
                     break
@@ -112,7 +472,25 @@ class AnalysisWorker(QThread):
                 result = analyzer.analyze_pair(
                     pair.timestamp, pair.right_path, pair.left_path, target_label=self.target_label
                 )
+
                 tracker.update(result.detections)
+
+                for det in result.detections:
+                    seen_classes.add(det.label)
+
+                prefix_map = generate_adaptive_prefixes(list(seen_classes))
+
+                for det in result.detections:
+                    if det.track_id is not None:
+                        prefix = prefix_map.get(det.label, "Obj")
+
+                        # Estrazione precisa del solo numero finale dell'ID (es. '1' da 'Ce_1' o '1' da '1')
+                        str_id = str(det.track_id)
+                        num_part = str_id.split("-")[-1].split("_")[-1]
+
+                        # Assegnazione del formato pulito: "Prefix-Numero" (es. Ce-1)
+                        det.track_id = f"{prefix}-{num_part}"
+
                 result.overlay_image = render_overlay(result.left_image, result.detections)
 
                 self.pair_done.emit(result, tracker.total_count)
@@ -136,6 +514,8 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(1300, 850)
 
         self.results: List[PairResult] = []
+        self.user_counts: Dict[int, int] = {}
+        self.class_user_counts: Dict[str, int] = {}
         self.worker: Optional[AnalysisWorker] = None
         self.selected_folder: Optional[str] = None
         self.class_checkboxes: Dict[str, QCheckBox] = {}
@@ -149,10 +529,8 @@ class MainWindow(QMainWindow):
     def _load_app_icon(self) -> None:
         base_dir = Path(__file__).parent.parent / "assets"
         icon_path = base_dir / "app_icon.ico"
-
         if not icon_path.exists():
             icon_path = base_dir / "app_icon.svg"
-
         if icon_path.exists():
             self.setWindowIcon(QIcon(str(icon_path)))
 
@@ -161,7 +539,6 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central_widget)
         root_layout = QVBoxLayout(central_widget)
 
-        # Larghezza fissa uniforme per le etichette di testo
         LABEL_WIDTH = 160
 
         # 1. BARRA CARTELLA DATASET
@@ -205,10 +582,9 @@ class MainWindow(QMainWindow):
         btn_show_classes = QPushButton("Vedi classi del modello")
         btn_show_classes.clicked.connect(self._show_model_classes)
         model_bar.addWidget(btn_show_classes)
-
         root_layout.addLayout(model_bar)
 
-        # 3. BARRA CLASSE OGGETTO (MULTI-SELEZIONE CON QCOMBOBOX NATIVA)
+        # 3. BARRA CLASSE OGGETTO
         class_bar = QHBoxLayout()
         lbl_class = QLabel("Oggetti da analizzare:")
         lbl_class.setFixedWidth(LABEL_WIDTH)
@@ -218,12 +594,9 @@ class MainWindow(QMainWindow):
         self.btn_class_select.setMinimumWidth(220)
 
         self.class_menu = QMenu(self)
-
-        # Intercetta il click per mostrare il menu con le checkbox
         self.btn_class_select.showPopup = lambda: self.class_menu.exec(
             self.btn_class_select.mapToGlobal(self.btn_class_select.rect().bottomLeft())
         )
-
         class_bar.addWidget(self.btn_class_select, stretch=1)
 
         btn_add_class = QPushButton("Aggiungi oggetto...")
@@ -233,10 +606,9 @@ class MainWindow(QMainWindow):
         btn_remove_class = QPushButton("Rimuovi oggetto")
         btn_remove_class.clicked.connect(self._remove_object_class)
         class_bar.addWidget(btn_remove_class)
-
         root_layout.addLayout(class_bar)
 
-        # BARRA PULSANTI AVVIA / ESPORTA
+        # BARRA PULSANTI AVVIA / ESPORTA / TRAINING
         action_bar = QHBoxLayout()
         action_bar.setContentsMargins(0, 5, 0, 5)
 
@@ -248,11 +620,7 @@ class MainWindow(QMainWindow):
         self.btn_run.setFixedWidth(280)
         self.btn_run.setStyleSheet("""
             QPushButton {
-                background-color: #2e7d32;
-                color: white;
-                font-weight: bold;
-                font-size: 13px;
-                border-radius: 5px;
+                background-color: #2e7d32; color: white; font-weight: bold; font-size: 13px; border-radius: 5px;
             }
             QPushButton:hover { background-color: #388e3c; }
             QPushButton:disabled { background-color: #444444; color: #888888; }
@@ -265,11 +633,7 @@ class MainWindow(QMainWindow):
         self.btn_export.setFixedWidth(160)
         self.btn_export.setStyleSheet("""
             QPushButton {
-                background-color: #1565c0;
-                color: white;
-                font-weight: bold;
-                font-size: 13px;
-                border-radius: 5px;
+                background-color: #1565c0; color: white; font-weight: bold; font-size: 13px; border-radius: 5px;
             }
             QPushButton:hover { background-color: #1976d2; }
             QPushButton:disabled { background-color: #444444; color: #888888; }
@@ -277,8 +641,20 @@ class MainWindow(QMainWindow):
         self.btn_export.setEnabled(False)
         self.btn_export.clicked.connect(self._export_csv)
 
+        self.btn_training = QPushButton("TRAINING")
+        self.btn_training.setMinimumHeight(40)
+        self.btn_training.setFixedWidth(160)
+        self.btn_training.setStyleSheet("""
+            QPushButton {
+                background-color: #d84315; color: white; font-weight: bold; font-size: 13px; border-radius: 5px;
+            }
+            QPushButton:hover { background-color: #f4511e; }
+        """)
+        self.btn_training.clicked.connect(self._open_training_dialog)
+
         action_buttons_container.addWidget(self.btn_run)
         action_buttons_container.addWidget(self.btn_export)
+        action_buttons_container.addWidget(self.btn_training)
         action_buttons_container.addStretch(1)
 
         action_bar.addLayout(action_buttons_container)
@@ -375,39 +751,49 @@ class MainWindow(QMainWindow):
         self.spin_focal.setSingleStep(10.0)
         self.spin_focal.setValue(saved_config.focal_length_px)
         calib_form.addWidget(self.spin_focal)
-
-        calib_form.addWidget(QLabel("mm/px a 1m:"))
-        self.spin_mm_per_px = QDoubleSpinBox()
-        self.spin_mm_per_px.setRange(0.0, 100.0)
-        self.spin_mm_per_px.setDecimals(4)
-        self.spin_mm_per_px.setSingleStep(0.01)
-        self.spin_mm_per_px.setValue(saved_config.mm_per_px_at_1m or 0.0)
-        calib_form.addWidget(self.spin_mm_per_px)
         calib_form.addStretch(1)
 
         right_layout.addLayout(calib_form)
 
         self.spin_baseline.valueChanged.connect(self._save_calibration_fields)
         self.spin_focal.valueChanged.connect(self._save_calibration_fields)
-        self.spin_mm_per_px.valueChanged.connect(self._save_calibration_fields)
+
+        # NOTA: "Distanza (mm)" nella tabella sotto e' calcolata SOLO tramite
+        # triangolazione stereo reale (baseline + focale, gia' impostati sopra),
+        # senza bisogno di parametri aggiuntivi di altezza/inclinazione camera.
+        # Se la corrispondenza stereo non riesce in un punto, la cella mostra "-".
 
         right_layout.addWidget(QLabel("Rilevamenti Metrologici"))
-        self.table = QTableWidget(0, 6)
+        self.table = QTableWidget(0, 8)
         self.table.setHorizontalHeaderLabels([
-            "Coppia", "N soggetti", "ID Presenti", "Lunghezza (mm)", "Larghezza (mm)", "Confidenza"
+            "Coppia", "N soggetti", "ID Presenti", "Distanza (mm)",
+            "Lunghezza (mm)", "Larghezza (mm)", "Copertura (%)", "Confidenza",
         ])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         right_layout.addWidget(self.table)
 
-        # TABELLA STATISTICHE AGGREGATE PER SINGOLO ID
+        # Tabella 1: Statistiche Aggregate per ID
         right_layout.addWidget(QLabel("Statistiche Aggregate per Singolo ID"))
         self.summary_table = QTableWidget(0, 6)
         self.summary_table.setHorizontalHeaderLabels([
             "ID", "Classe", "Apparizioni", "Lunghezza Media (mm)", "Larghezza Media (mm)", "Confidenza Media"
         ])
         self.summary_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.summary_table.setMaximumHeight(180)
+        self.summary_table.setMaximumHeight(140)
         right_layout.addWidget(self.summary_table)
+
+        # Tabella 2: Statistiche Aggregate per Classe con SpinBox Integrato
+        lbl_class_summary = QLabel("Statistiche Aggregate per Classe")
+        lbl_class_summary.setStyleSheet("font-weight: bold; margin-top: 5px;")
+        right_layout.addWidget(lbl_class_summary)
+
+        self.class_summary_table = QTableWidget(0, 5)
+        self.class_summary_table.setHorizontalHeaderLabels([
+            "Classe", "N° Soggetti Rilevati", "N° Soggetti Corretto (manuale)", "Lunghezza Media (mm)", "Larghezza Media (mm)"
+        ])
+        self.class_summary_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.class_summary_table.setMaximumHeight(150)
+        right_layout.addWidget(self.class_summary_table)
 
         self.splitter.addWidget(right_panel)
 
@@ -418,17 +804,20 @@ class MainWindow(QMainWindow):
 
         root_layout.addWidget(self.splitter, stretch=1)
 
+    def _open_training_dialog(self) -> None:
+        dialog = TrainingDialog(self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self._refresh_models()
+
     def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
         if hasattr(self, 'pair_list') and self.pair_list.currentRow() >= 0:
             self._show_pair_preview(self.pair_list.currentRow())
 
     def _current_stereo_config(self) -> StereoConfig:
-        mm_per_px = self.spin_mm_per_px.value()
         return StereoConfig(
             baseline_mm=self.spin_baseline.value(),
             focal_length_px=self.spin_focal.value(),
-            mm_per_px_at_1m=mm_per_px if mm_per_px > 0 else None,
         )
 
     def _save_calibration_fields(self, _value: float = 0.0) -> None:
@@ -469,16 +858,13 @@ class MainWindow(QMainWindow):
         dialog.resize(pixmap.width() + 16, pixmap.height() + 32)
         dialog.exec()
 
-    # --- GESTIONE SELEZIONE MULTIPLA CLASSI ---
     def _refresh_object_classes(self) -> None:
         selected_classes = self._get_selected_classes()
-
         self.class_menu.clear()
         self.class_checkboxes.clear()
 
         classes = load_classes()
 
-        # Opzione "Tutti gli oggetti"
         chk_all = QCheckBox(ALL_OBJECTS)
         chk_all.setStyleSheet("padding: 4px 8px; font-weight: bold;")
         action_all = QWidgetAction(self.class_menu)
@@ -491,7 +877,6 @@ class MainWindow(QMainWindow):
 
         chk_all.toggled.connect(self._on_all_objects_toggled)
 
-        # Classi singole
         for cls_name in classes:
             chk = QCheckBox(cls_name)
             chk.setStyleSheet("padding: 4px 8px;")
@@ -538,7 +923,6 @@ class MainWindow(QMainWindow):
 
     def _update_class_button_text(self) -> None:
         selected = self._get_selected_classes()
-
         if ALL_OBJECTS in selected or not selected:
             text = "Tutti gli oggetti"
         elif len(selected) == 1:
@@ -546,7 +930,6 @@ class MainWindow(QMainWindow):
         else:
             text = f"{len(selected)} classi selezionate ({', '.join(selected)})"
 
-        # Aggiorna il testo visualizzato nella QComboBox
         self.btn_class_select.clear()
         self.btn_class_select.addItem(text)
 
@@ -623,12 +1006,7 @@ class MainWindow(QMainWindow):
         MODELS_DIR.mkdir(parents=True, exist_ok=True)
         initial_dir = str(MODELS_DIR.resolve())
 
-        source_path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Seleziona modello YOLO (.pt)",
-            initial_dir,
-            "Modelli YOLO (*.pt)"
-        )
+        source_path, _ = QFileDialog.getOpenFileName(self, "Seleziona modello YOLO (.pt)", initial_dir, "Modelli YOLO (*.pt)")
         if not source_path:
             return
 
@@ -672,11 +1050,7 @@ class MainWindow(QMainWindow):
         DATASETS_DIR.mkdir(parents=True, exist_ok=True)
         initial_dir = str(DATASETS_DIR.resolve())
 
-        source_dir = QFileDialog.getExistingDirectory(
-            self,
-            "Seleziona cartella con le acquisizioni stereo",
-            initial_dir
-        )
+        source_dir = QFileDialog.getExistingDirectory(self, "Seleziona cartella con le acquisizioni stereo", initial_dir)
         if not source_dir:
             return
 
@@ -742,7 +1116,6 @@ class MainWindow(QMainWindow):
         model_path = str(MODELS_DIR / model_name)
         selected_classes = self._get_selected_classes()
 
-        # FIX DEL BUG 'list object has no attribute strip'
         if ALL_OBJECTS in selected_classes or not selected_classes:
             target_label = None
         elif len(selected_classes) == 1:
@@ -751,9 +1124,12 @@ class MainWindow(QMainWindow):
             target_label = selected_classes
 
         self.results.clear()
+        self.user_counts.clear()
+        self.class_user_counts.clear()
         self.pair_list.clear()
         self.table.setRowCount(0)
         self.summary_table.setRowCount(0)
+        self.class_summary_table.setRowCount(0)
 
         self.btn_toggle_changes.blockSignals(True)
         self.btn_toggle_changes.setChecked(False)
@@ -780,23 +1156,42 @@ class MainWindow(QMainWindow):
 
     def _on_pair_done(self, result: PairResult, cumulative_count: int) -> None:
         self.results.append(result)
+        idx = len(self.results) - 1
+        count = self.user_counts.get(idx, cumulative_count)
 
-        item = QListWidgetItem(f"{result.timestamp} ({len(result.detections)} elementi)")
-        item.setData(Qt.ItemDataRole.UserRole, (len(self.results) - 1, None))
+        item = QListWidgetItem(f"{result.timestamp} ({count} elementi)")
+        item.setData(Qt.ItemDataRole.UserRole, (idx, None))
         self.pair_list.addItem(item)
 
         current_ids = sorted({det.track_id for det in result.detections if det.track_id is not None})
         ids_str = ", ".join(current_ids) if current_ids else "-"
 
+        # Percentuale di pixel del frame coperta dai soggetti rilevati (somma delle
+        # aree dei contorni / area totale immagine), calcolata UNA volta per coppia.
+        coverage_pct = 0.0
+        if result.left_image is not None and result.left_image.size > 0:
+            frame_area_px = result.left_image.shape[0] * result.left_image.shape[1]
+            covered_px = sum(cv2.contourArea(det.contour) for det in result.detections)
+            coverage_pct = (covered_px / frame_area_px) * 100.0 if frame_area_px > 0 else 0.0
+
         for det in result.detections:
             row = self.table.rowCount()
             self.table.insertRow(row)
             self.table.setItem(row, 0, QTableWidgetItem(result.timestamp))
-            self.table.setItem(row, 1, QTableWidgetItem(str(cumulative_count)))
+            self.table.setItem(row, 1, QTableWidgetItem(str(count)))
             self.table.setItem(row, 2, QTableWidgetItem(ids_str))
-            self.table.setItem(row, 3, QTableWidgetItem(f"{det.length_mm:.1f}"))
-            self.table.setItem(row, 4, QTableWidgetItem(f"{det.width_mm:.1f}"))
-            self.table.setItem(row, 5, QTableWidgetItem(f"{det.confidence:.2f}"))
+            self.table.setItem(
+                row, 3,
+                QTableWidgetItem(f"{det.contact_distance_mm:.1f}" if det.contact_distance_mm is not None else "-")
+            )
+            self.table.setItem(
+                row, 4, QTableWidgetItem(f"{det.length_mm:.1f}" if det.length_mm is not None else "-")
+            )
+            self.table.setItem(
+                row, 5, QTableWidgetItem(f"{det.width_mm:.1f}" if det.width_mm is not None else "-")
+            )
+            self.table.setItem(row, 6, QTableWidgetItem(f"{coverage_pct:.2f}"))
+            self.table.setItem(row, 7, QTableWidgetItem(f"{det.confidence:.2f}"))
 
     def _on_finished(self) -> None:
         self.progress_bar.setVisible(False)
@@ -822,20 +1217,14 @@ class MainWindow(QMainWindow):
 
             if idx == 0:
                 if current_ids:
-                    changes_info.append({
-                        "index": idx,
-                        "target_ids": current_ids,
-                    })
+                    changes_info.append({"index": idx, "target_ids": current_ids})
             else:
                 added = current_ids - prev_ids
                 removed = prev_ids - current_ids
                 changed_ids = added | removed
 
                 if changed_ids:
-                    changes_info.append({
-                        "index": idx,
-                        "target_ids": changed_ids,
-                    })
+                    changes_info.append({"index": idx, "target_ids": changed_ids})
 
             prev_ids = current_ids
 
@@ -862,7 +1251,8 @@ class MainWindow(QMainWindow):
     def _rebuild_pair_list_full(self) -> None:
         self.pair_list.clear()
         for idx, result in enumerate(self.results):
-            item = QListWidgetItem(f"{result.timestamp} ({len(result.detections)} elementi)")
+            count = self.user_counts.get(idx, len(result.detections))
+            item = QListWidgetItem(f"{result.timestamp} ({count} elementi)")
             item.setData(Qt.ItemDataRole.UserRole, (idx, None))
             self.pair_list.addItem(item)
 
@@ -886,11 +1276,12 @@ class MainWindow(QMainWindow):
 
             for idx in block["range"]:
                 result = self.results[idx]
+                count = self.user_counts.get(idx, len(result.detections))
 
                 if idx == var_idx:
-                    item_text = f"Variazione {block_num} - {result.timestamp} ({len(result.detections)} elementi)"
+                    item_text = f"Variazione {block_num} - {result.timestamp} ({count} elementi)"
                 else:
-                    item_text = f"{result.timestamp} ({len(result.detections)} elementi)"
+                    item_text = f"{result.timestamp} ({count} elementi)"
 
                 item = QListWidgetItem(item_text)
                 item.setData(Qt.ItemDataRole.UserRole, (idx, target_ids))
@@ -911,28 +1302,73 @@ class MainWindow(QMainWindow):
                 break
 
     def _update_summary(self) -> None:
-        """Popola la QTableWidget dedicata con i dati riassuntivi calcolati per ogni singolo ID."""
         try:
             df = detections_to_dataframe(self.results)
             summary_df = compute_summary(df)
 
             self.summary_table.setRowCount(0)
+            if not summary_df.empty:
+                for _, row in summary_df.iterrows():
+                    r = self.summary_table.rowCount()
+                    self.summary_table.insertRow(r)
+                    self.summary_table.setItem(r, 0, QTableWidgetItem(str(row["ID"])))
+                    self.summary_table.setItem(r, 1, QTableWidgetItem(str(row["Classe"])))
+                    self.summary_table.setItem(r, 2, QTableWidgetItem(str(row["Apparizioni"])))
+                    self.summary_table.setItem(r, 3, QTableWidgetItem(f"{row['Lunghezza Media (mm)']:.2f}"))
+                    self.summary_table.setItem(r, 4, QTableWidgetItem(f"{row['Larghezza Media (mm)']:.2f}"))
+                    self.summary_table.setItem(r, 5, QTableWidgetItem(f"{row['Confidenza Media']:.3f}"))
 
-            if summary_df.empty:
-                return
+            # Popolamento Tabella Statistiche Aggregate per Classe con QSpinBox
+            self.class_summary_table.setRowCount(0)
 
-            for _, row in summary_df.iterrows():
-                r = self.summary_table.rowCount()
-                self.summary_table.insertRow(r)
-                self.summary_table.setItem(r, 0, QTableWidgetItem(str(row["ID"])))
-                self.summary_table.setItem(r, 1, QTableWidgetItem(str(row["Classe"])))
-                self.summary_table.setItem(r, 2, QTableWidgetItem(str(row["Apparizioni"])))
-                self.summary_table.setItem(r, 3, QTableWidgetItem(f"{row['Lunghezza Media (mm)']:.2f}"))
-                self.summary_table.setItem(r, 4, QTableWidgetItem(f"{row['Larghezza Media (mm)']:.2f}"))
-                self.summary_table.setItem(r, 5, QTableWidgetItem(f"{row['Confidenza Media']:.3f}"))
+            if not df.empty:
+                grouped = df.groupby("label")
+                for cls_name, group in grouped:
+                    r = self.class_summary_table.rowCount()
+                    self.class_summary_table.insertRow(r)
+
+                    detected_count = len(group["track_id"].unique())
+                    corrected_count = self.class_user_counts.get(cls_name, detected_count)
+
+                    # Colonna 0: Classe
+                    item_cls = QTableWidgetItem(str(cls_name))
+                    item_cls.setFlags(item_cls.flags() & ~Qt.ItemFlag.ItemIsEditable)
+
+                    # Colonna 1: N° Soggetti Rilevati
+                    item_det = QTableWidgetItem(str(detected_count))
+                    item_det.setFlags(item_det.flags() & ~Qt.ItemFlag.ItemIsEditable)
+
+                    # Colonna 2: SpinBox integrato con stile di sistema neutro
+                    spin = QSpinBox()
+                    spin.setRange(0, 99999)
+                    spin.setValue(corrected_count)
+
+                    # Connessione al segnale di cambio valore
+                    spin.valueChanged.connect(
+                        lambda val, name=cls_name: self._on_class_spinbox_changed(name, val)
+                    )
+
+                    # Colonna 3 & 4: Medie
+                    avg_len = group["length_mm"].mean()
+                    item_len = QTableWidgetItem(f"{avg_len:.2f}")
+                    item_len.setFlags(item_len.flags() & ~Qt.ItemFlag.ItemIsEditable)
+
+                    avg_wid = group["width_mm"].mean()
+                    item_wid = QTableWidgetItem(f"{avg_wid:.2f}")
+                    item_wid.setFlags(item_wid.flags() & ~Qt.ItemFlag.ItemIsEditable)
+
+                    self.class_summary_table.setItem(r, 0, item_cls)
+                    self.class_summary_table.setItem(r, 1, item_det)
+                    self.class_summary_table.setCellWidget(r, 2, spin)
+                    self.class_summary_table.setItem(r, 3, item_len)
+                    self.class_summary_table.setItem(r, 4, item_wid)
 
         except Exception as exc:
             QMessageBox.critical(self, "Errore", f"Impossibile aggiornare la tabella riassuntiva:\n{exc}")
+
+    def _on_class_spinbox_changed(self, class_name: str, new_value: int) -> None:
+        """Aggiorna il conteggio memorizzato quando si usano i pulsanti dello SpinBox."""
+        self.class_user_counts[class_name] = new_value
 
     def _show_pair_preview(self, row: int) -> None:
         if row < 0 or row >= self.pair_list.count():
@@ -951,7 +1387,6 @@ class MainWindow(QMainWindow):
             return
 
         result = self.results[idx]
-
         filtered_overlay = render_overlay(result.left_image, result.detections, filter_ids=target_ids)
 
         self._current_left_image = filtered_overlay
@@ -974,17 +1409,12 @@ class MainWindow(QMainWindow):
         target_h = max(label.height(), 100)
 
         pixmap = QPixmap.fromImage(qimg).scaled(
-            target_w,
-            target_h,
-            Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation,
+            target_w, target_h, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation,
         )
         label.setPixmap(pixmap)
 
     def _export_csv(self) -> None:
-        path, _ = QFileDialog.getSaveFileName(
-            self, "Esporta report CSV", "risultati_metrologia.csv", "CSV (*.csv)"
-        )
+        path, _ = QFileDialog.getSaveFileName(self, "Esporta report CSV", "risultati_metrologia.csv", "CSV (*.csv)")
         if path:
             try:
                 df = detections_to_dataframe(self.results)
@@ -992,6 +1422,4 @@ class MainWindow(QMainWindow):
             except Exception as exc:
                 QMessageBox.critical(self, "Errore esportazione", f"Impossibile esportare il CSV:\n{exc}")
                 return
-            QMessageBox.information(
-                self, "Esportazione completata", f"File salvato con successo in:\n{path}"
-            )
+            QMessageBox.information(self, "Esportazione completata", f"File salvato con successo in:\n{path}")

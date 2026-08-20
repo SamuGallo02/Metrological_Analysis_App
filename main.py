@@ -4,7 +4,7 @@ Applicativo per l'Analisi Metrologica Stereo-Fotogrammetrica
 Modulo principale per l'inizializzazione dell'interfaccia grafica
 e l'orchestrazione delle dipendenze di sistema.
 
-Autore: Candidato Tesi
+Autore: Samuele Gallo
 """
 
 from __future__ import annotations

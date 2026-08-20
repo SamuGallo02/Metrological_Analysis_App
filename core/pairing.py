@@ -10,6 +10,8 @@ cartella scelta, ciascuna con i file nominati con il solo timestamp Unix
 epoch (es. "1723130400.jpg") — esattamente come genera il demone
 Sensing-Rigs su Raspberry Pi (vedi constants.c: DAEMON_PATH_CAP="captures/",
 DAEMON_PATH_RX="rx/", DAEMON_PATH_LX="lx/").
+
+Autore: Samuele Gallo
 """
 
 from __future__ import annotations
