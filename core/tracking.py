@@ -15,6 +15,27 @@ import numpy as np
 
 from core.analysis import ObjectDetection
 
+
+def generate_adaptive_prefixes(class_labels: List[str]) -> Dict[str, str]:
+    """
+    Genera un dizionario {nome_classe: prefisso_univoco_formattato} in modo
+    adattivo (es. 'B', 'Ce'), usato da tutte le pagine di analisi per
+    formattare gli ID di tracciamento (es. "Ce-1").
+    """
+    cleaned_map = {label: "".join(c for c in label.lower() if c.isalnum()) or "obj" for label in set(class_labels)}
+    prefixes: Dict[str, str] = {}
+
+    for original_label, cleaned in cleaned_map.items():
+        length = 1
+        while True:
+            candidate = cleaned[:length]
+            if candidate not in prefixes.values() or length >= len(cleaned):
+                prefixes[original_label] = candidate.capitalize()
+                break
+            length += 1
+
+    return prefixes
+
 MAX_MATCH_DISTANCE_PX = 250.0  # Tolleranza di movimento espansa per frame distanziati
 MAX_MISSED_FRAMES = 10        # Mantiene in memoria la traccia piu a lungo se la detection cede
 MIN_IOU_THRESHOLD = 0.15       # Soglia minima di sovrapposizione per considerare lo stesso oggetto

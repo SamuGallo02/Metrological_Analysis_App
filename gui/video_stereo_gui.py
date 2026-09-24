@@ -1,21 +1,15 @@
 """
-Modulo dell'Interfaccia Grafica per l'Analisi Video — modalita' Singolo (un
-solo file video, non stereo). Identica in tutto e per tutto all'Analisi
-Stereo TRANNE le misure: nessuna seconda camera, quindi nessuna stima di
-dimensioni o distanza reale. In piu' rispetto alle altre pagine: esporta
-anche un video annotato con le maschere sovrimpresse.
-
-La selezione della sorgente segue lo stesso schema "cartella dataset +
-Aggiungi cartella" delle altre tre pagine: ogni sottocartella di
-Dataset_Video/ deve contenere UN SOLO file video (non una coppia rx/lx,
-riservata alla modalita' Stereo).
+Modulo dell'Interfaccia Grafica per l'Analisi Video — modalita' Stereo (due
+video sincronizzati, sx/dx). Identica in tutto e per tutto all'Analisi
+Stereo su foto: stessa pipeline di misura reale (baseline + focale),
+applicata frame per frame invece che a singole coppie di foto. Esporta
+anche un video annotato (camera sinistra) con le maschere sovrimpresse.
 
 Autore: Samuele Gallo
 """
 
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 from typing import List, Optional, Set, Union
 
@@ -23,55 +17,63 @@ import cv2
 from PySide6.QtCore import QThread, Signal
 from PySide6.QtWidgets import QComboBox, QFileDialog, QHBoxLayout, QLabel, QMessageBox, QPushButton, QVBoxLayout
 
-from core.analysis import ObjectAnalyzer, PairResult, render_overlay
-from core.pairing import find_single_video, is_stereo_dataset_folder
+from core.analysis import ObjectAnalyzer, PairResult, StereoConfig, render_overlay
+from core.pairing import find_stereo_video_pair
 from core.tracking import ObjectTracker, generate_adaptive_prefixes
 from gui.analysis_page_base import AnalysisPageBase
 
-DATASETS_VIDEO_DIR = Path("Dataset_Video")
+DATASETS_VIDEO_STEREO_DIR = Path("Dataset_Video_Stereo")
 
 
-def scan_video_datasets(root: Path = DATASETS_VIDEO_DIR) -> List[str]:
+def scan_video_stereo_datasets(root: Path = DATASETS_VIDEO_STEREO_DIR) -> List[str]:
     if not root.is_dir():
         return []
     return sorted(f.name for f in root.iterdir() if f.is_dir())
 
 
-class VideoAnalysisWorker(QThread):
-    """Thread di analisi per un VIDEO SINGOLO (non stereo): rilevamento + tracciamento frame per frame."""
+class VideoStereoAnalysisWorker(QThread):
+    """Thread di analisi per una coppia di VIDEO sincronizzati (sx/dx), con misure reali."""
     progress = Signal(int, int)
     pair_done = Signal(object, int)
     finished_all = Signal()
     error = Signal(str)
 
     def __init__(
-            self, video_path: Path, output_video_path: Path, model_path: str,
-            target_label: Optional[Union[str, List[str]]] = None,
+            self, right_video: Path, left_video: Path, output_video_path: Path, model_path: str,
+            target_label: Optional[Union[str, List[str]]] = None, stereo_config: Optional[StereoConfig] = None,
     ) -> None:
         super().__init__()
-        self.video_path = video_path
+        self.right_video = right_video
+        self.left_video = left_video
         self.output_video_path = output_video_path
         self.model_path = model_path
         self.target_label = target_label
+        self.stereo_config = stereo_config or StereoConfig()
         self._stop_requested = False
 
     def run(self) -> None:
-        cap = cv2.VideoCapture(str(self.video_path))
-        if not cap.isOpened():
-            self.error.emit(f"Impossibile aprire il file video: {self.video_path}")
+        cap_right = cv2.VideoCapture(str(self.right_video))
+        cap_left = cv2.VideoCapture(str(self.left_video))
+
+        if not cap_right.isOpened() or not cap_left.isOpened():
+            self.error.emit("Impossibile aprire uno dei due file video sincronizzati.")
+            cap_right.release()
+            cap_left.release()
             return
 
         writer = None
         try:
-            fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
-            width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-            height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            fps = cap_left.get(cv2.CAP_PROP_FPS) or 25.0
+            width = int(cap_left.get(cv2.CAP_PROP_FRAME_WIDTH))
+            height = int(cap_left.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            total_frames = min(
+                int(cap_left.get(cv2.CAP_PROP_FRAME_COUNT)), int(cap_right.get(cv2.CAP_PROP_FRAME_COUNT))
+            )
 
             fourcc = cv2.VideoWriter_fourcc(*"mp4v")
             writer = cv2.VideoWriter(str(self.output_video_path), fourcc, fps, (width, height))
 
-            analyzer = ObjectAnalyzer(self.model_path)
+            analyzer = ObjectAnalyzer(self.model_path, self.stereo_config)
             tracker = ObjectTracker()
             seen_classes: Set[str] = set()
 
@@ -86,34 +88,31 @@ class VideoAnalysisWorker(QThread):
                 if self._stop_requested:
                     break
 
-                ok, frame = cap.read()
-                if not ok:
+                ok_l, left_frame = cap_left.read()
+                ok_r, right_frame = cap_right.read()
+                if not ok_l or not ok_r:
                     break
 
                 frame_idx += 1
                 timestamp = f"frame_{frame_idx:06d}"
 
-                detections = analyzer.detect_in_image(frame, timestamp=timestamp)
+                result = analyzer.analyze_frame_pair(timestamp, right_frame, left_frame, target_label=None)
                 if target_labels_lower is not None:
-                    detections = [d for d in detections if d.label.strip().lower() in target_labels_lower]
+                    result.detections = [d for d in result.detections if d.label.strip().lower() in target_labels_lower]
 
-                tracker.update(detections)
-                for det in detections:
+                tracker.update(result.detections)
+                for det in result.detections:
                     seen_classes.add(det.label)
                 prefix_map = generate_adaptive_prefixes(list(seen_classes))
-                for det in detections:
+                for det in result.detections:
                     if det.track_id is not None:
                         prefix = prefix_map.get(det.label, "Obj")
                         num_part = str(det.track_id).split("-")[-1].split("_")[-1]
                         det.track_id = f"{prefix}-{num_part}"
 
-                overlay = render_overlay(frame, detections)
-                writer.write(overlay)
+                result.overlay_image = render_overlay(result.left_image, result.detections)
+                writer.write(result.overlay_image)
 
-                result = PairResult(
-                    timestamp=timestamp, right_image=frame, left_image=frame,
-                    detections=detections, overlay_image=overlay,
-                )
                 self.pair_done.emit(result, tracker.total_count)
                 if total_frames > 0:
                     self.progress.emit(frame_idx, total_frames)
@@ -123,7 +122,8 @@ class VideoAnalysisWorker(QThread):
         except Exception as exc:
             self.error.emit(str(exc))
         finally:
-            cap.release()
+            cap_right.release()
+            cap_left.release()
             if writer is not None:
                 writer.release()
 
@@ -131,12 +131,12 @@ class VideoAnalysisWorker(QThread):
         self._stop_requested = True
 
 
-class VideoAnalysisPage(AnalysisPageBase):
-    """Analisi Video — modalita' Singolo: cartella con un video, nessuna misura, esporta video annotato."""
+class VideoStereoAnalysisPage(AnalysisPageBase):
+    """Analisi Video — modalita' Stereo: due video sincronizzati (rx/lx), misure reali."""
 
     def __init__(self, on_home, parent: Optional[object] = None) -> None:
         self.selected_folder: Optional[str] = None
-        super().__init__(on_home, "Analisi Video — Singolo", dual_preview=False, show_measurements=False, parent=parent)
+        super().__init__(on_home, "Analisi Video — Stereo", dual_preview=True, show_measurements=True, parent=parent)
 
     def _build_source_selector_ui(self, layout: QVBoxLayout) -> None:
         dataset_bar = QHBoxLayout()
@@ -158,30 +158,23 @@ class VideoAnalysisPage(AnalysisPageBase):
         dataset_bar.addWidget(btn_refresh_datasets)
         layout.addLayout(dataset_bar)
 
-        note = QLabel("La cartella deve contenere UN SOLO file video (non rx/lx: quello è per la modalità Stereo).")
+        note = QLabel("La cartella deve contenere le sottocartelle rx/ e lx/, ciascuna con un solo file video.")
         note.setStyleSheet("color: #aaaaaa; font-style: italic;")
         layout.addWidget(note)
 
         self._refresh_datasets()
 
     def _add_dataset(self) -> None:
-        DATASETS_VIDEO_DIR.mkdir(parents=True, exist_ok=True)
+        DATASETS_VIDEO_STEREO_DIR.mkdir(parents=True, exist_ok=True)
         source_dir = QFileDialog.getExistingDirectory(
-            self, "Seleziona cartella con un video (non rx/lx)", str(DATASETS_VIDEO_DIR.resolve())
+            self, "Seleziona cartella con i due video sincronizzati (rx/lx)", str(DATASETS_VIDEO_STEREO_DIR.resolve())
         )
         if not source_dir:
             return
 
+        import shutil
         source = Path(source_dir)
-        if is_stereo_dataset_folder(source):
-            QMessageBox.critical(
-                self, "Cartella non valida",
-                f"'{source.name}' contiene le sottocartelle rx/lx: è un dataset per la modalità Video Stereo, "
-                f"non per il Video Singolo. Selezionala nella modalità Stereo invece.",
-            )
-            return
-
-        dest = DATASETS_VIDEO_DIR / source.name
+        dest = DATASETS_VIDEO_STEREO_DIR / source.name
         if dest.exists():
             reply = QMessageBox.question(
                 self, "Cartella esistente", f"Una cartella denominata '{source.name}' esiste già. Sovrascrivere?",
@@ -205,14 +198,14 @@ class VideoAnalysisPage(AnalysisPageBase):
         self.folder_combo.setCurrentText(source.name)
 
     def _refresh_datasets(self) -> None:
-        DATASETS_VIDEO_DIR.mkdir(parents=True, exist_ok=True)
+        DATASETS_VIDEO_STEREO_DIR.mkdir(parents=True, exist_ok=True)
         current = self.folder_combo.currentText()
         self.folder_combo.blockSignals(True)
         self.folder_combo.clear()
 
-        datasets = scan_video_datasets()
+        datasets = scan_video_stereo_datasets()
         if not datasets:
-            self.folder_combo.addItem("Nessuna cartella trovata in Dataset_Video/")
+            self.folder_combo.addItem("Nessuna cartella trovata in Dataset_Video_Stereo/")
             self.folder_combo.setEnabled(False)
             self.selected_folder = None
         else:
@@ -220,14 +213,14 @@ class VideoAnalysisPage(AnalysisPageBase):
             self.folder_combo.addItems(datasets)
             if current in datasets:
                 self.folder_combo.setCurrentText(current)
-            self.selected_folder = str(DATASETS_VIDEO_DIR / self.folder_combo.currentText())
+            self.selected_folder = str(DATASETS_VIDEO_STEREO_DIR / self.folder_combo.currentText())
 
         self.folder_combo.blockSignals(False)
         self._update_run_button_state()
 
     def _on_folder_selection_changed(self, _index: int) -> None:
         name = self.folder_combo.currentText()
-        self.selected_folder = str(DATASETS_VIDEO_DIR / name) if name else None
+        self.selected_folder = str(DATASETS_VIDEO_STEREO_DIR / name) if name else None
         self._update_run_button_state()
 
     def _update_run_button_state(self) -> None:
@@ -237,28 +230,28 @@ class VideoAnalysisPage(AnalysisPageBase):
 
     def _resolve_source(self):
         if not self.selected_folder:
-            raise ValueError("Seleziona una cartella dataset valida (con un solo file video).")
+            raise ValueError("Seleziona una cartella dataset valida (con due video sincronizzati in rx/lx).")
 
-        video_path = find_single_video(Path(self.selected_folder))
+        pair = find_stereo_video_pair(Path(self.selected_folder))
 
         save_path, _ = QFileDialog.getSaveFileName(
             self, "Salva video annotato come",
-            str(video_path.with_name(video_path.stem + "_annotato.mp4")),
+            str(pair.left_video.with_name(pair.left_video.stem + "_annotato.mp4")),
             "Video MP4 (*.mp4)",
         )
         if not save_path:
             raise ValueError("Esportazione annullata: scegli dove salvare il video annotato per procedere.")
 
-        return video_path, Path(save_path)
+        return pair.right_video, pair.left_video, Path(save_path)
 
     def _create_worker(self, model_path, target_label, stereo_config, source):
-        video_path, output_path = source
-        return VideoAnalysisWorker(video_path, output_path, model_path, target_label)
+        right_video, left_video, output_path = source
+        return VideoStereoAnalysisWorker(right_video, left_video, output_path, model_path, target_label, stereo_config)
 
     def _on_finished(self) -> None:
         super()._on_finished()
         if self.worker is not None and getattr(self.worker, "output_video_path", None):
             QMessageBox.information(
                 self, "Analisi completata",
-                f"Video annotato salvato in:\n{self.worker.output_video_path}",
+                f"Video annotato (camera sinistra) salvato in:\n{self.worker.output_video_path}",
             )

@@ -26,10 +26,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from gui.common_widgets import build_top_bar
 from gui.gui_components import HardwareAccelerationWidget
+from gui.home_layout import centered_content
 
 MODELS_DIR = Path("models")
-TDATASET_DIR = Path("tDataset")
+TDATASET_DIR = Path("Dataset_Training")
 
 
 def check_internet_connection() -> bool:
@@ -128,16 +130,12 @@ class TrainingPage(QWidget):
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
+        layout.addLayout(build_top_bar(self, self.on_home))
 
-        top_bar = QHBoxLayout()
-        btn_back = QPushButton("← Torna alla home")
-        btn_back.clicked.connect(self.on_home)
-        top_bar.addWidget(btn_back)
-        top_bar.addStretch(1)
-        layout.addLayout(top_bar)
+        content = QVBoxLayout()
 
         title = QLabel("<h2>Addestramento Nuovo Modello YOLO</h2>")
-        layout.addWidget(title)
+        content.addWidget(title)
 
         hw_box = QWidget()
         hw_box.setStyleSheet("background-color: #2b2b2b; border-radius: 6px; padding: 10px;")
@@ -156,13 +154,13 @@ class TrainingPage(QWidget):
             btn_colab.clicked.connect(self._open_colab)
             hw_layout.addWidget(btn_colab)
 
-        layout.addWidget(hw_box)
+        content.addWidget(hw_box)
 
         # Pannello diagnostico esteso: permette di verificare lo stato CUDA nel
         # dettaglio e, se necessario, reinstallare PyTorch con supporto GPU
         # direttamente da qui prima di avviare un training pesante.
         self.hw_widget = HardwareAccelerationWidget(self)
-        layout.addWidget(self.hw_widget)
+        content.addWidget(self.hw_widget)
 
         form_layout = QFormLayout()
 
@@ -171,7 +169,7 @@ class TrainingPage(QWidget):
         self.combo_tdatasets.currentIndexChanged.connect(self._on_tdataset_selected)
 
         btn_add_tdataset = QPushButton("Aggiungi Cartella...")
-        btn_add_tdataset.setToolTip("Copia una nuova cartella dataset all'interno di tDataset/")
+        btn_add_tdataset.setToolTip("Copia una nuova cartella dataset all'interno di Dataset_Training/")
         btn_add_tdataset.clicked.connect(self._add_tdataset_folder)
 
         tdataset_layout.addWidget(self.combo_tdatasets, stretch=1)
@@ -213,18 +211,20 @@ class TrainingPage(QWidget):
         self.spin_batch.setValue(8)
         form_layout.addRow("Batch Size:", self.spin_batch)
 
-        layout.addLayout(form_layout)
+        content.addLayout(form_layout)
 
-        layout.addWidget(QLabel("Console di avanzamento:"))
+        content.addWidget(QLabel("Console di avanzamento:"))
         self.txt_console = QTextEdit()
         self.txt_console.setReadOnly(True)
         self.txt_console.setStyleSheet("background-color: #121212; color: #00ff00; font-family: monospace;")
-        layout.addWidget(self.txt_console, stretch=1)
+        content.addWidget(self.txt_console, stretch=1)
 
         self.btn_start = QPushButton("AVVIA TRAINING LOCALE")
         self.btn_start.setStyleSheet("background-color: #2e7d32; color: white; font-weight: bold; padding: 8px;")
         self.btn_start.clicked.connect(self._start_training)
-        layout.addWidget(self.btn_start)
+        content.addWidget(self.btn_start)
+
+        layout.addLayout(centered_content(content, max_width=900), stretch=1)
 
     def _populate_tdatasets(self) -> None:
         self.combo_tdatasets.clear()
@@ -277,7 +277,7 @@ class TrainingPage(QWidget):
         if dest_path.exists():
             reply = QMessageBox.question(
                 self, "Cartella Esistente",
-                f"La cartella '{source_path.name}' esiste già in tDataset/. Sovrascrivere?",
+                f"La cartella '{source_path.name}' esiste già in Dataset_Training/. Sovrascrivere?",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
             )
             if reply != QMessageBox.StandardButton.Yes:

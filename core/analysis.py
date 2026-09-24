@@ -216,7 +216,7 @@ class ObjectAnalyzer:
             target_label: Optional[str] = None,
     ) -> PairResult:
         """
-        Esegue la rilevazione sulla CAMERA SINISTRA (lx).
+        Legge una coppia di immagini stereo da disco ed esegue analyze_frame_pair.
         """
         right_img = cv2.imread(str(right_path))
         left_img = cv2.imread(str(left_path))
@@ -224,6 +224,23 @@ class ObjectAnalyzer:
         if right_img is None or left_img is None:
             raise FileNotFoundError(f"Errore nella lettura dei file: {right_path} o {left_path}")
 
+        return self.analyze_frame_pair(timestamp, right_img, left_img, target_label=target_label)
+
+    def analyze_frame_pair(
+            self,
+            timestamp: str,
+            right_img: np.ndarray,
+            left_img: np.ndarray,
+            target_label: Optional[str] = None,
+    ) -> PairResult:
+        """
+        Esegue l'intera pipeline stereo (disparita' + rilevamento + misure) su una
+        coppia di immagini GIA' IN MEMORIA. Usata sia da analyze_pair (immagini
+        lette da disco) sia dall'analisi video-stereo (fotogrammi letti da due
+        VideoCapture sincronizzati) — la logica di misura e' quindi UNA sola,
+        condivisa da entrambi i percorsi, invece di essere duplicata.
+        Esegue la rilevazione sulla CAMERA SINISTRA (lx).
+        """
         result = PairResult(timestamp=timestamp, right_image=right_img, left_image=left_img)
 
         # Mappa di disparita' calcolata UNA volta per coppia (non per rilevamento):
