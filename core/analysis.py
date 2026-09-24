@@ -45,6 +45,49 @@ def list_model_classes(model_path: str) -> List[str]:
     return list(names)
 
 
+def _extract_raw_detections(predictions, timestamp: str) -> List["ObjectDetection"]:
+    """
+    Estrae le ObjectDetection grezze (contorno, ellisse, classe, confidenza) da
+    un risultato di predizione YOLO — SENZA alcuna stima di profondita'/dimensioni
+    reali, che richiede una seconda camera e viene aggiunta a parte da chi chiama
+    questa funzione quando (e solo quando) una coppia stereo e' disponibile.
+    Condivisa da analyze_pair (foto stereo), analyze_single_image (foto singola)
+    e ObjectAnalyzer.detect_in_image (un frame video alla volta).
+    """
+    detections: List[ObjectDetection] = []
+    if predictions.masks is None:
+        return detections
+
+    for mask_xy, box in zip(predictions.masks.xy, predictions.boxes):
+        contour = mask_xy.astype(np.int32).reshape(-1, 1, 2)
+        if len(contour) < 5:
+            continue
+
+        ellipse = cv2.fitEllipse(contour)
+        bbox = tuple(int(v) for v in box.xyxy[0].tolist())
+        confidence = float(box.conf[0])
+        cls_id = int(box.cls[0])
+
+        class_name = (
+            predictions.names.get(cls_id, f"Class_{cls_id}")
+            if hasattr(predictions, "names")
+            else f"Class_{cls_id}"
+        )
+
+        detections.append(ObjectDetection(
+            pair_timestamp=timestamp,
+            label=class_name,
+            confidence=confidence,
+            bbox_xyxy=bbox,
+            contour=contour,
+            ellipse=ellipse,
+            length_mm=None,
+            width_mm=None,
+        ))
+
+    return detections
+
+
 @dataclass(frozen=True)
 class StereoConfig:
     """Parametri geometrici del sistema stereo-fotogrammetrico."""
@@ -191,60 +234,67 @@ class ObjectAnalyzer:
         predictions = self.model.predict(left_img, device=self.device, verbose=False)[0]
         target_label_lower = target_label.strip().lower() if target_label else None
 
-        if predictions.masks is not None:
-            for mask_xy, box in zip(predictions.masks.xy, predictions.boxes):
-                contour = mask_xy.astype(np.int32).reshape(-1, 1, 2)
-                if len(contour) < 5:
-                    continue
+        for detection in _extract_raw_detections(predictions, timestamp):
+            if target_label_lower is not None and detection.label.strip().lower() != target_label_lower:
+                continue
 
-                ellipse = cv2.fitEllipse(contour)
-                _, (major_px, minor_px), _ = ellipse
+            bbox = detection.bbox_xyxy
+            _, (major_px, minor_px), _ = detection.ellipse
 
-                bbox = tuple(int(v) for v in box.xyxy[0].tolist())
-                confidence = float(box.conf[0])
-                cls_id = int(box.cls[0])
+            depth_mm = self._depth_from_disparity(
+                disparity_map, (bbox[0] + bbox[2]) // 2, (bbox[1] + bbox[3]) // 2
+            )
+            scale = self._get_scale_factor(depth_mm)
+            detection.length_mm = major_px * scale if scale is not None else None
+            detection.width_mm = minor_px * scale if scale is not None else None
+            detection.depth_mm = depth_mm
 
-                class_name = (
-                    predictions.names.get(cls_id, f"Class_{cls_id}")
-                    if hasattr(predictions, "names")
-                    else f"Class_{cls_id}"
-                )
+            # Distanza al punto di contatto: profondita' REALE (triangolazione
+            # stereo) nel punto in cui il soggetto tocca la superficie sottostante
+            # (base del bounding box). Se la corrispondenza stereo non riesce in
+            # quel punto (es. zona poco tessiturizzata), resta None: nessuna
+            # stima geometrica di ripiego, per non introdurre errore da un
+            # angolo di inclinazione difficile da misurare con precisione.
+            detection.contact_distance_mm = self._depth_from_disparity(
+                disparity_map, (bbox[0] + bbox[2]) // 2, bbox[3]
+            )
 
-                if target_label_lower is not None and class_name.strip().lower() != target_label_lower:
-                    continue
-
-                depth_mm = self._depth_from_disparity(
-                    disparity_map, (bbox[0] + bbox[2]) // 2, (bbox[1] + bbox[3]) // 2
-                )
-                scale = self._get_scale_factor(depth_mm)
-                length_mm = major_px * scale if scale is not None else None
-                width_mm = minor_px * scale if scale is not None else None
-
-                # Distanza al punto di contatto: profondita' REALE (triangolazione
-                # stereo) nel punto in cui il soggetto tocca la superficie sottostante
-                # (base del bounding box). Se la corrispondenza stereo non riesce in
-                # quel punto (es. zona poco tessiturizzata), resta None: nessuna
-                # stima geometrica di ripiego, per non introdurre errore da un
-                # angolo di inclinazione difficile da misurare con precisione.
-                contact_distance_mm = self._depth_from_disparity(
-                    disparity_map, (bbox[0] + bbox[2]) // 2, bbox[3]
-                )
-
-                detection = ObjectDetection(
-                    pair_timestamp=timestamp,
-                    label=class_name,
-                    confidence=confidence,
-                    bbox_xyxy=bbox,
-                    contour=contour,
-                    ellipse=ellipse,
-                    length_mm=length_mm,
-                    width_mm=width_mm,
-                    depth_mm=depth_mm,
-                    contact_distance_mm=contact_distance_mm,
-                )
-                result.detections.append(detection)
+            result.detections.append(detection)
 
         return result
+
+    def detect_in_image(self, image: np.ndarray, timestamp: str) -> List[ObjectDetection]:
+        """
+        Rileva e segmenta i soggetti in una singola immagine gia' in memoria
+        (usato dal flusso video, un frame alla volta). Nessuna stima di
+        profondita'/dimensioni reali: qui non c'e' una seconda camera con cui
+        triangolare, esattamente come per l'analisi di una foto singola.
+        """
+        predictions = self.model.predict(image, device=self.device, verbose=False)[0]
+        return _extract_raw_detections(predictions, timestamp)
+
+
+def analyze_single_image(model_path: str, image_path: Path) -> Tuple[np.ndarray, List[ObjectDetection]]:
+    """
+    Rileva e segmenta i soggetti in una singola foto (nessuna stereo-coppia
+    disponibile): nessuna stima di profondita'/dimensioni reali, solo
+    maschera, classe e confidenza. Carica il modello una sola volta per
+    l'intera chiamata (uso occasionale, a differenza del flusso video che
+    riusa un ObjectAnalyzer gia' istanziato su molti frame).
+    """
+    if YOLO is None:
+        raise ImportError("Modulo 'ultralytics' non disponibile nel contesto di esecuzione.")
+
+    image = cv2.imread(str(image_path))
+    if image is None:
+        raise FileNotFoundError(f"Errore nella lettura del file immagine: {image_path}")
+
+    model = YOLO(model_path)
+    device = select_computation_device()
+    predictions = model.predict(image, device=device, verbose=False)[0]
+
+    detections = _extract_raw_detections(predictions, timestamp=Path(image_path).stem)
+    return image, detections
 
 
 def render_overlay(

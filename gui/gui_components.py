@@ -34,7 +34,6 @@ class HardwareAccelerationWidget(QGroupBox):
     def init_ui(self):
         layout = QVBoxLayout()
 
-        # Informazioni diagnostiche
         self.status_label = QLabel("Stato Elaborazione: Analisi hardware in corso...")
         self.device_label = QLabel("Unità di Calcolo: -")
         self.torch_label = QLabel("Framework Deep Learning: -")
@@ -43,7 +42,6 @@ class HardwareAccelerationWidget(QGroupBox):
         self.device_label.setTextFormat(Qt.TextFormat.RichText)
         self.torch_label.setTextFormat(Qt.TextFormat.RichText)
 
-        # Pulsanti di comando
         btn_layout = QHBoxLayout()
 
         self.btn_refresh = QPushButton("Diagnostica Hardware")
@@ -56,7 +54,6 @@ class HardwareAccelerationWidget(QGroupBox):
         btn_layout.addWidget(self.btn_refresh)
         btn_layout.addWidget(self.btn_reinstall)
 
-        # Barra di caricamento
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 0)
         self.progress_bar.setVisible(False)
@@ -100,7 +97,6 @@ class HardwareAccelerationWidget(QGroupBox):
             self.btn_refresh.setEnabled(False)
             self.progress_bar.setVisible(True)
 
-            # Gestione sicura del thread
             self.worker = InstallationWorker()
             self.worker.finished_signal.connect(self.on_installation_finished)
             self.worker.finished.connect(self.worker.deleteLater)
@@ -128,9 +124,9 @@ class HardwareAccelerationWidget(QGroupBox):
                 return  # non raggiunto: il processo viene sostituito da restart_application()
         else:
             QMessageBox.critical(
-                self, 
-                "Errore di Configurazione", 
+                self,
+                "Errore di Configurazione",
                 "Impossibile completare l'installazione delle librerie CUDA.\nVerificare la connessione ad Internet o i log di sistema."
             )
-        
+
         self.refresh_hardware_status()

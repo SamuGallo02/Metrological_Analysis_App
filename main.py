@@ -37,12 +37,12 @@ def bootstrap() -> None:
         sys.exit(1)
 
     from PySide6.QtWidgets import QApplication
-    from gui.main_window import MainWindow
+    from gui.home_gui import AppWindow
 
     app = QApplication(sys.argv)
     app.setApplicationName("StereoMetrologyAnalysis")
 
-    window = MainWindow()
+    window = AppWindow()
     window.showMaximized()  # Apertura forzata a schermo intero
 
     sys.exit(app.exec())
