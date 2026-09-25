@@ -96,7 +96,20 @@ def main() -> None:
               f"(se è una USB esterna, potrebbe non essere all'indice 0).")
         sys.exit(1)
 
+    # Chiede alla camera una risoluzione piu' alta (se la supporta): se non e'
+    # disponibile, la camera restituira' comunque la risoluzione massima che
+    # ha, senza errori — richiederla non fa mai danno.
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+
     window_name = "Demo YOLO — premi 'q' per uscire"
+
+    # WINDOW_NORMAL rende la finestra ridimensionabile trascinando i bordi
+    # (per default OpenCV la blocca alla dimensione esatta dell'immagine) —
+    # resizeWindow le da' anche una dimensione iniziale piu' grande.
+    cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+    cv2.resizeWindow(window_name, 1280, 720)
+
     print("Demo avviata. Premi 'q' o ESC nella finestra video per uscire.")
 
     prev_time = time.time()

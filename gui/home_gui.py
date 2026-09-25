@@ -16,9 +16,14 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QFrame, QGridLayout, QHBoxLayout, QLabel, QMainWindow, QMessageBox, QPushButton, QStackedWidget, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QComboBox, QDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QMainWindow,
+    QMessageBox, QPushButton, QStackedWidget, QVBoxLayout, QWidget,
+)
 
+from core.analysis import list_model_classes
 from gui.analysis_gui import StereoAnalysisPage
+from gui.analysis_page_base import MODELS_DIR, scan_models
 from gui.common_widgets import ManualDialog
 from gui.home_layout import centered_content
 from gui.mode_selector_gui import FotoModeSelectorPage, VideoModeSelectorPage
@@ -36,6 +41,90 @@ IDX_VIDEO_SELECTOR = 4
 IDX_VIDEO_SINGOLO = 5
 IDX_VIDEO_STEREO = 6
 IDX_TRAINING = 7
+
+
+class WebcamDemoDialog(QDialog):
+    """
+    Dialogo mostrato prima di avviare la demo webcam: sceglie quale modello
+    YOLO usare e cosa riconoscere. L'elenco delle classi viene letto DAL
+    MODELLO SCELTO (list_model_classes), non da un elenco fisso — cosi'
+    corrisponde sempre davvero a cio' che quel modello sa riconoscere.
+    """
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Demo Webcam — configurazione")
+        self.resize(380, 160)
+        self.selected_model_path: str | None = None
+        self.selected_class: str | None = None  # None = tutti gli oggetti
+
+        layout = QVBoxLayout(self)
+
+        layout.addWidget(QLabel("Modello YOLO:"))
+        self.combo_model = QComboBox()
+        self.combo_model.currentIndexChanged.connect(self._refresh_classes)
+        layout.addWidget(self.combo_model)
+
+        layout.addWidget(QLabel("Cosa riconoscere:"))
+        self.combo_class = QComboBox()
+        layout.addWidget(self.combo_class)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch(1)
+        btn_cancel = QPushButton("Annulla")
+        btn_cancel.clicked.connect(self.reject)
+        btn_row.addWidget(btn_cancel)
+
+        btn_start = QPushButton("Avvia")
+        btn_start.setStyleSheet(
+            "background-color: #2e7d32; color: white; font-weight: bold; padding: 5px 14px;"
+        )
+        btn_start.clicked.connect(self._on_start)
+        btn_row.addWidget(btn_start)
+        layout.addLayout(btn_row)
+
+        self._populate_models()
+
+    def _populate_models(self) -> None:
+        models = scan_models()
+        self.combo_model.clear()
+        if not models:
+            self.combo_model.addItem("Nessun modello trovato in models/")
+            self.combo_model.setEnabled(False)
+        else:
+            self.combo_model.setEnabled(True)
+            self.combo_model.addItems(models)
+        self._refresh_classes()
+
+    def _refresh_classes(self) -> None:
+        self.combo_class.clear()
+        self.combo_class.addItem("Tutti gli oggetti")
+
+        model_name = self.combo_model.currentText()
+        model_path = MODELS_DIR / model_name
+        if model_path.is_file():
+            try:
+                classes = list_model_classes(str(model_path))
+                self.combo_class.addItems(classes)
+            except Exception:
+                pass  # se la lettura fallisce, resta comunque disponibile "Tutti gli oggetti"
+
+        # preseleziona "person" quando presente, per coerenza col comportamento di default finora
+        idx = self.combo_class.findText("person")
+        if idx >= 0:
+            self.combo_class.setCurrentIndex(idx)
+
+    def _on_start(self) -> None:
+        model_name = self.combo_model.currentText()
+        model_path = MODELS_DIR / model_name
+        if not model_path.is_file():
+            QMessageBox.warning(self, "Nessun modello", "Seleziona un modello YOLO valido.")
+            return
+
+        self.selected_model_path = str(model_path)
+        chosen_class = self.combo_class.currentText()
+        self.selected_class = None if chosen_class == "Tutti gli oggetti" else chosen_class
+        self.accept()
 
 
 class MenuCard(QFrame):
@@ -143,17 +232,14 @@ class HomePage(QWidget):
         """
         Avvia tools/webcam_demo.py come processo indipendente (non bloccante):
         l'app principale resta utilizzabile mentre la finestra della demo e'
-        aperta. Controlla prima le due cause di fallimento piu' probabili
-        (script mancante, nessun modello disponibile) per dare un errore
-        leggibile invece di un fallimento silenzioso — soprattutto utile
-        durante una presentazione dal vivo.
+        aperta. Prima chiede, tramite WebcamDemoDialog, quale modello usare e
+        cosa riconoscere — invece di affidarsi sempre ai valori di default.
         """
         import subprocess
         import sys
 
         project_root = Path(__file__).resolve().parent.parent
         script_path = project_root / "tools" / "webcam_demo.py"
-        models_dir = project_root / "models"
 
         if not script_path.is_file():
             QMessageBox.critical(
@@ -162,15 +248,22 @@ class HomePage(QWidget):
             )
             return
 
-        if not models_dir.is_dir() or not any(models_dir.glob("*.pt")):
+        if not MODELS_DIR.is_dir() or not any(MODELS_DIR.glob("*.pt")):
             QMessageBox.warning(
                 self, "Nessun modello disponibile",
                 "Metti almeno un modello YOLO (.pt) nella cartella models/ prima di avviare la demo."
             )
             return
 
+        dialog = WebcamDemoDialog(self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        args = [sys.executable, str(script_path), "--model", dialog.selected_model_path]
+        args += ["--class", dialog.selected_class if dialog.selected_class is not None else "all"]
+
         try:
-            subprocess.Popen([sys.executable, str(script_path)], cwd=str(project_root))
+            subprocess.Popen(args, cwd=str(project_root))
         except Exception as exc:
             QMessageBox.critical(self, "Errore all'avvio della demo", f"Impossibile avviare la demo:\n{exc}")
 
