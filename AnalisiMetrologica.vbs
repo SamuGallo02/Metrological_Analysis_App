@@ -27,6 +27,10 @@ Option Explicit
 Dim objShell, objFSO, strScriptDir, strVenvPythonw, strVenvPython, strMainPath
 Dim strIconPath, strDesktopPath, strShortcutPath, objShortcut
 Dim strSystemPython, intExitCode
+Dim strLogPath, strInnerCmd, strCmd, Q
+Dim strSetupMarker, objMarker, strSetupPyPath
+
+Q = Chr(34) ' un carattere di virgolette, usato per costruire comandi cmd.exe senza errori di escaping
 
 Set objShell = CreateObject("WScript.Shell")
 Set objFSO = CreateObject("Scripting.FileSystemObject")
@@ -54,6 +58,13 @@ End If
 strVenvPythonw = strScriptDir & "\venv\Scripts\pythonw.exe"
 strVenvPython = strScriptDir & "\venv\Scripts\python.exe"
 strMainPath = strScriptDir & "\main.py"
+strSetupPyPath = strScriptDir & "\setup.py"
+
+' Marcatore scritto SOLO dopo che l'installazione delle dipendenze e' riuscita
+' per intero: a differenza di pythonw.exe (che esiste gia' subito dopo la sola
+' creazione del venv, prima ancora che i pacchetti siano installati), questo
+' file dice con certezza se il setup e' davvero completo o no.
+strSetupMarker = strScriptDir & "\venv\.setup_complete"
 
 ' main.py e' indispensabile in ogni caso: senza, non si puo' proseguire
 If Not objFSO.FileExists(strMainPath) Then
@@ -64,8 +75,20 @@ If Not objFSO.FileExists(strMainPath) Then
     WScript.Quit 1
 End If
 
-' --- Se l'ambiente virtuale non esiste ancora, esegue il bootstrap ---
-If Not objFSO.FileExists(strVenvPythonw) Then
+' setup.py serve solo per il bootstrap (ambiente non ancora configurato), ma se
+' manca e' meglio dirlo subito con un messaggio chiaro piuttosto che scoprirlo
+' indirettamente da un errore di Python dentro setup_log.txt.
+If Not objFSO.FileExists(strSetupMarker) And Not objFSO.FileExists(strSetupPyPath) Then
+    MsgBox "Impossibile completare la configurazione:" & vbCrLf & _
+           "Il file setup.py non e' stato trovato in:" & vbCrLf & strScriptDir & vbCrLf & vbCrLf & _
+           "Controlla di aver copiato/scaricato l'INTERA cartella del progetto da GitHub " & _
+           "(non solo alcuni file) nella stessa posizione di questo file .vbs.", _
+           16, "Errore di Inizializzazione"
+    WScript.Quit 1
+End If
+
+' --- Se il setup non risulta completato con successo, esegue il bootstrap ---
+If Not objFSO.FileExists(strSetupMarker) Then
 
     strSystemPython = FindInPath("python.exe")
     If strSystemPython = "" Then
@@ -73,19 +96,24 @@ If Not objFSO.FileExists(strVenvPythonw) Then
                "Scarica e installa Python (versione 3.10 o successiva) da:" & vbCrLf & _
                "https://www.python.org/downloads/" & vbCrLf & vbCrLf & _
                "Durante l'installazione spunta l'opzione ""Add python.exe to PATH""," & vbCrLf & _
-               "poi riesegui questo file per completare la configurazione automatica.", _
+               "poi riesegui questo file per completare la configurazione automatica." & vbCrLf & vbCrLf & _
+               "Nota: se sul PC risultava gia' un ""python.exe"" ma vedi questo messaggio " & _
+               "comunque, probabilmente era solo l'alias del Microsoft Store (non un Python " & _
+               "vero) — installane uno da python.org come sopra.", _
                48, "Python non trovato"
         WScript.Quit 1
     End If
 
-    MsgBox "Prima esecuzione su questo computer: l'applicazione configurera' " & _
-           "automaticamente l'ambiente necessario (potrebbe richiedere alcuni minuti, " & _
+    MsgBox "Configurazione dell'ambiente in corso (potrebbe richiedere alcuni minuti, " & _
            "in base alla velocita' della connessione)." & vbCrLf & vbCrLf & _
-           "Premi OK per continuare: si aprira' una finestra con l'avanzamento " & _
-           "dell'installazione, che si chiudera' da sola al termine.", _
+           "Premi OK per continuare: si aprira' una finestra con l'avanzamento della " & _
+           "creazione dell'ambiente virtuale; il passo successivo (installazione delle " & _
+           "dipendenze) invece procede in background e il suo esito completo viene " & _
+           "salvato nel file setup_log.txt, nella cartella del progetto.", _
            64, "Configurazione iniziale"
 
-    ' Crea l'ambiente virtuale (finestra visibile, in attesa del completamento)
+    ' Crea l'ambiente virtuale (finestra visibile, in attesa del completamento).
+    ' Se il venv esiste gia' da un tentativo precedente, ricrearlo non fa danni.
     intExitCode = objShell.Run("""" & strSystemPython & """ -m venv """ & strScriptDir & "\venv""", 1, True)
     If intExitCode <> 0 Or Not objFSO.FileExists(strVenvPython) Then
         MsgBox "Creazione dell'ambiente virtuale non riuscita (codice " & intExitCode & ")." & vbCrLf & _
@@ -95,16 +123,30 @@ If Not objFSO.FileExists(strVenvPythonw) Then
         WScript.Quit 1
     End If
 
-    ' Installa le dipendenze e PyTorch tramite setup.py (finestra visibile, in attesa)
-    intExitCode = objShell.Run("""" & strVenvPython & """ """ & strScriptDir & "\setup.py""", 1, True)
+    ' Installa le dipendenze e PyTorch tramite setup.py. L'output completo (compresi
+    ' gli eventuali errori di pip, es. problemi di connessione) viene salvato per
+    ' intero in setup_log.txt: una finestra visibile qui si chiuderebbe troppo in
+    ' fretta per riuscire a leggerla, il file invece resta consultabile con calma.
+    strLogPath = strScriptDir & "\setup_log.txt"
+    strInnerCmd = Q & strVenvPython & Q & " " & Q & strSetupPyPath & Q & _
+                  " > " & Q & strLogPath & Q & " 2>&1"
+    strCmd = "cmd /c " & Q & strInnerCmd & Q
+    intExitCode = objShell.Run(strCmd, 0, True)
+
     If intExitCode <> 0 Or Not objFSO.FileExists(strVenvPythonw) Then
-        MsgBox "L'installazione delle dipendenze non e' andata a buon fine (codice " & intExitCode & ")." & vbCrLf & _
-               "Controlla la connessione a Internet e riprova eseguendo di nuovo questo file." & vbCrLf & _
-               "In alternativa, esegui manualmente da terminale, nella cartella del progetto:" & vbCrLf & _
-               "venv\Scripts\python.exe setup.py", _
+        MsgBox "L'installazione delle dipendenze non e' andata a buon fine (codice " & intExitCode & ")." & vbCrLf & vbCrLf & _
+               "Per vedere il motivo esatto (es. un problema di connessione durante il download), " & _
+               "apri con un editor di testo il file:" & vbCrLf & strLogPath & vbCrLf & vbCrLf & _
+               "Dopo aver risolto il problema, riesegui questo file per riprovare.", _
                16, "Errore di Configurazione"
         WScript.Quit 1
     End If
+
+    ' Scrive il marcatore SOLO ora che l'installazione e' davvero riuscita, cosi'
+    ' i prossimi avvii sapranno con certezza di poter saltare il bootstrap.
+    Set objMarker = objFSO.CreateTextFile(strSetupMarker, True)
+    objMarker.WriteLine "Setup completato con successo."
+    objMarker.Close
 
     MsgBox "Configurazione completata. L'applicazione si avvia ora.", 64, "Pronto"
 End If
@@ -118,6 +160,12 @@ Set objShell = Nothing
 ' ------------------------------------------------------------------------
 ' Cerca strExeName in ciascuna delle cartelle elencate nel PATH di sistema.
 ' Ritorna il percorso completo trovato, oppure stringa vuota se assente.
+'
+' Salta deliberatamente le cartelle "WindowsApps": Windows 10/11 ci mette
+' di default un python.exe "fittizio" (l'alias che rimanda al Microsoft
+' Store) che esiste come file ma non funziona come vero interprete se
+' lanciato con argomenti come "-m venv" — e' la causa piu' comune del
+' codice di errore 9009 durante la creazione dell'ambiente virtuale.
 ' ------------------------------------------------------------------------
 Function FindInPath(strExeName)
     Dim strPathEnv, arrPaths, i, strCandidate
@@ -129,10 +177,12 @@ Function FindInPath(strExeName)
     arrPaths = Split(strPathEnv, ";")
     For i = 0 To UBound(arrPaths)
         If Len(Trim(arrPaths(i))) > 0 Then
-            strCandidate = arrPaths(i) & "\" & strExeName
-            If objFSO.FileExists(strCandidate) Then
-                FindInPath = strCandidate
-                Exit Function
+            If InStr(1, arrPaths(i), "WindowsApps", vbTextCompare) = 0 Then
+                strCandidate = arrPaths(i) & "\" & strExeName
+                If objFSO.FileExists(strCandidate) Then
+                    FindInPath = strCandidate
+                    Exit Function
+                End If
             End If
         End If
     Next
