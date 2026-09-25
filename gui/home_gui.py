@@ -16,7 +16,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QFrame, QGridLayout, QHBoxLayout, QLabel, QMainWindow, QPushButton, QStackedWidget, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFrame, QGridLayout, QHBoxLayout, QLabel, QMainWindow, QMessageBox, QPushButton, QStackedWidget, QVBoxLayout, QWidget
 
 from gui.analysis_gui import StereoAnalysisPage
 from gui.common_widgets import ManualDialog
@@ -92,6 +92,12 @@ class HomePage(QWidget):
         layout = QVBoxLayout(self)
 
         top_bar = QHBoxLayout()
+
+        btn_webcam_demo = QPushButton("🎥 Demo Webcam")
+        btn_webcam_demo.setToolTip("Avvia in una finestra separata il rilevamento YOLO dal vivo dalla webcam.")
+        btn_webcam_demo.clicked.connect(self._launch_webcam_demo)
+        top_bar.addWidget(btn_webcam_demo)
+
         top_bar.addStretch(1)
         btn_manual = QPushButton("Manuale d'uso (WIP)")
         btn_manual.clicked.connect(lambda: ManualDialog(self).exec())
@@ -132,6 +138,41 @@ class HomePage(QWidget):
 
         layout.addLayout(centered_content(grid, max_width=960))
         layout.addStretch(2)
+
+    def _launch_webcam_demo(self) -> None:
+        """
+        Avvia tools/webcam_demo.py come processo indipendente (non bloccante):
+        l'app principale resta utilizzabile mentre la finestra della demo e'
+        aperta. Controlla prima le due cause di fallimento piu' probabili
+        (script mancante, nessun modello disponibile) per dare un errore
+        leggibile invece di un fallimento silenzioso — soprattutto utile
+        durante una presentazione dal vivo.
+        """
+        import subprocess
+        import sys
+
+        project_root = Path(__file__).resolve().parent.parent
+        script_path = project_root / "tools" / "webcam_demo.py"
+        models_dir = project_root / "models"
+
+        if not script_path.is_file():
+            QMessageBox.critical(
+                self, "Demo non trovata",
+                f"File non trovato:\n{script_path}"
+            )
+            return
+
+        if not models_dir.is_dir() or not any(models_dir.glob("*.pt")):
+            QMessageBox.warning(
+                self, "Nessun modello disponibile",
+                "Metti almeno un modello YOLO (.pt) nella cartella models/ prima di avviare la demo."
+            )
+            return
+
+        try:
+            subprocess.Popen([sys.executable, str(script_path)], cwd=str(project_root))
+        except Exception as exc:
+            QMessageBox.critical(self, "Errore all'avvio della demo", f"Impossibile avviare la demo:\n{exc}")
 
 
 class AppWindow(QMainWindow):
