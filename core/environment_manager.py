@@ -63,13 +63,24 @@ def get_cuda_status() -> dict:
 
 def terminate_python_processes():
     """
-    Termina eventuali processi Python secondari per rilasciare i lock sui file DLL
-    (es. c10.dll) ed evitare PermissionError durante le operazioni di aggiornamento.
+    Termina eventuali istanze precedenti dell'APPLICATIVO GUI (pythonw.exe) per
+    rilasciare i lock sui file DLL (es. c10.dll) ed evitare PermissionError
+    durante le operazioni di aggiornamento di PyTorch.
+
+    Deliberatamente NON tocca "python.exe" (a differenza di una versione
+    precedente di questa funzione): questa stessa funzione viene chiamata da
+    setup.py, che gira anch'esso come "python.exe" — un taskkill su quel nome
+    rischia di terminare il processo che sta eseguendo l'installazione stessa
+    a meta' strada (causa gia' osservata di un'interruzione silenziosa, senza
+    alcun errore Python, subito prima della fase di reinstallazione di
+    PyTorch). L'app vera e propria gira sempre come "pythonw.exe" (avvio
+    senza console, vedi AnalisiMetrologica.vbs e main.py): e' quello il solo
+    processo che puo' davvero tenere bloccate le DLL di PyTorch in memoria.
     """
     if sys.platform.startswith("win"):
         try:
             current_pid = subprocess.os.getpid()
-            cmd = f'taskkill /F /FI "PID ne {current_pid}" /IM python.exe'
+            cmd = f'taskkill /F /FI "PID ne {current_pid}" /IM pythonw.exe'
             subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         except Exception as e:
             logging.warning(f"Impossibile terminare i processi concorrenti: {e}")
@@ -93,15 +104,34 @@ def restart_application() -> None:
     os.execv(python, [python] + sys.argv)
 
 
-def install_pytorch_environment(force_cuda: bool = True) -> bool:
+def install_pytorch_environment(force_cuda: bool = True, skip_if_ok: bool = True) -> bool:
     """
     Esegue la riconfigurazione dinamica del framework PyTorch.
     Rileva le specifiche hardware e scarica la build idonea (CUDA 12.1 o CPU).
-    
+
     :param force_cuda: Se True, forza l'installazione dei binding CUDA qualora la GPU sia presente.
-    :return: True se l'installazione si conclude con successo, False altrimenti.
+    :param skip_if_ok: Se True (default), controlla prima se PyTorch e' gia' installato con la
+        configurazione corretta (CUDA se c'e' una GPU, altrimenti una build qualsiasi funzionante)
+        e in tal caso NON tocca nulla — evita di riscaricare/reinstallare diversi GB ogni volta
+        che questa funzione viene chiamata (es. ad ogni avvio dell'app tramite setup.py), quando
+        in realta' e' gia' tutto configurato correttamente da un'esecuzione precedente.
+    :return: True se l'installazione si conclude con successo (o non serviva), False altrimenti.
     """
     has_gpu = check_nvidia_smi()
+
+    if skip_if_ok:
+        status = get_cuda_status()
+        gia_pronto = status["torch_version"] != "Non installato" and (
+            status["cuda_available"] or not (has_gpu and force_cuda)
+        )
+        if gia_pronto:
+            logging.info(
+                f"PyTorch {status['torch_version']} risulta gia' installato con la configurazione "
+                f"corretta (CUDA: {'attiva' if status['cuda_available'] else 'non necessaria'}): "
+                f"nessuna reinstallazione necessaria."
+            )
+            return True
+
     terminate_python_processes()
     
     base_cmd = [
