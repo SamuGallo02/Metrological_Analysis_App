@@ -102,7 +102,7 @@ def main() -> None:
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 
-    window_name = "Demo YOLO — premi 'q' per uscire"
+    window_name = "Demo YOLO - premi 'q' per uscire"
 
     # WINDOW_NORMAL rende la finestra ridimensionabile trascinando i bordi
     # (per default OpenCV la blocca alla dimensione esatta dell'immagine) —

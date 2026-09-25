@@ -175,6 +175,7 @@ class HomePage(QWidget):
     def __init__(self, on_navigate, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.on_navigate = on_navigate
+        self._webcam_process = None  # tiene traccia della demo aperta, per evitare doppioni
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -234,9 +235,19 @@ class HomePage(QWidget):
         l'app principale resta utilizzabile mentre la finestra della demo e'
         aperta. Prima chiede, tramite WebcamDemoDialog, quale modello usare e
         cosa riconoscere — invece di affidarsi sempre ai valori di default.
+        Se una demo e' gia' aperta, non ne avvia una seconda (evita due
+        finestre webcam sovrapposte per un doppio clic accidentale).
         """
         import subprocess
         import sys
+
+        if self._webcam_process is not None and self._webcam_process.poll() is None:
+            QMessageBox.information(
+                self, "Demo gia' aperta",
+                "La demo webcam e' gia' in esecuzione: cercala tra le finestre aperte "
+                "(potrebbe essere dietro a questa), oppure chiudila prima di aprirne un'altra."
+            )
+            return
 
         project_root = Path(__file__).resolve().parent.parent
         script_path = project_root / "tools" / "webcam_demo.py"
@@ -263,7 +274,7 @@ class HomePage(QWidget):
         args += ["--class", dialog.selected_class if dialog.selected_class is not None else "all"]
 
         try:
-            subprocess.Popen(args, cwd=str(project_root))
+            self._webcam_process = subprocess.Popen(args, cwd=str(project_root))
         except Exception as exc:
             QMessageBox.critical(self, "Errore all'avvio della demo", f"Impossibile avviare la demo:\n{exc}")
 
