@@ -8,12 +8,11 @@
 ' Dalle volte successive (ambiente gia' pronto) l'avvio resta rapido e
 ' silenzioso come prima.
 '
-' Limite noto: questo script NON installa Python stesso. Se sul computer non
-' e' presente nessun interprete Python raggiungibile, mostra un messaggio che
-' indica di installarlo da python.org prima di riprovare — installare Python
-' silenziosamente da uno script .vbs non e' un'operazione affidabile da fare
-' "alla cieca" (varia troppo tra versioni di Windows, richiede spesso diritti
-' di amministratore, e va testata su macchine reali prima di potersene fidare).
+' Se sul computer non e' presente un Python di versione sufficiente (minimo
+' 3.10), questo script lo scarica e lo installa da solo (build ufficiale da
+' python.org, installazione "per l'utente corrente": NON richiede diritti di
+' amministratore) prima di proseguire con la creazione dell'ambiente virtuale
+' — serve solo una connessione a Internet, nessun passaggio manuale.
 '
 ' Al primo avvio crea inoltre un collegamento con l'icona dell'applicativo sul
 ' Desktop ("Analisi Metrologica.lnk"): un file .vbs non puo' avere un'icona
@@ -29,14 +28,25 @@ Dim strIconPath, strDesktopPath, strShortcutPath, objShortcut
 Dim strSystemPython, intExitCode
 Dim strLogPath, strInnerCmd, strCmd, Q
 Dim strSetupMarker, objMarker, strSetupPyPath
+Dim blnNeedPythonInstall, strPyVersion, strPyInstallerUrl
 
-Q = Chr(34) ' un carattere di virgolette, usato per costruire comandi cmd.exe senza errori di escaping
+Const MIN_PY_MAJOR = 3
+Const MIN_PY_MINOR = 10
+Const MIN_PY_NUM = 310 ' MIN_PY_MAJOR * 100 + MIN_PY_MINOR, VBScript non valuta costanti tra loro
+
+Q = Chr(34) ' un carattere di virgolette, usato per costruire comandi cmd.exe/powershell senza errori di escaping
 
 Set objShell = CreateObject("WScript.Shell")
 Set objFSO = CreateObject("Scripting.FileSystemObject")
 
 strScriptDir = objFSO.GetParentFolderName(WScript.ScriptFullName)
 objShell.CurrentDirectory = strScriptDir
+
+' Versione di Python installata automaticamente quando serve (build ufficiale
+' a 64 bit da python.org). Aggiornare qui se in futuro si vuole puntare a una
+' versione piu' recente.
+strPyVersion = "3.12.6"
+strPyInstallerUrl = "https://www.python.org/ftp/python/" & strPyVersion & "/python-" & strPyVersion & "-amd64.exe"
 
 ' --- Crea, se non esiste ancora, un collegamento con icona sul Desktop ---
 strIconPath = strScriptDir & "\assets\app_icon.ico"
@@ -91,17 +101,35 @@ End If
 If Not objFSO.FileExists(strSetupMarker) Then
 
     strSystemPython = FindInPath("python.exe")
+    blnNeedPythonInstall = False
+
     If strSystemPython = "" Then
-        MsgBox "Prima di poter avviare l'applicazione serve installare Python." & vbCrLf & vbCrLf & _
-               "Scarica e installa Python (versione 3.10 o successiva) da:" & vbCrLf & _
-               "https://www.python.org/downloads/" & vbCrLf & vbCrLf & _
-               "Durante l'installazione spunta l'opzione ""Add python.exe to PATH""," & vbCrLf & _
-               "poi riesegui questo file per completare la configurazione automatica." & vbCrLf & vbCrLf & _
-               "Nota: se sul PC risultava gia' un ""python.exe"" ma vedi questo messaggio " & _
-               "comunque, probabilmente era solo l'alias del Microsoft Store (non un Python " & _
-               "vero) — installane uno da python.org come sopra.", _
-               48, "Python non trovato"
-        WScript.Quit 1
+        blnNeedPythonInstall = True
+    ElseIf GetPythonVersionNum(strSystemPython) < MIN_PY_NUM Then
+        blnNeedPythonInstall = True
+    End If
+
+    If blnNeedPythonInstall Then
+        MsgBox "Non e' stato trovato un Python idoneo sul computer (serve la versione " & _
+               MIN_PY_MAJOR & "." & MIN_PY_MINOR & " o successiva)." & vbCrLf & vbCrLf & _
+               "Verra' scaricata e installata automaticamente la versione " & strPyVersion & _
+               " (solo per l'utente corrente: NON servono diritti di amministratore)." & vbCrLf & vbCrLf & _
+               "Premi OK per continuare: il download e l'installazione richiedono qualche minuto, " & _
+               "in base alla velocita' della connessione.", _
+               64, "Installazione automatica di Python"
+
+        strSystemPython = InstallPythonAutomatically()
+
+        If strSystemPython = "" Then
+            MsgBox "L'installazione automatica di Python non e' riuscita " & _
+                   "(probabile problema di connessione, oppure un blocco del download da parte " & _
+                   "dell'antivirus/firewall)." & vbCrLf & vbCrLf & _
+                   "Puoi installarlo manualmente da:" & vbCrLf & "https://www.python.org/downloads/" & vbCrLf & vbCrLf & _
+                   "Durante l'installazione spunta l'opzione ""Add python.exe to PATH""," & vbCrLf & _
+                   "poi riesegui questo file per completare la configurazione automatica.", _
+                   16, "Installazione automatica non riuscita"
+            WScript.Quit 1
+        End If
     End If
 
     MsgBox "Configurazione dell'ambiente in corso (potrebbe richiedere alcuni minuti, " & _
@@ -186,4 +214,124 @@ Function FindInPath(strExeName)
             End If
         End If
     Next
+End Function
+
+' ------------------------------------------------------------------------
+' Esegue "<strPyExe> --version" e ne legge l'output (es. "Python 3.11.4")
+' per ricavare un numero comparabile major*100+minor (es. 311). Ritorna 0
+' se non riesce a determinare la versione (equivale a "non idoneo": fa si'
+' che venga proposta l'installazione automatica anziche' un crash piu' avanti).
+' ------------------------------------------------------------------------
+Function GetPythonVersionNum(strPyExe)
+    Dim objExec, strOut, re, mt
+
+    GetPythonVersionNum = 0
+
+    On Error Resume Next
+    Set objExec = objShell.Exec(Q & strPyExe & Q & " --version")
+    If Err.Number <> 0 Then
+        Err.Clear
+        On Error Goto 0
+        Exit Function
+    End If
+    On Error Goto 0
+
+    Do While objExec.Status = 0
+        WScript.Sleep 50
+    Loop
+
+    strOut = ""
+    On Error Resume Next
+    strOut = objExec.StdOut.ReadAll() & objExec.StdErr.ReadAll() ' alcune versioni di Python stampano su stderr
+    On Error Goto 0
+
+    Set re = New RegExp
+    re.Pattern = "Python\s+(\d+)\.(\d+)"
+    re.IgnoreCase = True
+
+    If re.Test(strOut) Then
+        Set mt = re.Execute(strOut)
+        GetPythonVersionNum = CInt(mt(0).SubMatches(0)) * 100 + CInt(mt(0).SubMatches(1))
+    End If
+End Function
+
+' ------------------------------------------------------------------------
+' Scarica ed installa automaticamente Python (build ufficiale da python.org,
+' installazione "per l'utente corrente": non richiede diritti di
+' amministratore) tramite un piccolo script PowerShell generato al volo.
+' Ritorna il percorso completo del python.exe appena installato, oppure
+' stringa vuota se qualcosa e' andato storto (nessuna connessione, download
+' bloccato, installazione fallita...).
+' ------------------------------------------------------------------------
+Function InstallPythonAutomatically()
+    Dim strPs1Path, strInstallerPath, objPs1, strPsCmd, strFound
+
+    InstallPythonAutomatically = ""
+
+    strPs1Path = strScriptDir & "\_install_python.ps1"
+    strInstallerPath = strScriptDir & "\_python_installer.exe"
+
+    ' Script PowerShell generato al volo: scarica l'installer ufficiale e lo
+    ' esegue in modalita' silenziosa, senza interazione dell'utente.
+    On Error Resume Next
+    Set objPs1 = objFSO.CreateTextFile(strPs1Path, True)
+    objPs1.WriteLine "param([string]$Url, [string]$Dest)"
+    objPs1.WriteLine "$ErrorActionPreference = 'Stop'"
+    objPs1.WriteLine "try {"
+    objPs1.WriteLine "    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12"
+    objPs1.WriteLine "    Invoke-WebRequest -Uri $Url -OutFile $Dest -UseBasicParsing"
+    objPs1.WriteLine "    Start-Process -FilePath $Dest -ArgumentList @(" & _
+                      "'/quiet','InstallAllUsers=0','PrependPath=1','Include_launcher=0','Include_test=0'" & _
+                      ") -Wait"
+    objPs1.WriteLine "    exit 0"
+    objPs1.WriteLine "} catch {"
+    objPs1.WriteLine "    Write-Output $_.Exception.Message"
+    objPs1.WriteLine "    exit 1"
+    objPs1.WriteLine "}"
+    objPs1.Close
+    On Error Goto 0
+
+    If Not objFSO.FileExists(strPs1Path) Then Exit Function
+
+    strPsCmd = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File " & Q & strPs1Path & Q & _
+               " -Url " & Q & strPyInstallerUrl & Q & " -Dest " & Q & strInstallerPath & Q
+
+    On Error Resume Next
+    objShell.Run strPsCmd, 1, True
+    On Error Goto 0
+
+    ' Pulizia dei file temporanei (installer + script), a prescindere dall'esito
+    On Error Resume Next
+    If objFSO.FileExists(strInstallerPath) Then objFSO.DeleteFile strInstallerPath, True
+    If objFSO.FileExists(strPs1Path) Then objFSO.DeleteFile strPs1Path, True
+    On Error Goto 0
+
+    strFound = FindInstalledPython()
+    If strFound <> "" And GetPythonVersionNum(strFound) >= MIN_PY_NUM Then
+        InstallPythonAutomatically = strFound
+    End If
+End Function
+
+' ------------------------------------------------------------------------
+' Cerca un python.exe installato "per l'utente corrente" nella posizione di
+' default dell'installer ufficiale (%LocalAppData%\Programs\Python\Python3xx).
+' ------------------------------------------------------------------------
+Function FindInstalledPython()
+    Dim strBase, objFolder, objSub, strCandidate
+
+    FindInstalledPython = ""
+    strBase = objShell.ExpandEnvironmentStrings("%LocalAppData%") & "\Programs\Python"
+
+    If objFSO.FolderExists(strBase) Then
+        Set objFolder = objFSO.GetFolder(strBase)
+        For Each objSub In objFolder.SubFolders
+            If InStr(1, objSub.Name, "Python", vbTextCompare) = 1 Then
+                strCandidate = objSub.Path & "\python.exe"
+                If objFSO.FileExists(strCandidate) Then
+                    FindInstalledPython = strCandidate
+                    Exit Function
+                End If
+            End If
+        Next
+    End If
 End Function
