@@ -21,3 +21,4 @@ datasets/
 # --- TEMPORANEI E CACHE ---
 .pytest_cache/
 *.tmp
+venv_mac/

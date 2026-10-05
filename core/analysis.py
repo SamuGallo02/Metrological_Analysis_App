@@ -330,7 +330,7 @@ def render_overlay(
             continue
 
         cv2.drawContours(overlay, [detection.contour], -1, (0, 255, 0), 2)
-        cv2.ellipse(overlay, detection.ellipse, (0, 165, 255), 2)
+        "cv2.ellipse(overlay, detection.ellipse, (0, 165, 255), 2)"
 
         id_str = f"[{detection.track_id}] " if detection.track_id else ""
         caption = f"{id_str}{detection.label}"
