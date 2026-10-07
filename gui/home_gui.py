@@ -29,7 +29,7 @@ from gui.common_widgets import ManualDialog
 from gui.home_layout import centered_content
 from gui.mode_selector_gui import FotoModeSelectorPage, VideoModeSelectorPage
 from gui.photo_gui import PhotoAnalysisPage
-from gui.training_gui import TrainingPage
+from training import TrainingPage
 from gui.video_gui import VideoAnalysisPage
 from gui.video_stereo_gui import VideoStereoAnalysisPage
 
