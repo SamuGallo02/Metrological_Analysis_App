@@ -28,7 +28,7 @@ Dim strIconPath, strDesktopPath, strShortcutPath, objShortcut
 Dim strSystemPython, intExitCode
 Dim strLogPath, strInnerCmd, strCmd, Q
 Dim strSetupMarker, objMarker, strSetupPyPath
-Dim blnNeedPythonInstall, strPyVersion, strPyInstallerUrl
+Dim blnNeedPythonInstall, strPyVersion, strPyInstallerUrl, blnNeedBootstrap
 
 Const MIN_PY_MAJOR = 3
 Const MIN_PY_MINOR = 10
@@ -76,6 +76,13 @@ strSetupPyPath = strScriptDir & "\setup.py"
 ' file dice con certezza se il setup e' davvero completo o no.
 strSetupMarker = strScriptDir & "\venv\.setup_complete"
 
+' Il setup si considera completo solo se ESISTONO ENTRAMBI: il marcatore E il
+' pythonw.exe dell'ambiente virtuale. Se il marcatore c'e' ma pythonw.exe no
+' (venv danneggiato, cartella Scripts cancellata da un antivirus/OneDrive/un
+' git clean...), l'avvio fallirebbe con "Impossibile trovare il file": in quel
+' caso si rifa' il bootstrap, che ricrea l'ambiente da solo.
+blnNeedBootstrap = Not (objFSO.FileExists(strSetupMarker) And objFSO.FileExists(strVenvPythonw))
+
 ' main.py e' indispensabile in ogni caso: senza, non si puo' proseguire
 If Not objFSO.FileExists(strMainPath) Then
     MsgBox "Impossibile avviare l'applicazione:" & vbCrLf & _
@@ -88,7 +95,7 @@ End If
 ' setup.py serve solo per il bootstrap (ambiente non ancora configurato), ma se
 ' manca e' meglio dirlo subito con un messaggio chiaro piuttosto che scoprirlo
 ' indirettamente da un errore di Python dentro setup_log.txt.
-If Not objFSO.FileExists(strSetupMarker) And Not objFSO.FileExists(strSetupPyPath) Then
+If blnNeedBootstrap And Not objFSO.FileExists(strSetupPyPath) Then
     MsgBox "Impossibile completare la configurazione:" & vbCrLf & _
            "Il file setup.py non e' stato trovato in:" & vbCrLf & strScriptDir & vbCrLf & vbCrLf & _
            "Controlla di aver copiato/scaricato l'INTERA cartella del progetto da GitHub " & _
@@ -98,7 +105,7 @@ If Not objFSO.FileExists(strSetupMarker) And Not objFSO.FileExists(strSetupPyPat
 End If
 
 ' --- Se il setup non risulta completato con successo, esegue il bootstrap ---
-If Not objFSO.FileExists(strSetupMarker) Then
+If blnNeedBootstrap Then
 
     strSystemPython = FindInPath("python.exe")
     blnNeedPythonInstall = False
