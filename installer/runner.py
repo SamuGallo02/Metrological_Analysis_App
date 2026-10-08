@@ -249,7 +249,7 @@ class Installer:
         env = dict(os.environ, TMP=str(TMP_DIR), TEMP=str(TMP_DIR), TMPDIR=str(TMP_DIR))
         try:
             rep.unlink(missing_ok=True)
-            r = subprocess.run([str(self.vpy), "-m", "pip", *args, "--dry-run", "--report", str(rep), "-q"],
+            r = subprocess.run([str(self.vpy), "-m", "pip", *args, "--no-cache-dir", "--dry-run", "--report", str(rep), "-q"],
                                capture_output=True, text=True, timeout=300, env=env, cwd=str(ROOT), **_NOWIN)
             if r.returncode != 0 or not rep.exists():
                 return None
@@ -337,8 +337,27 @@ class Installer:
     def venv_has_core(self) -> bool:
         if self.dry or not self.vpy.exists():
             return False
-        return subprocess.call([str(self.vpy), "-c", CORE_IMPORTS],
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **_NOWIN) == 0
+        return not self.failing_imports()
+
+    def failing_imports(self) -> Dict[str, str]:
+        """Prova a importare ogni modulo base: {modulo: ultima riga dell'errore} per quelli che falliscono."""
+        bad: Dict[str, str] = {}
+        for mod in [m.strip() for m in CORE_IMPORTS[len("import "):].split(",")]:
+            mod = "PySide6.QtWidgets" if mod == "PySide6" else mod
+            r = subprocess.run([str(self.vpy), "-c", f"import {mod}"], capture_output=True, text=True,
+                               encoding="utf-8", errors="replace", **_NOWIN)
+            if r.returncode != 0:
+                err = (r.stderr or "").strip()
+                say(f"[ERRORE] import {mod} fallito:\n{err[-1500:]}")
+                bad[mod] = err.splitlines()[-1] if err else "errore sconosciuto"
+        return bad
+
+    def purge_pip_cache(self) -> None:
+        """Svuota la cache http di pip: puo' contenere wheel da GB che causano MemoryError e occupano disco."""
+        if self.dry or not self.vpy.exists():
+            return
+        subprocess.run([str(self.vpy), "-m", "pip", "cache", "purge", "--disable-pip-version-check"],
+                       capture_output=True, text=True, timeout=120, **_NOWIN)
 
     # stati possibili di un componente
     OK, MISSING, BROKEN, OLD = "ok", "missing", "broken", "old"
@@ -492,6 +511,7 @@ class Installer:
         self.report(1, "Controllo dei componenti gia' presenti")
 
         self.ensure_venv()
+        self.purge_pip_cache()
         self.report(4, "Ambiente virtuale pronto")
 
         # Controllo di OGNI componente (presenza, integrita', versione minima): si installa solo il necessario.
@@ -542,8 +562,14 @@ class Installer:
 
         if not self.dry:
             self.report(98, "Verifica finale")
-            if not self.venv_has_core():
-                raise RuntimeError("verifica finale fallita: import dei moduli base non riuscito")
+            bad = self.failing_imports()
+            if bad and any("numpy" in e.lower() for e in bad.values()):
+                say("[..] Incompatibilita' con NumPy: provo con una versione compatibile ...")
+                self.pip("install", "--force-reinstall", "--no-deps", "numpy<2.3", check=False)
+                bad = self.failing_imports()
+            if bad:
+                raise RuntimeError("verifica finale fallita, moduli non importabili: "
+                                   + "; ".join(f"{m} ({e})" for m, e in bad.items()))
             state.mark_component("core", os=self.os_name, torch=choice.label,
                                  python=".".join(map(str, self.info.python)),
                                  gpu_unsupported=bool(plan.training_torch_candidates(self.info))
