@@ -20,7 +20,7 @@ import json
 from pathlib import Path
 from typing import List
 
-CLASSES_FILE = Path("object_classes.json")
+CLASSES_FILE = Path(__file__).resolve().parent.parent / "config" / "object_classes.json"
 
 # Valore speciale che indica "nessun filtro, mostra tutti gli oggetti rilevati"
 ALL_OBJECTS = "Tutti gli oggetti"
@@ -43,6 +43,7 @@ def load_classes(path: Path = CLASSES_FILE) -> List[str]:
 def save_classes(classes: List[str], path: Path = CLASSES_FILE) -> None:
     """Salva l'elenco delle classi su file, in ordine e senza duplicati."""
     unique_sorted = sorted(dict.fromkeys(c.strip() for c in classes if c.strip()))
+    path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as f:
         json.dump(unique_sorted, f, ensure_ascii=False, indent=2)
 

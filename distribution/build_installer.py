@@ -3,7 +3,7 @@
 Genera il file unico da distribuire (Installa.cmd + copia Installa.command per macOS)
 unendo wrapper.in (Windows/sh) e installer_gui.py (la finestra di installazione).
 
-Uso:  python distribution/build_installer.py          (scrive nella cartella del progetto)
+Uso:  python distribution/build_installer.py          (scrive in distribution/output/)
       python distribution/build_installer.py DEST     (scrive in DEST)
 """
 import os
@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-OUT = Path(sys.argv[1]) if len(sys.argv) > 1 else HERE.parent
+OUT = Path(sys.argv[1]) if len(sys.argv) > 1 else HERE / "output"
 
 wrapper = (HERE / "wrapper.in").read_text(encoding="utf-8").replace("\r\n", "\n")
 gui = (HERE / "installer_gui.py").read_text(encoding="utf-8").replace("\r\n", "\n")
@@ -23,6 +23,7 @@ assert wrapper.rstrip().endswith("##PYSRC_BEGIN")
 
 data = wrapper.rstrip("\n") + "\n" + gui
 for name in ("Installa.cmd", "Installa.command"):
+    OUT.mkdir(parents=True, exist_ok=True)
     f = OUT / name
     f.write_bytes(data.encode("utf-8"))   # LF: indispensabile per la parte sh
     f.chmod(f.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)

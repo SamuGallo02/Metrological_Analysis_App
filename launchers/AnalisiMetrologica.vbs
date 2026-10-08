@@ -17,13 +17,13 @@ Dim strIconPath, strShortcutPath, objShortcut, blnInstalled, intAnswer
 Set objShell = CreateObject("WScript.Shell")
 Set objFSO = CreateObject("Scripting.FileSystemObject")
 
-strScriptDir = objFSO.GetParentFolderName(WScript.ScriptFullName)
+strScriptDir = objFSO.GetParentFolderName(objFSO.GetParentFolderName(WScript.ScriptFullName)) ' radice del progetto (questo file sta in launchers\)
 objShell.CurrentDirectory = strScriptDir
 
 strIconPath = strScriptDir & "\assets\app_icon.ico"
 strShortcutPath = objShell.SpecialFolders("Desktop") & "\Analisi Metrologica.lnk"
 
-If Not objFSO.FileExists(strShortcutPath) Then
+If True Then ' sempre ricreato: cosi' segue eventuali spostamenti del file
     Set objShortcut = objShell.CreateShortcut(strShortcutPath)
     objShortcut.TargetPath = WScript.ScriptFullName
     objShortcut.WorkingDirectory = strScriptDir
@@ -49,7 +49,7 @@ If Not blnInstalled Then
     intAnswer = MsgBox("L'applicativo non e' ancora installato su questo computer." & vbCrLf & vbCrLf & _
                        "Avviare ora l'installazione?", 36, "Installazione necessaria")
     If intAnswer <> 6 Then WScript.Quit 0
-    objShell.Run """" & strScriptDir & "\Installa_Windows.vbs""", 1, True
+    objShell.Run """" & objFSO.GetParentFolderName(WScript.ScriptFullName) & "\Installa_Windows.vbs""", 1, True
     If Not objFSO.FileExists(strScriptDir & "\.install_state.json") Then WScript.Quit 1
 End If
 

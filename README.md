@@ -34,11 +34,15 @@ Applicativo/
 │   └── reporting.py         # Calcolo degli indici statistici ed esportazione dati
 ├── gui/                     # Interfaccia Utente (PySide6)
 │   └── main_window.py       # Finestra principale e gestione thread di analisi (QThread)
+├── config/                  # Configurazione persistente (object_classes.json: classi tracciate)
+├── distribution/            # Sorgenti e build dell'installer a file unico (build_installer.py)
+│   └── output/              # Installa.cmd / Installa.command generati
+├── installer/               # Pacchetto di installazione (rilevamento OS/GPU, venv, PyTorch)
+├── launchers/               # Avvio e installazione per sistema operativo (.vbs, .command, .sh)
 ├── tools/                   # Utility di diagnostica e acquisizione test
-├── AnalisiMetrologica.vbs   # Launcher VBScript per l'avvio silenzioso senza console
 ├── main.py                  # Entry-point principale per l'avvio dell'applicazione
-├── object_classes.json      # Configurazione persistente delle classi tracciate
-├── requirements.txt         # Dipendenze software Python
+├── requirements.txt         # Dipendenze dirette (PyTorch lo sceglie l'installer)
+├── requirements-training.txt # Extra opzionali per il training
 └── README.md                # Documentazione formale del repository
 
 
@@ -70,7 +74,7 @@ mkdir -p models datasets
 
 Con l'ambiente virtuale attivo, avvia l'applicazione con il seguente comando bash:
 python main.py
-In alternativa alla riga di comando, una volta creato l'ambiente venv è possibile avviare l'applicazione facendo doppio clic sul file AnalisiMetrologica.vbs.
+In alternativa alla riga di comando, una volta creato l'ambiente venv è possibile avviare l'applicazione facendo doppio clic su launchers/AnalisiMetrologica.vbs (Windows), launchers/AvviaAnalisiMetrologica.command (macOS) o launchers/AvviaAnalisiMetrologica.sh (Linux). L'installazione guidata si fa con l'installer a file unico (distribution/output/Installa.cmd).
 
 
 5. Preparazione dei Dati Operativi

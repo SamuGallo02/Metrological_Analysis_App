@@ -30,7 +30,7 @@ Q = Chr(34)
 Set objShell = CreateObject("WScript.Shell")
 Set objFSO = CreateObject("Scripting.FileSystemObject")
 
-strScriptDir = objFSO.GetParentFolderName(WScript.ScriptFullName)
+strScriptDir = objFSO.GetParentFolderName(objFSO.GetParentFolderName(WScript.ScriptFullName)) ' radice del progetto (questo file sta in launchers\)
 objShell.CurrentDirectory = strScriptDir
 
 strPyVersion = "3.12.6"
