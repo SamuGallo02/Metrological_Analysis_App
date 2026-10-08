@@ -28,3 +28,4 @@ venv_mac/
 install_log.txt
 setup_log.txt
 venv_linux/
+.tmp/

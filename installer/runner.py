@@ -3,16 +3,18 @@
 from __future__ import annotations
 
 import argparse
+import json
 import math
 import os
 import queue
 import re
+import shutil
 import subprocess
 import sys
 import threading
 import time
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from . import plan, state
 from .sysinfo import OS_LINUX, OS_MACOS, OS_WINDOWS, SystemInfo, detect_system
@@ -52,6 +54,51 @@ def say(msg: str = "") -> None:
     print(msg, flush=True)
 
 
+GPU_NEED_GB = 10.0   # picco su disco per PyTorch CUDA: download + installazione + margine
+CPU_NEED_GB = 3.0
+TMP_DIR = ROOT / ".tmp"
+
+
+IMPORT_NAMES = {"PySide6": "PySide6.QtWidgets", "opencv-python": "cv2", "pyyaml": "yaml", "pillow": "PIL", "nvidia-ml-py": "pynvml",
+                "scikit-learn": "sklearn", "python-dateutil": "dateutil"}
+
+
+def parse_requirements(path: Path) -> List[str]:
+    """Nomi dei pacchetti di un requirements.txt (senza versioni, commenti e opzioni)."""
+    names: List[str] = []
+    if path.exists():
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.split("#", 1)[0].strip()
+            if line and not line.startswith("-"):
+                names.append(re.split(r"[<>=!~;\[ ]", line, maxsplit=1)[0])
+    return names
+
+
+def requirement_lines(path: Path) -> List[Tuple[str, str]]:
+    """[(nome, riga completa con eventuale versione minima)] da un requirements.txt."""
+    out: List[Tuple[str, str]] = []
+    if path.exists():
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.split("#", 1)[0].strip()
+            if line and not line.startswith("-"):
+                out.append((re.split(r"[<>=!~;\[ ]", line, maxsplit=1)[0], line))
+    return out
+
+
+def import_name(pip_name: str) -> str:
+    for k, v in IMPORT_NAMES.items():
+        if k.lower() == pip_name.lower():
+            return v
+    return pip_name.replace("-", "_")
+
+
+def free_gb(path: Path) -> float:
+    p = Path(path)
+    while not p.exists() and p != p.parent:
+        p = p.parent
+    return shutil.disk_usage(str(p)).free / 1e9
+
+
 SIZE_RE = re.compile(r"\(([\d.]+)\s*(kB|MB|GB)\)")
 PROGRESS_RE = re.compile(r"Progress\s+(\d+)\s+of\s+(\d+)")
 
@@ -63,8 +110,15 @@ class Installer:
         self.progress = progress
         self.info: SystemInfo = detect_system()
         self.vpy = state.venv_python(os_name)
+        self.disk_full = False       # pip ha segnalato "No space left on device"
+        self.skipped_space = False   # build GPU saltata per spazio insufficiente (si riprovera' in futuro)
 
     # ---- avanzamento (letto dalla finestra grafica dell'installer) ----------
+    def warn(self, text: str) -> None:
+        say(f"[ATTENZIONE] {text}")
+        if self.progress:
+            say(f"@@WARN {text}")
+
     def report(self, pct: float, text: str = "") -> None:
         if self.progress:
             say(f"@@PROGRESS {int(max(0, min(100, pct)))} {text}")
@@ -79,11 +133,19 @@ class Installer:
             raise RuntimeError(f"comando fallito (codice {rc})")
         return rc
 
-    def pip(self, *args: str, check: bool = True, span: Tuple[float, float] = (0, 0)) -> int:
+    def pip(self, *args: str, check: bool = True, span: Tuple[float, float] = (0, 0),
+            nocache: bool = False) -> int:
         """Esegue pip mostrando l'avanzamento: 'span' e' l'intervallo (%) che questo comando
         occupa nella barra complessiva."""
         lo, hi = span
         base = [str(self.vpy), "-m", "pip", *map(str, args)]
+        if nocache:
+            # i wheel da GB non vanno nella cache di pip: raddoppierebbero lo spazio usato e pip
+            # puo' andare in MemoryError rileggendoli (visto con PyTorch CUDA)
+            base.insert(4, "--no-cache-dir")
+        # file temporanei di pip sul disco scelto per l'installazione, non su quello di sistema
+        TMP_DIR.mkdir(parents=True, exist_ok=True)
+        env = dict(os.environ, TMP=str(TMP_DIR), TEMP=str(TMP_DIR), TMPDIR=str(TMP_DIR))
         if self.dry:
             say("  > " + " ".join(base))
             return 0
@@ -92,7 +154,7 @@ class Installer:
             cmd = base + (["--progress-bar", "raw"] if use_raw and attempt == 0 else [])
             say("  > " + " ".join(cmd))
             proc = subprocess.Popen(cmd, cwd=str(ROOT), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                    text=True, encoding="utf-8", errors="replace", **_NOWIN)
+                                    text=True, encoding="utf-8", errors="replace", env=env, **_NOWIN)
             steps, last, invalid = 0, -1, False
             big_t0, big_size = 0.0, 0.0       # download grosso in corso (inizio, byte)
             lines: "queue.Queue" = queue.Queue()
@@ -124,6 +186,8 @@ class Installer:
                     continue
                 if "invalid choice" in line and "progress" in line.lower():
                     invalid = True
+                if "No space left on device" in line or "Errno 28" in line:
+                    self.disk_full = True
                 m = PROGRESS_RE.search(line)
                 if m:
                     done, total = int(m.group(1)), int(m.group(2))
@@ -183,31 +247,147 @@ class Installer:
         return subprocess.call([str(self.vpy), "-c", CORE_IMPORTS],
                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **_NOWIN) == 0
 
+    # stati possibili di un componente
+    OK, MISSING, BROKEN, OLD = "ok", "missing", "broken", "old"
+
+    def component_status(self, reqs: List[Tuple[str, str]], light: bool = False) -> Dict[str, Tuple[Optional[str], str]]:
+        """Per ogni componente (nome, requisito): (versione installata, stato) con stato
+        ok / missing (non installato) / broken (installato ma non importabile) /
+        old (versione sotto il minimo richiesto). 'light' salta il test di import."""
+        if self.dry or not self.vpy.exists() or not reqs:
+            return {n: (None, self.MISSING) for n, _ in reqs}
+        code = ("import importlib, importlib.metadata as m, json, sys\n"
+                "light = sys.argv[2] == '1'\n"
+                "try:\n"
+                "    from pip._vendor.packaging.specifiers import SpecifierSet\n"
+                "    from pip._vendor.packaging.version import Version\n"
+                "except Exception:\n"
+                "    SpecifierSet = None\n"
+                "out = {}\n"
+                "for pip, mod, spec in json.loads(sys.argv[1]):\n"
+                "    try: ver = m.version(pip)\n"
+                "    except Exception: out[pip] = [None, 'missing']; continue\n"
+                "    if not light:\n"
+                "        try: importlib.import_module(mod)\n"
+                "        except BaseException: out[pip] = [ver, 'broken']; continue\n"
+                "    state = 'ok'\n"
+                "    if spec and SpecifierSet is not None:\n"
+                "        try:\n"
+                "            if not SpecifierSet(spec).contains(Version(ver), prereleases=True): state = 'old'\n"
+                "        except Exception: pass\n"
+                "    out[pip] = [ver, state]\n"
+                "print(json.dumps(out))")
+        pairs = json.dumps([[n, import_name(n), line[len(n):].strip()] for n, line in reqs])
+        try:
+            r = subprocess.run([str(self.vpy), "-c", code, pairs, "1" if light else "0"], capture_output=True,
+                               text=True, timeout=600, **_NOWIN)
+            data = json.loads(r.stdout.strip().splitlines()[-1]) if r.returncode == 0 and r.stdout.strip() else None
+        except Exception:
+            data = None
+        if data is None:
+            if not light:   # import troppo lento o crash: ripiego sul controllo leggero (mai "tutto da reinstallare")
+                say("[ATTENZIONE] Test di import non riuscito: uso il controllo leggero dei componenti.")
+                return self.component_status(reqs, light=True)
+            return {n: (None, self.MISSING) for n, _ in reqs}
+        return {n: (tuple(data[n]) if n in data else (None, self.MISSING)) for n, _ in reqs}
+
+    def show_status(self, status: Dict[str, Tuple[Optional[str], str]]) -> None:
+        labels = {self.OK: "gia' presente", self.MISSING: "DA INSTALLARE", self.BROKEN: "DANNEGGIATO (reinstallo)",
+                  self.OLD: "TROPPO VECCHIO (aggiorno)"}
+        say("[INFO] Stato dei componenti:")
+        for n, (ver, st) in status.items():
+            say(f"   {n:<16} {labels[st]}" + (f" [{ver}]" if ver else ""))
+
+    def fix_dependencies(self) -> None:
+        """Dipendenze indirette: 'pip check' segnala quelle mancanti o in conflitto e le ripara.
+        Non tocca mai torch/torchvision (per non sostituire la build scelta per la GPU)."""
+        if self.dry:
+            return
+        protected = {"torch", "torchvision", "torchaudio"}
+        for attempt in range(2):
+            r = subprocess.run([str(self.vpy), "-m", "pip", "check"], capture_output=True, text=True,
+                               timeout=300, **_NOWIN)
+            if r.returncode == 0:
+                say("[OK] Coerenza delle dipendenze verificata (pip check): nessun problema.")
+                return
+            todo = set()
+            for line in r.stdout.splitlines():
+                m = (re.search(r"requires (.+?), which is not installed", line)
+                     or re.search(r"has requirement (.+?), but you have", line))
+                if m and re.split(r"[<>=!~; \[]", m.group(1).strip(), maxsplit=1)[0].lower() not in protected:
+                    todo.add(m.group(1).strip())
+            if not todo:
+                self.warn("pip check segnala incongruenze che non posso riparare da solo: "
+                          + " | ".join(r.stdout.strip().splitlines()[:3]))
+                return
+            say(f"[..] Ripristino le dipendenze indirette: {', '.join(sorted(todo))} ...")
+            self.pip("install", *sorted(todo), check=False)
+        self.warn("Alcune dipendenze indirette restano incongruenti (vedi il log).")
+
+    def installed_torch_index(self) -> Optional[str]:
+        """Indice PyTorch coerente con la build di torch gia' installata (per aggiungere torchvision uguale)."""
+        ver = self._venv_eval("import torch; print(torch.__version__)")
+        if "+" in ver:
+            return plan.PYTORCH_INDEX + ver.split("+", 1)[1]
+        return None
+
     def torch_matches_target(self) -> bool:
         """True se il PyTorch gia' presente va bene per questo hardware (niente da reinstallare)."""
         ver = self._venv_eval("import torch; print(torch.__version__)")
         if not ver:
             return False
-        wants_gpu = bool(plan.training_torch_candidates(self.info))
-        return ("+cu" in ver) or not wants_gpu
+        if not plan.training_torch_candidates(self.info):
+            return True                      # niente GPU NVIDIA: qualunque build funzionante va bene
+        if "+cu" in ver:
+            return self.cuda_works()         # build CUDA gia' presente: la teniamo se funziona
+        # build senza CUDA (es. PyPI su Windows): serve la GPU solo se una build CUDA e' davvero utilizzabile;
+        # se un tentativo precedente ha gia' ripiegato sulla CPU lo ricordiamo nello stato
+        return bool(state.load().get("core", {}).get("gpu_unsupported"))
 
     # ---- torch --------------------------------------------------------------
-    def install_best_torch(self, span: Tuple[float, float]) -> "plan.TorchChoice":
-        """GPU NVIDIA => build CUDA compatibile col driver (con ripiego sulle precedenti
-        e, in ultima istanza, sulla CPU); altrimenti la build giusta per il sistema."""
-        candidates = plan.training_torch_candidates(self.info)
-        for c in candidates:
+    def cuda_works(self) -> bool:
+        """True se PyTorch riesce davvero a usare la GPU (non basta che il pacchetto sia installato:
+        le build recenti possono non supportare GPU vecchie)."""
+        if self.dry:
+            return True
+        return bool(self._venv_eval("import torch; torch.zeros(1).cuda(); print(torch.cuda.get_device_name(0))"))
+
+    def install_gpu_torch(self, span: Tuple[float, float]) -> Optional[str]:
+        """Prova le build CUDA compatibili col driver, dalla piu' recente; ritorna l'etichetta di
+        quella che funziona davvero, oppure None. Non disinstalla prima: pip scarica la nuova
+        build e sostituisce la vecchia solo a download finito (--force-reinstall serve perche'
+        '2.x' e '2.x+cu126' sembrerebbero la stessa versione)."""
+        for c in plan.training_torch_candidates(self.info):
             say(f"[2/3] Installo PyTorch con supporto GPU ({c.label}, {plan.SIZE_HINT['cuda']}) ...")
-            self.pip("uninstall", "-y", "torch", "torchvision", check=False)
-            if self.pip("install", "torch", "torchvision", "--index-url", c.index_url, check=False, span=span) == 0:
-                return c
-            say(f"[ATTENZIONE] Build {c.label} non installabile, provo la precedente ...")
-        if candidates:
-            say("[ATTENZIONE] Nessuna build GPU installabile: uso la versione CPU (potrai riprovare dall'app).")
+            rc = self.pip("install", "--force-reinstall", "torch", "torchvision", "--index-url", c.index_url,
+                          check=False, span=span, nocache=True)
+            if rc == 0 and self.cuda_works():
+                return c.label
+            if self.disk_full:
+                self.warn("Spazio su disco esaurito durante il download: libera spazio e rilancia l'installer.")
+                return None             # riprovare con un'altra build scaricherebbe di nuovo GB inutilmente
+            say(f"[ATTENZIONE] Build {c.label} non utilizzabile su questa GPU, provo la precedente ...")
+        return None
+
+    def install_best_torch(self, span: Tuple[float, float]) -> "plan.TorchChoice":
+        """GPU NVIDIA => build CUDA che funziona davvero; altrimenti (o se nessuna funziona)
+        la build CPU/standard adatta al sistema."""
+        if plan.training_torch_candidates(self.info):
+            free = free_gb(ROOT)
+            if free < GPU_NEED_GB:
+                self.skipped_space = True
+                self.warn(f"Spazio libero {free:.1f} GB: per PyTorch con GPU ne servono circa {GPU_NEED_GB:.0f} GB. "
+                          "Installo la versione CPU; libera spazio e rilancia l'installer per attivare la GPU.")
+            else:
+                label = self.install_gpu_torch(span)
+                if label:
+                    return plan.TorchChoice(label, None)
+                if not self.disk_full:
+                    self.warn("Nessuna build GPU utilizzabile con questa scheda: uso la versione CPU.")
         choice = plan.core_torch(self.info)
         say(f"[2/3] Installo PyTorch ({choice.label}, {plan.SIZE_HINT.get(choice.label, '')}) ...")
-        args = ["install", "torch", "torchvision"] + (["--index-url", choice.index_url] if choice.index_url else [])
-        self.pip(*args, span=span)
+        args = ["install", "--force-reinstall", "torch", "torchvision"] + (["--index-url", choice.index_url] if choice.index_url else [])
+        self.pip(*args, span=span, nocache=True)
         return choice
 
     # ---- core ---------------------------------------------------------------
@@ -215,39 +395,64 @@ class Installer:
         say(f"[INFO] Sistema: {self.info.describe()}")
         self.report(1, "Controllo dei componenti gia' presenti")
 
-        # Tutto gia' a posto (anche da installazioni precedenti): non si tocca nulla.
-        if not force and self.venv_has_core() and self.torch_matches_target():
-            say("[OK] Componenti gia' installati e adatti a questo computer: nulla da fare.")
-            if not self.dry:
-                torch_ver = self._venv_eval("import torch; print(torch.__version__)")
-                label = "cu" + torch_ver.split("+cu")[1] if "+cu" in torch_ver else "esistente"
-                state.mark_component("core", os=self.os_name, torch=label,
-                                     python=".".join(map(str, self.info.python)))
-            self.report(100, "Componenti gia' presenti")
-            return
-
         self.ensure_venv()
         self.report(4, "Ambiente virtuale pronto")
 
-        if not force and self.torch_matches_target():
-            say("[OK] PyTorch gia' presente e adatto: lo mantengo.")
+        # Controllo di OGNI componente (presenza, integrita', versione minima): si installa solo il necessario.
+        reqs = requirement_lines(ROOT / "requirements.txt")
+        all_reqs = [("torch", "torch"), ("torchvision", "torchvision")] + reqs
+        status = ({n: (None, self.MISSING) for n, _ in all_reqs} if force
+                  else self.component_status(all_reqs))
+        self.show_status(status)
+        self.report(6, "Componenti controllati")
+
+        # --- PyTorch (prima di ultralytics, cosi' pip non ne scarica una build diversa) ---
+        torch_ok = status["torch"][1] == self.OK and self.torch_matches_target()
+        if torch_ok:
+            say(f"[OK] PyTorch {status['torch'][0]} gia' presente e adatto: non lo reinstallo.")
             ver = self._venv_eval("import torch; print(torch.__version__)")
-            choice = plan.TorchChoice("cu" + ver.split("+cu")[1] if "+cu" in ver else "esistente", None)
+            choice = plan.TorchChoice(("cu" + ver.split("+cu")[1]) if "+cu" in ver else "esistente", None)
+            if status["torchvision"][1] != self.OK:
+                say("[..] torchvision mancante o danneggiato: lo (re)installo con la stessa build di torch ...")
+                idx = self.installed_torch_index()
+                self.pip("install", "--force-reinstall", "--no-deps", "torchvision",
+                         *(["--index-url", idx] if idx else []), span=(6, 40), nocache=True)
+            else:
+                say(f"[OK] torchvision {status['torchvision'][0]} gia' presente.")
             self.report(70, "PyTorch gia' presente")
         else:
-            # PyTorch PRIMA di ultralytics: cosi' pip lo considera gia' soddisfatto e non
-            # scarica da PyPI una build diversa da quella scelta per questo hardware.
-            choice = self.install_best_torch(span=(5, 70))
+            choice = self.install_best_torch(span=(6, 70))
 
-        say("[3/3] Installo le librerie mancanti (requirements.txt) ...")
-        self.pip("install", "-r", ROOT / "requirements.txt", span=(70, 97))  # pip salta cio' che c'e' gia'
+        # --- librerie: mancanti/vecchie si installano, danneggiate si reinstallano ---
+        todo, broken = [], []
+        for n, line in reqs:
+            st = status[n][1]
+            if st in (self.MISSING, self.OLD):
+                todo.append(line)
+            elif st == self.BROKEN:
+                broken.append(line)
+        if todo or broken:
+            say(f"[3/3] Installo/aggiorno: {', '.join(l for l in todo + broken)} ...")
+            if todo:
+                self.pip("install", *(["--upgrade"] if force else []), *todo, span=(70, 90))
+            if broken:
+                self.pip("install", "--force-reinstall", *broken, span=(90, 96))
+        else:
+            say("[3/3] Tutte le librerie dell'applicativo sono gia' presenti e integre: nulla da installare.")
+        self.report(96, "Librerie a posto")
+
+        # --- dipendenze indirette ---
+        self.fix_dependencies()
 
         if not self.dry:
             self.report(98, "Verifica finale")
             if not self.venv_has_core():
                 raise RuntimeError("verifica finale fallita: import dei moduli base non riuscito")
             state.mark_component("core", os=self.os_name, torch=choice.label,
-                                 python=".".join(map(str, self.info.python)))
+                                 python=".".join(map(str, self.info.python)),
+                                 gpu_unsupported=bool(plan.training_torch_candidates(self.info))
+                                 and not choice.label.startswith("cu")
+                                 and not self.skipped_space and not self.disk_full)
         self.report(100, "Installazione completata")
         say("[OK] Installazione dei componenti base completata.")
 
@@ -262,29 +467,36 @@ class Installer:
             return
 
         variant = state.load().get("core", {}).get("torch", "")
-        if variant.startswith("cu"):
-            say(f"[OK] PyTorch con GPU ({variant}) gia' presente: non lo reinstallo.")
+        if not (variant.startswith("cu")) and free_gb(ROOT) < GPU_NEED_GB:
+            raise RuntimeError(f"Spazio libero insufficiente ({free_gb(ROOT):.1f} GB): servono circa "
+                               f"{GPU_NEED_GB:.0f} GB per PyTorch con GPU.")
+        if variant.startswith("cu") and self.cuda_works():
+            say(f"[OK] PyTorch con GPU ({variant}) gia' presente e funzionante: non lo reinstallo.")
         else:
-            variant = ""
-            for c in plan.training_torch_candidates(self.info):
-                say(f"[1/2] Installo PyTorch con supporto GPU ({c.label}, {plan.SIZE_HINT['cuda']}) ...")
-                self.pip("uninstall", "-y", "torch", "torchvision", check=False)
-                if self.pip("install", "torch", "torchvision", "--index-url", c.index_url, check=False) == 0:
-                    variant = c.label
-                    break
-                say(f"[ATTENZIONE] Build {c.label} non installabile, provo la precedente ...")
+            variant = self.install_gpu_torch(span=(0, 0)) or ""
             if not variant:
-                say("[ERRORE] Nessuna build CUDA installabile: ripristino la versione CPU per non rompere l'app.")
+                say("[ERRORE] Nessuna build CUDA utilizzabile con questa GPU: ripristino la versione CPU.")
                 choice = plan.core_torch(self.info)
-                args = ["install", "torch", "torchvision"] + (["--index-url", choice.index_url] if choice.index_url else [])
+                args = ["install", "--force-reinstall", "torch", "torchvision"] + (["--index-url", choice.index_url] if choice.index_url else [])
                 self.pip(*args, check=False)
-                raise RuntimeError("installazione CUDA non riuscita")
+                data = state.load()
+                data.setdefault("core", {})["gpu_unsupported"] = True
+                state.save(data)
+                raise RuntimeError("GPU non supportata dalle build CUDA attuali di PyTorch")
 
-        extra = ROOT / "requirements-training.txt"
-        if extra.exists() and any(l.strip() and not l.lstrip().startswith("#")
-                                  for l in extra.read_text(encoding="utf-8").splitlines()):
-            say("[2/2] Installo gli extra per il training (requirements-training.txt) ...")
-            self.pip("install", "-r", extra)
+        extra = requirement_lines(ROOT / "requirements-training.txt")
+        if extra:
+            st = self.component_status(extra)
+            self.show_status(st)
+            todo = [line for n, line in extra if st[n][1] in (self.MISSING, self.OLD)]
+            broken = [line for n, line in extra if st[n][1] == self.BROKEN]
+            if todo:
+                say(f"[2/2] Installo gli extra per il training mancanti: {', '.join(todo)} ...")
+                self.pip("install", *todo)
+            if broken:
+                self.pip("install", "--force-reinstall", *broken)
+            if not todo and not broken:
+                say("[2/2] Extra per il training gia' presenti: nulla da installare.")
 
         if not self.dry:
             data = state.load()
@@ -392,9 +604,14 @@ def main(argv: Optional[List[str]] = None) -> int:
                 return 1
             inst.install_training()
     except Exception as e:
+        if inst.disk_full:
+            say("[ERRORE] Spazio su disco esaurito: libera spazio (svuota la cache di pip con "
+                f"'{inst.vpy} -m pip cache purge' e i file temporanei) e rilancia l'installer.")
         say(f"[ERRORE] {e}")
         say(f"Dettagli completi in: {LOG_FILE}")
         rc = 1
+    finally:
+        shutil.rmtree(TMP_DIR, ignore_errors=True)
 
     if a.component == "training":
         notify(os_name, "Installazione componenti di training " + ("completata" if rc == 0 else "NON riuscita"))
