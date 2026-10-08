@@ -2,7 +2,7 @@
 # ==============================================================================
 # Installer per LINUX - Analisi Metrologica
 # ==============================================================================
-# Da eseguire una sola volta:  ./Installa_Linux.sh   (opzione: --force)
+# Da eseguire una sola volta:  launchers/Installa_Linux.sh   (opzione: --force)
 # Installa SOLO cio' che serve a questo computer: Python 3.10+ e il modulo venv
 # se mancano (tramite apt/dnf/pacman, richiede sudo), l'ambiente "venv_linux" e i
 # componenti base (PyTorch con CUDA se c'e' una GPU NVIDIA, altrimenti CPU leggera,
@@ -12,7 +12,7 @@
 # Autore: Samuele Gallo
 # ==============================================================================
 
-cd "$(dirname "$0")" || exit 1
+cd "$(dirname "$0")/.." || exit 1
 
 if [ "$(uname -s)" != "Linux" ]; then
     echo "ERRORE: questo installer e' per Linux. Su macOS usa Installa_macOS.command, su Windows Installa_Windows.vbs."
@@ -61,4 +61,4 @@ if [ $? -ne 0 ] || [ ! -f .install_state.json ]; then
     echo; echo "Installazione non riuscita. Dettagli in: $(pwd)/install_log.txt"
     exit 1
 fi
-echo; echo "Installazione completata. Avvia l'app con ./AvviaAnalisiMetrologica.sh"
+echo; echo "Installazione completata. Avvia l'app con launchers/AvviaAnalisiMetrologica.sh"

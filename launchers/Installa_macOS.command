@@ -16,7 +16,7 @@
 # Autore: Samuele Gallo
 # ==============================================================================
 
-cd "$(dirname "$0")" || exit 1
+cd "$(dirname "$0")/.." || exit 1
 PY_VERSION="3.12.6"
 PY_PKG_URL="https://www.python.org/ftp/python/$PY_VERSION/python-$PY_VERSION-macos11.pkg"
 
