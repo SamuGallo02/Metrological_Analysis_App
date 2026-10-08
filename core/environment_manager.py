@@ -1,155 +1,80 @@
 """
-Modulo per la gestione dinamica delle dipendenze dell'ambiente di esecuzione.
-Fornisce funzioni per la verifica dell'hardware acceleration (NVIDIA CUDA)
-e per il ripristino/installazione automatizzata di PyTorch.
+Stato dell'accelerazione hardware e avvio dell'installazione dei componenti di
+training. L'installazione vera e propria e' in installer/ (processo separato:
+PyTorch non si puo' sostituire mentre l'app lo ha gia' caricato in memoria).
 
 Autore: Samuele Gallo
 """
 
+from __future__ import annotations
+
 import os
 import subprocess
 import sys
-import shutil
-import logging
+from pathlib import Path
+from typing import Any, Dict
 
-# Configurazione del logging per tracciabilità accademica/sperimentale
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+from installer import plan, state
+from installer.sysinfo import detect_system
 
-
-def check_nvidia_smi() -> bool:
-    """
-    Interroga il sistema operativo per verificare la presenza dei driver NVIDIA
-    e dell'utilità di gestione nvidia-smi.
-
-    :return: True se una GPU NVIDIA è presente e operativa, False altrimenti.
-    """
-    nvidia_smi_path = shutil.which("nvidia-smi")
-    if not nvidia_smi_path:
-        return False
-    try:
-        result = subprocess.run([nvidia_smi_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        return result.returncode == 0
-    except Exception as e:
-        logging.error(f"Errore durante l'esecuzione di nvidia-smi: {e}")
-        return False
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
-def get_cuda_status() -> dict:
-    """
-    Esegue un'analisi diagnostica approfondita sullo stato di PyTorch e dell'accelerazione hardware.
-
-    :return: Dizionario contenente le metriche di stato (disponibilità, nome dispositivo, conteggio).
-    """
-    status = {
+def get_cuda_status() -> Dict[str, Any]:
+    """Stato corrente di PyTorch/GPU e di cosa l'installer proporrebbe."""
+    info = detect_system()
+    needed, why = plan.training_needed(info)
+    status: Dict[str, Any] = {
         "cuda_available": False,
-        "device_count": 0,
         "device_name": "N/D",
         "torch_version": "Non installato",
-        "has_nvidia_driver": check_nvidia_smi()
+        "has_nvidia_driver": info.nvidia,
+        "gpu_name": info.gpu_name,
+        "apple_silicon": info.apple_silicon,
+        "training_installed": state.is_installed("training"),
+        "install_needed": False,
+        "install_note": why,
+        "install_variant": "",
+        "extras_pending": False,
     }
-
     try:
         import torch
         status["torch_version"] = torch.__version__
         status["cuda_available"] = torch.cuda.is_available()
         if status["cuda_available"]:
-            status["device_count"] = torch.cuda.device_count()
             status["device_name"] = torch.cuda.get_device_name(0)
+        elif getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
+            status["device_name"] = "Apple GPU (MPS)"
     except ImportError:
         pass
 
+    if needed and status["cuda_available"] and not status["training_installed"]:
+        status["extras_pending"] = True  # GPU gia' attiva: restano solo gli extra del training
+    if needed and not status["cuda_available"]:
+        status["install_needed"] = True
+        status["install_variant"] = plan.training_torch_candidates(info)[0].label
     return status
 
 
-def terminate_python_processes():
+def launch_training_installer() -> bool:
     """
-    Termina eventuali istanze precedenti dell'APPLICATIVO GUI (pythonw.exe) per
-    rilasciare i lock sui file DLL (es. c10.dll) ed evitare PermissionError
-    durante le operazioni di aggiornamento di PyTorch.
-
-    Deliberatamente NON tocca "python.exe" (a differenza di una versione
-    precedente di questa funzione): questa stessa funzione viene chiamata da
-    setup.py, che gira anch'esso come "python.exe" — un taskkill su quel nome
-    rischia di terminare il processo che sta eseguendo l'installazione stessa
-    a meta' strada (causa gia' osservata di un'interruzione silenziosa, senza
-    alcun errore Python, subito prima della fase di reinstallazione di
-    PyTorch). L'app vera e propria gira sempre come "pythonw.exe" (avvio
-    senza console, vedi AnalisiMetrologica.vbs e main.py): e' quello il solo
-    processo che puo' davvero tenere bloccate le DLL di PyTorch in memoria.
+    Avvia l'installazione dei componenti di training in un processo staccato che
+    attende la chiusura di questa app, installa e la riapre da solo.
+    Ritorna True se il processo e' partito (il chiamante deve chiudere l'app).
     """
-    if sys.platform.startswith("win"):
-        try:
-            current_pid = subprocess.os.getpid()
-            cmd = f'taskkill /F /FI "PID ne {current_pid}" /IM pythonw.exe'
-            subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        except Exception as e:
-            logging.warning(f"Impossibile terminare i processi concorrenti: {e}")
-
-
-def restart_application() -> None:
-    """
-    Riavvia l'intero processo dell'applicativo, sostituendo il processo Python
-    corrente con una nuova istanza dello stesso comando di avvio.
-
-    Necessario dopo aver reinstallato PyTorch: i binding CUDA (file .dll/.so
-    compilati) vengono caricati in memoria una sola volta all'avvio del
-    processo e Windows li tiene "bloccati" per tutta la sua durata — non
-    esiste un modo per ricaricarli a caldo nello stesso processo, quindi
-    l'unico modo reale per "vedere" la nuova installazione e' un riavvio
-    completo. os.execv sostituisce il processo corrente stesso (stesso PID),
-    quindi dal punto di vista dell'utente e' un riavvio immediato e pulito,
-    non l'apertura di una seconda istanza dell'app.
-    """
-    python = sys.executable
-    os.execv(python, [python] + sys.argv)
-
-
-def install_pytorch_environment(force_cuda: bool = True, skip_if_ok: bool = True) -> bool:
-    """
-    Esegue la riconfigurazione dinamica del framework PyTorch.
-    Rileva le specifiche hardware e scarica la build idonea (CUDA 12.1 o CPU).
-
-    :param force_cuda: Se True, forza l'installazione dei binding CUDA qualora la GPU sia presente.
-    :param skip_if_ok: Se True (default), controlla prima se PyTorch e' gia' installato con la
-        configurazione corretta (CUDA se c'e' una GPU, altrimenti una build qualsiasi funzionante)
-        e in tal caso NON tocca nulla — evita di riscaricare/reinstallare diversi GB ogni volta
-        che questa funzione viene chiamata (es. ad ogni avvio dell'app tramite setup.py), quando
-        in realta' e' gia' tutto configurato correttamente da un'esecuzione precedente.
-    :return: True se l'installazione si conclude con successo (o non serviva), False altrimenti.
-    """
-    has_gpu = check_nvidia_smi()
-
-    if skip_if_ok:
-        status = get_cuda_status()
-        gia_pronto = status["torch_version"] != "Non installato" and (
-            status["cuda_available"] or not (has_gpu and force_cuda)
-        )
-        if gia_pronto:
-            logging.info(
-                f"PyTorch {status['torch_version']} risulta gia' installato con la configurazione "
-                f"corretta (CUDA: {'attiva' if status['cuda_available'] else 'non necessaria'}): "
-                f"nessuna reinstallazione necessaria."
-            )
-            return True
-
-    terminate_python_processes()
-    
-    base_cmd = [
-        sys.executable, "-m", "pip", "install", "--force-reinstall",
-        "torch", "torchvision", "torchaudio"
-    ]
-    
-    if has_gpu and force_cuda:
-        logging.info("Rilevata unità di elaborazione grafica NVIDIA. Avvio configurazione CUDA 12.1...")
-        cmd = base_cmd + ["--index-url", "https://download.pytorch.org/whl/cu121"]
-    else:
-        logging.info("Nessun acceleratore hardware dedicato rilevato. Configurazione build CPU standard...")
-        cmd = base_cmd
-
+    os_name = detect_system().os_name
+    py = state.venv_python(os_name)
+    if not py.exists():
+        py = Path(sys.executable)
+    cmd = [str(py), "-m", "installer", "--os", os_name, "--component", "training",
+           "--yes", "--relaunch", "--wait-pid", str(os.getpid())]
     try:
-        subprocess.check_call(cmd)
-        logging.info("Configurazione del framework completata con successo.")
+        if os.name == "nt":
+            # finestra di console visibile: l'utente vede l'avanzamento del download
+            subprocess.Popen(cmd, cwd=str(PROJECT_ROOT), creationflags=0x00000010, close_fds=True)  # CREATE_NEW_CONSOLE
+        else:
+            subprocess.Popen(cmd, cwd=str(PROJECT_ROOT), start_new_session=True, close_fds=True,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return True
-    except subprocess.CalledProcessError as e:
-        logging.error(f"Errore critico durante la fase di installazione: {e}")
+    except Exception:
         return False

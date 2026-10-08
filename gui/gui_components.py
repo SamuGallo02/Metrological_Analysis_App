@@ -1,132 +1,96 @@
 """
-Componente dell'interfaccia utente (PySide6) per il monitoraggio delle risorse di calcolo.
-Permette la gestione dell'hardware per l'inferenza dei modelli di rilevamento.
+Componente dell'interfaccia utente (PySide6) per l'accelerazione hardware.
+Nella pagina di training permette di installare, su richiesta, i componenti
+necessari all'addestramento (PyTorch con supporto GPU): non vengono mai
+installati in automatico.
 
 Autore: Samuele Gallo
 """
 
-from PySide6.QtWidgets import (
-    QGroupBox, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QMessageBox, QProgressBar
-)
-from PySide6.QtCore import Qt, QThread, Signal
-from core.environment_manager import get_cuda_status, install_pytorch_environment, restart_application
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QApplication, QGroupBox, QHBoxLayout, QLabel, QMessageBox, QPushButton, QVBoxLayout
 
-
-class InstallationWorker(QThread):
-    """Thread secondario per l'aggiornamento dei moduli di calcolo in background."""
-    finished_signal = Signal(bool)
-
-    def run(self):
-        result = install_pytorch_environment(force_cuda=True)
-        self.finished_signal.emit(result)
+from core.environment_manager import get_cuda_status, launch_training_installer
 
 
 class HardwareAccelerationWidget(QGroupBox):
-    """Widget di controllo dell'accelerazione GPU per l'inferenza dei modelli di rilevamento."""
+    """Stato dell'accelerazione GPU e installazione opzionale dei componenti di training."""
 
     def __init__(self, parent=None):
-        super().__init__("Pannello Accelerazione Hardware", parent)
-        self.worker = None
+        super().__init__("Componenti di training e accelerazione hardware", parent)
+        self._status = {}
         self.init_ui()
         self.refresh_hardware_status()
 
     def init_ui(self):
         layout = QVBoxLayout()
 
-        self.status_label = QLabel("Stato Elaborazione: Analisi hardware in corso...")
-        self.device_label = QLabel("Unità di Calcolo: -")
-        self.torch_label = QLabel("Framework Deep Learning: -")
-
-        self.status_label.setTextFormat(Qt.TextFormat.RichText)
-        self.device_label.setTextFormat(Qt.TextFormat.RichText)
-        self.torch_label.setTextFormat(Qt.TextFormat.RichText)
+        self.status_label = QLabel()
+        self.device_label = QLabel()
+        self.torch_label = QLabel()
+        for lbl in (self.status_label, self.device_label, self.torch_label):
+            lbl.setTextFormat(Qt.TextFormat.RichText)
+            lbl.setWordWrap(True)
 
         btn_layout = QHBoxLayout()
-
         self.btn_refresh = QPushButton("Diagnostica Hardware")
         self.btn_refresh.clicked.connect(self.refresh_hardware_status)
 
-        self.btn_reinstall = QPushButton("Attiva Accelerazione GPU (CUDA)")
-        self.btn_reinstall.setToolTip("Configura PyTorch con supporto CUDA per accelerare l'inferenza.")
-        self.btn_reinstall.clicked.connect(self.start_cuda_configuration)
+        self.btn_install = QPushButton()
+        self.btn_install.clicked.connect(self.start_training_installation)
 
         btn_layout.addWidget(self.btn_refresh)
-        btn_layout.addWidget(self.btn_reinstall)
-
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setRange(0, 0)
-        self.progress_bar.setVisible(False)
+        btn_layout.addWidget(self.btn_install)
 
         layout.addWidget(self.status_label)
         layout.addWidget(self.device_label)
         layout.addWidget(self.torch_label)
         layout.addLayout(btn_layout)
-        layout.addWidget(self.progress_bar)
-
         self.setLayout(layout)
 
     def refresh_hardware_status(self):
-        """Aggiorna lo stato visivo relativo alla GPU."""
-        status = get_cuda_status()
+        s = get_cuda_status()
+        self._status = s
 
-        if status.get("cuda_available", False):
+        if s["cuda_available"]:
             self.status_label.setText("<b>Accelerazione Hardware:</b> <font color='green'>ATTIVA (GPU CUDA)</font>")
-            self.device_label.setText(f"<b>GPU Dedicata:</b> {status.get('device_name', 'N/D')}")
+            self.device_label.setText(f"<b>GPU Dedicata:</b> {s['device_name']}")
+        elif s["apple_silicon"]:
+            self.status_label.setText("<b>Accelerazione Hardware:</b> <font color='green'>Apple GPU (MPS)</font>")
+            self.device_label.setText(f"<b>Nota:</b> {s['install_note']}")
         else:
-            self.status_label.setText("<b>Accelerazione Hardware:</b> <font color='orange'>INATTIVA (Modalità CPU)</font>")
-            if status.get("has_nvidia_driver", False):
-                self.device_label.setText("<b>Nota:</b> GPU NVIDIA presente. Attivare i binding CUDA per ottimizzare le prestazioni.")
+            self.status_label.setText("<b>Accelerazione Hardware:</b> <font color='orange'>Modalità CPU</font>")
+            if s["install_needed"]:
+                self.device_label.setText(
+                    f"<b>GPU rilevata:</b> {s['gpu_name'] or 'NVIDIA'}. PyTorch e' in versione CPU: attiva "
+                    f"l'accelerazione GPU (build {s['install_variant']}, download di alcuni GB).")
             else:
-                self.device_label.setText("<b>Nota:</b> Nessun acceleratore compatibile rilevato.")
+                self.device_label.setText(f"<b>Nota:</b> {s['install_note']}")
 
-        self.torch_label.setText(f"<b>Versione PyTorch:</b> {status.get('torch_version', 'N/D')}")
+        self.torch_label.setText(f"<b>Versione PyTorch:</b> {s['torch_version']}")
+        if s["install_needed"]:
+            self.btn_install.setText("Attiva accelerazione GPU (CUDA)")
+        elif s["extras_pending"]:
+            self.btn_install.setText("Installa extra per il training")
+        self.btn_install.setVisible(s["install_needed"] or s["extras_pending"])
 
-    def start_cuda_configuration(self):
-        """Avvia l'installazione guidata."""
+    def start_training_installation(self):
+        s = self._status
+        what = (f"PyTorch con supporto GPU ({s['install_variant']}, alcuni GB)" if s["install_needed"]
+                else "gli extra per il training (pochi MB)")
         reply = QMessageBox.question(
             self,
-            "Configurazione Acceleratore GPU",
-            "Si sta per avviare il download e l'installazione dei moduli PyTorch CUDA 12.1.\n"
-            "Questa operazione ottimizza la velocità di inferenza sulle immagini analizzate. Continuare?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            "Installa componenti",
+            f"Verranno scaricati {what}.\n\n"
+            "L'applicativo si chiuderà durante l'installazione e si riaprirà da solo al termine "
+            "(possono servire diversi minuti; su Windows compare una finestra con l'avanzamento).\n\n"
+            "Continuare?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
-
-        if reply == QMessageBox.StandardButton.Yes:
-            self.btn_reinstall.setEnabled(False)
-            self.btn_refresh.setEnabled(False)
-            self.progress_bar.setVisible(True)
-
-            self.worker = InstallationWorker()
-            self.worker.finished_signal.connect(self.on_installation_finished)
-            self.worker.finished.connect(self.worker.deleteLater)
-            self.worker.start()
-
-    def on_installation_finished(self, success: bool):
-        """Notifica l'esito al termine dell'operazione."""
-        self.progress_bar.setVisible(False)
-        self.btn_reinstall.setEnabled(True)
-        self.btn_refresh.setEnabled(True)
-
-        if success:
-            reply = QMessageBox.question(
-                self,
-                "Operazione Completata",
-                "Configurazione completata con successo.\n\n"
-                "Per usare i nuovi binding CUDA e' necessario riavviare l'applicativo: "
-                "PyTorch li carica in memoria una sola volta all'avvio del processo, "
-                "quindi non e' possibile attivarli nella sessione gia' in corso.\n\n"
-                "Riavviare ora?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-            )
-            if reply == QMessageBox.StandardButton.Yes:
-                restart_application()
-                return  # non raggiunto: il processo viene sostituito da restart_application()
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        if launch_training_installer():
+            QApplication.quit()
         else:
-            QMessageBox.critical(
-                self,
-                "Errore di Configurazione",
-                "Impossibile completare l'installazione delle librerie CUDA.\nVerificare la connessione ad Internet o i log di sistema."
-            )
-
-        self.refresh_hardware_status()
+            QMessageBox.critical(self, "Errore", "Impossibile avviare l'installazione. "
+                                 "Riesegui l'installer del tuo sistema operativo.")

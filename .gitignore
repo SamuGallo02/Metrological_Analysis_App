@@ -22,3 +22,9 @@ datasets/
 .pytest_cache/
 *.tmp
 venv_mac/
+
+# installer
+.install_state.json
+install_log.txt
+setup_log.txt
+venv_linux/

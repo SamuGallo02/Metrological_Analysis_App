@@ -1,0 +1,4 @@
+# Extra installati SOLO quando l'utente attiva i componenti di training dalla
+# pagina di training, dopo la build GPU di PyTorch (se la GPU c'e').
+# Una libreria per riga; le righe vuote o con # sono ignorate.
+nvidia-ml-py

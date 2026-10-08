@@ -5,8 +5,8 @@
 # Da eseguire una sola volta:  ./Installa_Linux.sh   (opzione: --force)
 # Installa SOLO cio' che serve a questo computer: Python 3.10+ e il modulo venv
 # se mancano (tramite apt/dnf/pacman, richiede sudo), l'ambiente "venv_linux" e i
-# componenti base (PyTorch versione CPU leggera + librerie). Il PyTorch con GPU
-# NVIDIA per il training si attiva dalla pagina di training dell'app, su richiesta.
+# componenti base (PyTorch con CUDA se c'e' una GPU NVIDIA, altrimenti CPU leggera,
+# + librerie). Solo gli extra del training si installano dall'app, su richiesta.
 # Esito registrato in .install_state.json: gli avvii successivi non controllano nulla.
 #
 # Autore: Samuele Gallo

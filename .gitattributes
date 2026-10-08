@@ -1,0 +1,5 @@
+
+# fine riga LF: Installa.cmd e gli script shell devono restare LF
+Installa.cmd text eol=lf
+*.sh text eol=lf
+*.command text eol=lf

@@ -6,7 +6,7 @@
 # Mac: Python 3.10+ se manca (Homebrew se presente, altrimenti pacchetto ufficiale
 # python.org: chiede la password del Mac), l'ambiente virtuale "venv_mac" e i
 # componenti base (PyTorch con supporto Apple GPU/MPS integrato + librerie).
-# Il training non richiede componenti aggiuntivi su Mac. Esito registrato in
+# Su Mac non servono componenti aggiuntivi per il training. Esito registrato in
 # .install_state.json: gli avvii successivi non controllano piu' nulla.
 # Opzione: ./Installa_macOS.command --force  per reinstallare.
 #
