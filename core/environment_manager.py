@@ -20,6 +20,26 @@ from installer.sysinfo import detect_system
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
+def _training_extras_missing() -> bool:
+    """True se manca almeno uno degli extra di requirements-training.txt (controllo senza importarli)."""
+    import importlib.util
+    mods = {"nvidia-ml-py": "pynvml"}
+    try:
+        for ln in (PROJECT_ROOT / "requirements-training.txt").read_text(encoding="utf-8").splitlines():
+            ln = ln.split("#")[0].strip()
+            if not ln:
+                continue
+            name = ln
+            for sep in ("==", ">=", "<=", "~=", ">", "<", "["):
+                name = name.split(sep)[0]
+            name = name.strip()
+            if importlib.util.find_spec(mods.get(name.lower(), name.replace("-", "_"))) is None:
+                return True
+    except Exception:
+        return True
+    return False
+
+
 def get_cuda_status() -> Dict[str, Any]:
     """Stato corrente di PyTorch/GPU e di cosa l'installer proporrebbe."""
     info = detect_system()
@@ -48,7 +68,7 @@ def get_cuda_status() -> Dict[str, Any]:
     except ImportError:
         pass
 
-    if needed and status["cuda_available"] and not status["training_installed"]:
+    if needed and status["cuda_available"] and not status["training_installed"] and _training_extras_missing():
         status["extras_pending"] = True  # GPU gia' attiva: restano solo gli extra del training
     if needed and not status["cuda_available"]:
         status["install_needed"] = True

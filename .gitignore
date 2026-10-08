@@ -1,32 +1,35 @@
-# --- AMBIENTE VIRTUALE E CONFIGURAZIONI IDE ---
+# --- Ambienti virtuali ---
 venv/
+venv_mac/
+venv_linux/
+
+# --- IDE e cache Python ---
 .idea/
 .installed
 __pycache__/
 *.pyc
+.pytest_cache/
+*.tmp
 
-# --- MODELLI E PESI YOLO (File pesanti) ---
-models/*.pt
+# --- Modelli e pesi (file pesanti) ---
 *.pt
 *.onnx
 *.engine
 
-# --- DATASET E ACQUISIZIONI ---
+# --- Dataset e acquisizioni ---
 datasets/
 *.jpg
 *.jpeg
 *.png
 *.csv
+!assets/**
 
-# --- TEMPORANEI E CACHE ---
-.pytest_cache/
-*.tmp
-venv_mac/
-
-# installer
+# --- File locali dell'installer ---
 .install_state.json
 install_log.txt
 setup_log.txt
-venv_linux/
 .tmp/
 .wheels/
+
+# --- Installer generati (si pubblicano nel sito, non nel repository) ---
+distribution/output/

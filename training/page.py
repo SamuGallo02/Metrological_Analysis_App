@@ -64,6 +64,14 @@ class TrainingPage(QWidget):
         self._populate_tdatasets()
         self._check_model_download_status()
 
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        # all'ingresso nella pagina: propone l'installazione di cio' che manca per il training
+        if not getattr(self, "_hw_prompted", False):
+            self._hw_prompted = True
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(300, self.hw_widget.prompt_if_needed)
+
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
         layout.addLayout(build_top_bar(self, self.on_home))

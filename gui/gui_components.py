@@ -74,11 +74,30 @@ class HardwareAccelerationWidget(QGroupBox):
             self.btn_install.setText("Installa extra per il training")
         self.btn_install.setVisible(s["install_needed"] or s["extras_pending"])
 
-    def start_training_installation(self):
+    def prompt_if_needed(self):
+        """Chiamato all'ingresso nella pagina di training: se manca qualcosa (build GPU o extra)
+        chiede all'utente se installarlo adesso. Si chiede una volta per sessione dell'app."""
+        self.refresh_hardware_status()
+        s = self._status
+        if getattr(self, "_asked", False) or not (s["install_needed"] or s["extras_pending"]):
+            return
+        self._asked = True
+        what = (f"PyTorch con supporto GPU ({s['install_variant']}, download di alcuni GB)" if s["install_needed"]
+                else "gli extra necessari al training (pochi MB)")
+        reply = QMessageBox.question(
+            self, "Componenti per il training",
+            f"Per usare al meglio il training mancano {what}.\n\nVuoi installarli ora?\n"
+            "(Se rispondi No puoi farlo in seguito con il pulsante in questa pagina.)",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            self.start_training_installation(confirm=False)
+
+    def start_training_installation(self, confirm=True):
         s = self._status
         what = (f"PyTorch con supporto GPU ({s['install_variant']}, alcuni GB)" if s["install_needed"]
                 else "gli extra per il training (pochi MB)")
-        reply = QMessageBox.question(
+        reply = QMessageBox.StandardButton.Yes if not confirm else QMessageBox.question(
             self,
             "Installa componenti",
             f"Verranno scaricati {what}.\n\n"

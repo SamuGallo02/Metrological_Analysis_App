@@ -2,7 +2,7 @@
 ' Avvio dell'applicativo (Windows)
 ' ==============================================================================
 ' Nessun controllo di dipendenze ad ogni avvio: l'installazione si fa una volta
-' sola con "Installa_Windows.vbs" (registra l'esito in .install_state.json).
+' sola con l'installer scaricabile dal sito (registra l'esito in .install_state.json).
 ' Se l'app non risulta installata, propone di lanciare l'installer.
 ' Crea inoltre, al primo avvio, il collegamento con icona sul Desktop.
 '
@@ -47,10 +47,9 @@ blnInstalled = objFSO.FileExists(strVenvPythonw) And _
 
 If Not blnInstalled Then
     intAnswer = MsgBox("L'applicativo non e' ancora installato su questo computer." & vbCrLf & vbCrLf & _
-                       "Avviare ora l'installazione?", 36, "Installazione necessaria")
-    If intAnswer <> 6 Then WScript.Quit 0
-    objShell.Run """" & objFSO.GetParentFolderName(WScript.ScriptFullName) & "\Installa_Windows.vbs""", 1, True
-    WScript.Quit 0 ' l'installer ha gia' offerto di avviare l'app: non la riavviamo qui
+                       "Aprire la pagina da cui scaricare l'installer?", 36, "Installazione necessaria")
+    If intAnswer = 6 Then objShell.Run "https://samugallo02.github.io/Nautilus_Website/"
+    WScript.Quit 0
 End If
 
 objShell.Run """" & strVenvPythonw & """ """ & strMainPath & """", 0, False
