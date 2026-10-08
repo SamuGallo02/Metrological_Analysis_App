@@ -29,3 +29,4 @@ install_log.txt
 setup_log.txt
 venv_linux/
 .tmp/
+.wheels/

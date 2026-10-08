@@ -16,7 +16,7 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from . import plan, state
+from . import fastdl, plan, state
 from .sysinfo import OS_LINUX, OS_MACOS, OS_WINDOWS, SystemInfo, detect_system
 
 ROOT = state.PROJECT_ROOT
@@ -57,6 +57,7 @@ def say(msg: str = "") -> None:
 GPU_NEED_GB = 10.0   # picco su disco per PyTorch CUDA: download + installazione + margine
 CPU_NEED_GB = 3.0
 TMP_DIR = ROOT / ".tmp"
+WHEELS_DIR = ROOT / ".wheels"
 
 
 IMPORT_NAMES = {"PySide6": "PySide6.QtWidgets", "opencv-python": "cv2", "pyyaml": "yaml", "pillow": "PIL", "nvidia-ml-py": "pynvml",
@@ -104,12 +105,15 @@ PROGRESS_RE = re.compile(r"Progress\s+(\d+)\s+of\s+(\d+)")
 
 
 class Installer:
-    def __init__(self, os_name: str, dry_run: bool = False, progress: bool = False):
+    def __init__(self, os_name: str, dry_run: bool = False, progress: bool = False, cpu_only: bool = False):
         self.os_name = os_name
         self.dry = dry_run
         self.progress = progress
+        self.cpu_only = cpu_only     # l'utente rinuncia al supporto GPU (download da ~2.6 GB)
+        self.fast = os.environ.get('AM_NO_FASTDL') != '1'
         self.info: SystemInfo = detect_system()
         self.vpy = state.venv_python(os_name)
+        self.gpu_declined = False
         self.disk_full = False       # pip ha segnalato "No space left on device"
         self.skipped_space = False   # build GPU saltata per spazio insufficiente (si riprovera' in futuro)
 
@@ -138,7 +142,17 @@ class Installer:
         """Esegue pip mostrando l'avanzamento: 'span' e' l'intervallo (%) che questo comando
         occupa nella barra complessiva."""
         lo, hi = span
-        base = [str(self.vpy), "-m", "pip", *map(str, args)]
+        args = tuple(map(str, args))
+        if args and args[0] == "install":
+            # niente compilazione dei .pyc (decine di secondi su migliaia di file) e niente controllo versione di pip
+            args = ("install", "--no-compile", "--disable-pip-version-check") + args[1:]
+            if self.fast and not self.dry and hi > lo:
+                rc = self.fast_install(args, span)
+                if rc is not None:
+                    if check and rc != 0:
+                        raise RuntimeError(f"pip terminato con codice {rc}")
+                    return rc
+        base = [str(self.vpy), "-m", "pip", *args]
         if nocache:
             # i wheel da GB non vanno nella cache di pip: raddoppierebbero lo spazio usato e pip
             # puo' andare in MemoryError rileggendoli (visto con PyTorch CUDA)
@@ -223,6 +237,85 @@ class Installer:
         if check and rc != 0:
             raise RuntimeError(f"pip terminato con codice {rc}")
         return rc
+
+    # ---- download veloce ----------------------------------------------------
+    def fast_install(self, args: Tuple[str, ...], span: Tuple[float, float]) -> Optional[int]:
+        """Scarica i wheel in parallelo (a segmenti, con ripresa e verifica SHA-256) e li installa
+        offline. Ritorna il codice di pip, oppure None se il metodo non e' applicabile e va usato
+        pip normale (pip vecchio, sdist, errori di rete...)."""
+        lo, hi = span
+        rep = TMP_DIR / "plan.json"
+        TMP_DIR.mkdir(parents=True, exist_ok=True)
+        env = dict(os.environ, TMP=str(TMP_DIR), TEMP=str(TMP_DIR), TMPDIR=str(TMP_DIR))
+        try:
+            rep.unlink(missing_ok=True)
+            r = subprocess.run([str(self.vpy), "-m", "pip", *args, "--dry-run", "--report", str(rep), "-q"],
+                               capture_output=True, text=True, timeout=300, env=env, cwd=str(ROOT), **_NOWIN)
+            if r.returncode != 0 or not rep.exists():
+                return None
+            plan_items = json.loads(rep.read_text(encoding="utf-8")).get("install", [])
+            items = []
+            for it in plan_items:
+                di = it.get("download_info", {})
+                url = di.get("url", "")
+                if not url.startswith("https://") or not url.split("?")[0].endswith(".whl"):
+                    return None            # sdist / file locali / VCS: lascio fare a pip
+                items.append({"url": url, "name": url.split("?")[0].rsplit("/", 1)[-1],
+                              "sha256": di.get("archive_info", {}).get("hashes", {}).get("sha256")})
+            if not items:
+                return None
+        except Exception as e:
+            say(f"[INFO] Download veloce non disponibile ({e}): uso pip.")
+            return None
+
+        total_mb = 0.0
+        last = [-1.0]
+        t0 = time.time()
+
+        def on_prog(done: int, total: int) -> None:
+            pct = lo + (hi - lo) * (0.05 + 0.85 * done / max(total, 1))
+            if int(pct) > last[0] or time.time() - last[0] > 5:
+                last[0] = int(pct)
+                self.report(pct, f"Download {done / 1e6:.0f} / {total / 1e6:.0f} MB")
+
+        say(f"[..] Download in parallelo di {len(items)} pacchetti ...")
+        try:
+            files = fastdl.download_many(items, WHEELS_DIR, workers=6, on_progress=on_prog)
+        except Exception as e:
+            if getattr(e, "errno", None) == 28 or "No space left" in str(e):
+                self.disk_full = True
+                say("No space left on device")
+                return 1
+            say(f"[INFO] Download veloce interrotto ({e}): uso pip.")
+            return None
+        mb = sum(f.stat().st_size for f in files) / 1e6
+        say(f"[OK] Scaricati {mb:.0f} MB in {time.time() - t0:.0f} s.")
+
+        # installazione offline dai file appena scaricati (si tolgono gli indici online)
+        out, skip = [], False
+        for a in args:
+            if skip:
+                skip = False
+                continue
+            if a in ("--index-url", "-i", "--extra-index-url"):
+                skip = True
+                continue
+            out.append(a)
+        rc = self._pip_stream([str(self.vpy), "-m", "pip", *out, "--no-index", "--find-links", str(WHEELS_DIR)], env)
+        if rc == 0:
+            shutil.rmtree(WHEELS_DIR, ignore_errors=True)
+        return rc
+
+    def _pip_stream(self, cmd: List[str], env: dict) -> int:
+        say("  > " + " ".join(cmd))
+        proc = subprocess.Popen(cmd, cwd=str(ROOT), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                text=True, encoding="utf-8", errors="replace", env=env, **_NOWIN)
+        for ln in proc.stdout:
+            ln = ln.rstrip()
+            if "No space left on device" in ln or "Errno 28" in ln:
+                self.disk_full = True
+            say(ln)
+        return proc.wait()
 
     # ---- venv ---------------------------------------------------------------
     def ensure_venv(self) -> None:
@@ -372,7 +465,10 @@ class Installer:
     def install_best_torch(self, span: Tuple[float, float]) -> "plan.TorchChoice":
         """GPU NVIDIA => build CUDA che funziona davvero; altrimenti (o se nessuna funziona)
         la build CPU/standard adatta al sistema."""
-        if plan.training_torch_candidates(self.info):
+        if self.cpu_only and plan.training_torch_candidates(self.info):
+            self.gpu_declined = True
+            say("[INFO] Supporto GPU saltato su richiesta: installo PyTorch CPU (lo si puo' attivare in seguito dalla pagina Training).")
+        elif plan.training_torch_candidates(self.info):
             free = free_gb(ROOT)
             if free < GPU_NEED_GB:
                 self.skipped_space = True
@@ -452,7 +548,8 @@ class Installer:
                                  python=".".join(map(str, self.info.python)),
                                  gpu_unsupported=bool(plan.training_torch_candidates(self.info))
                                  and not choice.label.startswith("cu")
-                                 and not self.skipped_space and not self.disk_full)
+                                 and not self.skipped_space and not self.disk_full and not self.gpu_declined,
+                                 gpu_declined=self.gpu_declined)
         self.report(100, "Installazione completata")
         say("[OK] Installazione dei componenti base completata.")
 
@@ -563,6 +660,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--dry-run", action="store_true", help="mostra i comandi senza eseguirli")
     ap.add_argument("--wait-pid", type=int, default=0, help="attende la chiusura di questo processo (app)")
     ap.add_argument("--relaunch", action="store_true", help="riavvia l'app al termine")
+    ap.add_argument("--cpu-only", action="store_true", help="non installare PyTorch con supporto GPU")
     ap.add_argument("--yes", action="store_true", help="non chiede conferme")
     ap.add_argument("--progress", action="store_true", help="stampa righe '@@PROGRESS n testo' per la GUI")
     a = ap.parse_args(argv)
@@ -580,7 +678,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     sys.stdout = sys.stderr = Tee(LOG_FILE)
     say(f"\n===== {time.strftime('%Y-%m-%d %H:%M:%S')} - installer ({a.component}) =====")
 
-    inst = Installer(os_name, a.dry_run, a.progress)
+    inst = Installer(os_name, a.dry_run, a.progress, a.cpu_only)
 
     # Se non siamo gia' nel venv di progetto, lo creiamo e rilanciamo l'installer li'.
     in_venv = Path(sys.prefix).resolve() == state.venv_dir(os_name).resolve()
@@ -594,6 +692,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             args = [str(inst.vpy), "-m", "installer", "--os", os_name, "--component", "core", "--yes"]
             args += ["--force"] if a.force else []
             args += ["--progress"] if a.progress else []
+            args += ["--cpu-only"] if a.cpu_only else []
             return subprocess.call(args, cwd=str(ROOT))
         if a.component == "core":
             inst.install_core(a.force)

@@ -160,7 +160,8 @@ class Pipeline:
     """emit(percentuale, testo) aggiorna la barra; log(riga) alimenta i dettagli."""
 
     def __init__(self, dest: Path, os_name: str, shortcut: bool, update_code: bool,
-                 emit: Callable[[float, str], None], log: Callable[[str], None]):
+                 emit: Callable[[float, str], None], log: Callable[[str], None], cpu_only: bool = False):
+        self.cpu_only = cpu_only
         self.dest, self.os_name = dest, os_name
         self.shortcut, self.update_code = shortcut, update_code
         self.emit, self.log = emit, log
@@ -291,6 +292,8 @@ class Pipeline:
     def run_components(self) -> None:
         cmd = [self.python, "-m", "installer", "--os", self.os_name,
                "--component", "core", "--yes", "--progress"]
+        if self.cpu_only:
+            cmd.append("--cpu-only")
         self.log("> " + " ".join(cmd))
         self.proc = subprocess.Popen(cmd, cwd=str(self.dest), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                      text=True, encoding="utf-8", errors="replace", **DEVNULL_IN, **NOWIN)
@@ -449,6 +452,10 @@ def run_gui(initial_dest: Optional[Path]) -> int:
     ttk.Checkbutton(setup, text="Crea un collegamento sul Desktop", variable=shortcut_var).pack(anchor="w", pady=(10, 0))
     ttk.Checkbutton(setup, text="Riscarica il codice anche se e' gia' presente (aggiornamento)",
                     variable=update_var).pack(anchor="w")
+    gpu_var = tk.BooleanVar(value=True)
+    if has_nvidia() and detected != "macos":
+        ttk.Checkbutton(setup, text="Installa il supporto GPU NVIDIA (download ~2.6 GB: molto piu' veloce in analisi, "
+                                    "ma allunga l'installazione)", variable=gpu_var).pack(anchor="w")
 
     gpu_txt = ("GPU NVIDIA rilevata: verra' installato PyTorch con supporto GPU (download di alcuni GB)."
                if has_nvidia() and detected != "macos" else
@@ -627,7 +634,7 @@ def run_gui(initial_dest: Optional[Path]) -> int:
         prog.pack(fill="both", expand=True)
         pipe = Pipeline(dest, detected, shortcut_var.get(), update_var.get(),
                         emit=lambda p, t: ui_q.put(("p", p, t)),
-                        log=lambda l: ui_q.put(("l", l, "")))
+                        log=lambda l: ui_q.put(("l", l, "")), cpu_only=not gpu_var.get())
         state["pipe"], state["running"] = pipe, True
         tm.update(t0=time.time(), pct=0.0, rate=None, on=True)
         tm["samples"].clear()
@@ -668,7 +675,7 @@ def run_gui(initial_dest: Optional[Path]) -> int:
     return 0
 
 
-def run_cli(dest: Path, shortcut: bool, update: bool) -> int:
+def run_cli(dest: Path, shortcut: bool, update: bool, cpu_only: bool = False) -> int:
     last = [-1]
 
     def emit(p: float, t: str) -> None:
@@ -676,7 +683,7 @@ def run_cli(dest: Path, shortcut: bool, update: bool) -> int:
             last[0] = int(p)
             print(f"[{int(p):3d}%] {t}", flush=True)
 
-    pipe = Pipeline(dest, detect_os(), shortcut, update, emit, lambda l: print("   " + l, flush=True))
+    pipe = Pipeline(dest, detect_os(), shortcut, update, emit, lambda l: print("   " + l, flush=True), cpu_only)
     try:
         pipe.run()
     except Exception as e:
@@ -691,6 +698,7 @@ def main() -> int:
     ap.add_argument("--dest", help="cartella di installazione")
     ap.add_argument("--no-shortcut", action="store_true")
     ap.add_argument("--update", action="store_true", help="riscarica il codice anche se presente")
+    ap.add_argument("--cpu-only", action="store_true", help="non installare il supporto GPU")
     a = ap.parse_args()
     dest = Path(a.dest).expanduser() if a.dest else None
     if not a.cli:
@@ -700,7 +708,7 @@ def main() -> int:
             print("tkinter non disponibile: passo alla modalita' testuale.")
             a.cli = True
     if a.cli:
-        return run_cli(dest or default_dest(), not a.no_shortcut, a.update)
+        return run_cli(dest or default_dest(), not a.no_shortcut, a.update, a.cpu_only)
     return run_gui(dest)
 
 
