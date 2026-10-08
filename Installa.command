@@ -212,6 +212,11 @@ OS_LABELS = {"windows": "Windows", "macos": "macOS", "linux": "Linux"}
 NOWIN = {"creationflags": 0x08000000} if os.name == "nt" else {}  # niente console su Windows
 
 
+FROZEN = bool(getattr(sys, "frozen", False))   # True nell'.exe/.app creato con PyInstaller
+PY_VERSION = "3.12.6"
+DEVNULL_IN = {"stdin": subprocess.DEVNULL}     # evita errori di handle quando non c'e' console
+
+
 def detect_os() -> str:
     if sys.platform.startswith("win"):
         return "windows"
@@ -230,6 +235,46 @@ def console_python() -> str:
         if cand.exists():
             return str(cand)
     return str(exe)
+
+
+def _py_ok(exe: str) -> bool:
+    """Python >= 3.10 capace di creare ambienti virtuali."""
+    try:
+        r = subprocess.run([exe, "-c", "import sys, venv, ensurepip; sys.exit(0 if sys.version_info >= (3, 10) else 1)"],
+                           capture_output=True, timeout=60, **DEVNULL_IN, **NOWIN)
+        return r.returncode == 0
+    except Exception:
+        return False
+
+
+def find_system_python() -> Optional[str]:
+    """Cerca un Python adatto gia' installato (solo per l'.exe/.app, che non ne ha uno proprio)."""
+    cands: list = []
+    os_name = detect_os()
+    if os_name == "windows":
+        for d in os.environ.get("PATH", "").split(os.pathsep):
+            if d and "windowsapps" not in d.lower():
+                cands.append(os.path.join(d, "python.exe"))
+        for base in (os.environ.get("LOCALAPPDATA", "") + r"\Programs\Python",
+                     os.environ.get("ProgramFiles", r"C:\Program Files"), "C:\\"):
+            if os.path.isdir(base):
+                for sub in sorted(Path(base).glob("Python3*"), reverse=True):
+                    cands.append(str(sub / "python.exe"))
+    else:
+        for name in ("python3.13", "python3.12", "python3.11", "python3.10", "python3"):
+            w = shutil.which(name)
+            if w and w != "/usr/bin/python3":          # stub di Xcode su macOS
+                cands.append(w)
+        cands += ["/opt/homebrew/bin/python3", "/usr/local/bin/python3"]
+        cands += sorted(map(str, Path("/Library/Frameworks/Python.framework/Versions").glob("3.*/bin/python3")), reverse=True)
+    seen = set()
+    for c in cands:
+        if c in seen or not os.path.isfile(c):
+            continue
+        seen.add(c)
+        if _py_ok(c):
+            return c
+    return None
 
 
 def has_nvidia() -> bool:
@@ -258,6 +303,7 @@ class Pipeline:
         self.shortcut, self.update_code = shortcut, update_code
         self.emit, self.log = emit, log
         self.proc: Optional[subprocess.Popen] = None
+        self.python: Optional[str] = None
         self.cancelled = False
 
     def cancel(self) -> None:
@@ -269,16 +315,10 @@ class Pipeline:
         if self.cancelled:
             raise Cancelled()
 
-    # -- 1. codice ------------------------------------------------------------
-    def have_code(self) -> bool:
-        return (self.dest / "main.py").exists() and (self.dest / "installer" / "__init__.py").exists()
-
-    def download_code(self) -> None:
-        self.emit(2, "Scarico il codice dell'applicativo...")
-        self.log(f"Sorgente: {SOURCE_URL}")
-        tmp = Path(os.environ.get("TMPDIR") or os.environ.get("TEMP") or "/tmp") / "am_source.zip"
-        req = urllib.request.Request(SOURCE_URL, headers={"User-Agent": "AnalisiMetrologica-Installer"})
-        with urllib.request.urlopen(req, timeout=60) as r, open(tmp, "wb") as f:
+    # -- download generico con avanzamento -------------------------------------
+    def _download(self, url: str, dest_file: Path, lo: float, hi: float, label: str) -> None:
+        req = urllib.request.Request(url, headers={"User-Agent": "AnalisiMetrologica-Installer"})
+        with urllib.request.urlopen(req, timeout=60) as r, open(dest_file, "wb") as f:
             total = int(r.headers.get("Content-Length") or 0)
             got, t0 = 0, time.time()
             while True:
@@ -289,10 +329,71 @@ class Pipeline:
                 f.write(chunk)
                 got += len(chunk)
                 if total:
-                    self.emit(2 + 11 * got / total, f"Scarico il codice ({got // 1024} KB)")
+                    self.emit(lo + (hi - lo) * got / total, f"{label} ({got // (1024 * 1024)} MB)")
                 else:  # dimensione ignota: avanzamento a tempo
-                    self.emit(2 + 10 * (1 - 0.5 ** ((time.time() - t0) / 3)), "Scarico il codice...")
-        self.emit(13, "Estraggo i file...")
+                    self.emit(lo + (hi - lo) * (1 - 0.5 ** ((time.time() - t0) / 3)), label)
+
+    def _wait_creep(self, proc: subprocess.Popen, lo: float, hi: float, label: str, tau: float = 40.0) -> int:
+        t0 = time.time()
+        while proc.poll() is None:
+            self._check()
+            self.emit(lo + (hi - lo) * (1 - 0.5 ** ((time.time() - t0) / tau)), label)
+            time.sleep(0.5)
+        return proc.returncode
+
+    # -- 0. Python (solo .exe/.app: da script si usa quello che sta eseguendo l'installer) --
+    def ensure_python(self) -> None:
+        if not FROZEN:
+            self.python = console_python()
+            return
+        self.emit(1, "Cerco Python sul computer...")
+        self.python = find_system_python()
+        if self.python:
+            self.log(f"Python gia' presente: {self.python}")
+            self.emit(12, "Python gia' presente")
+            return
+        tmpdir = Path(os.environ.get("TMPDIR") or os.environ.get("TEMP") or "/tmp")
+        if self.os_name == "windows":
+            inst = tmpdir / f"python-{PY_VERSION}-amd64.exe"
+            self._download(f"https://www.python.org/ftp/python/{PY_VERSION}/python-{PY_VERSION}-amd64.exe",
+                           inst, 1, 8, "Scarico Python")
+            self.emit(8, "Installo Python...")
+            proc = subprocess.Popen([str(inst), "/quiet", "InstallAllUsers=0", "PrependPath=1", "Include_launcher=0",
+                                     "Include_test=0", "Include_tcltk=0"], **DEVNULL_IN, **NOWIN)
+            rc = self._wait_creep(proc, 8, 12, "Installo Python...", 25)
+            if rc != 0:
+                raise RuntimeError(f"Installazione di Python non riuscita (codice {rc}).")
+        elif self.os_name == "macos":
+            inst = tmpdir / f"python-{PY_VERSION}.pkg"
+            self._download(f"https://www.python.org/ftp/python/{PY_VERSION}/python-{PY_VERSION}-macos11.pkg",
+                           inst, 1, 8, "Scarico Python")
+            self.emit(8, "Installo Python (macOS chiedera' la password)...")
+            script = f'do shell script "installer -pkg \\"{inst}\\" -target /" with administrator privileges'
+            proc = subprocess.Popen(["osascript", "-e", script], **DEVNULL_IN)
+            rc = self._wait_creep(proc, 8, 12, "Installo Python...", 25)
+            if rc != 0:
+                raise RuntimeError("Installazione di Python non riuscita o annullata.")
+        else:
+            raise RuntimeError("Python 3.10+ non trovato: installalo con il gestore pacchetti.")
+        try:
+            inst.unlink()
+        except OSError:
+            pass
+        self.python = find_system_python()
+        if not self.python:
+            raise RuntimeError("Python installato ma non trovato: riavvia l'installer.")
+        self.emit(12, "Python pronto")
+
+    # -- 1. codice ------------------------------------------------------------
+    def have_code(self) -> bool:
+        return (self.dest / "main.py").exists() and (self.dest / "installer" / "__init__.py").exists()
+
+    def download_code(self) -> None:
+        self.emit(12, "Scarico il codice dell'applicativo...")
+        self.log(f"Sorgente: {SOURCE_URL}")
+        tmp = Path(os.environ.get("TMPDIR") or os.environ.get("TEMP") or "/tmp") / "am_source.zip"
+        self._download(SOURCE_URL, tmp, 12, 19, "Scarico il codice")
+        self.emit(19, "Estraggo i file...")
         self.dest.mkdir(parents=True, exist_ok=True)
         base = os.path.realpath(str(self.dest))
         with zipfile.ZipFile(tmp) as z:
@@ -321,15 +422,15 @@ class Pipeline:
         if not self.have_code():
             raise RuntimeError("Il sorgente scaricato non contiene l'applicativo completo "
                                "(manca main.py o la cartella installer/).")
-        self.emit(15, "Codice installato")
+        self.emit(20, "Codice installato")
 
     # -- 2. componenti (pacchetto installer/ del progetto) ---------------------
     def run_components(self) -> None:
-        cmd = [console_python(), "-m", "installer", "--os", self.os_name,
+        cmd = [self.python, "-m", "installer", "--os", self.os_name,
                "--component", "core", "--yes", "--progress"]
         self.log("> " + " ".join(cmd))
         self.proc = subprocess.Popen(cmd, cwd=str(self.dest), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                     text=True, encoding="utf-8", errors="replace", **NOWIN)
+                                     text=True, encoding="utf-8", errors="replace", **DEVNULL_IN, **NOWIN)
         for line in self.proc.stdout:
             line = line.rstrip()
             if line.startswith("@@PROGRESS"):
@@ -338,7 +439,7 @@ class Pipeline:
                     pct = float(parts[1])
                 except (IndexError, ValueError):
                     continue
-                self.emit(15 + pct * 0.80, parts[2] if len(parts) > 2 and parts[2] else "")
+                self.emit(20 + pct * 0.75, parts[2] if len(parts) > 2 and parts[2] else "")
             elif line:
                 self.log(line)
         rc = self.proc.wait()
@@ -364,7 +465,7 @@ class Pipeline:
               "$s.TargetPath=$env:AM_T; $s.Arguments=$env:AM_A; $s.WorkingDirectory=$env:AM_W; "
               "if($env:AM_I){$s.IconLocation=$env:AM_I}; $s.Description='Stereo Metrology Analysis'; $s.Save()")
         subprocess.run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps],
-                       env=env, check=True, timeout=60, **NOWIN)
+                       env=env, check=True, timeout=60, **DEVNULL_IN, **NOWIN)
 
     def _desktop_dir(self) -> Path:
         d = Path.home() / "Desktop"
@@ -401,9 +502,11 @@ class Pipeline:
     # -- esecuzione -----------------------------------------------------------
     def run(self) -> None:
         self.emit(1, "Controllo cio' che e' gia' presente...")
+        self.ensure_python()
+        self._check()
         if self.have_code() and not self.update_code:
             self.log("Codice gia' presente: salto il download.")
-            self.emit(15, "Codice gia' presente")
+            self.emit(20, "Codice gia' presente")
         else:
             self.download_code()
         self._check()
@@ -417,7 +520,7 @@ class Pipeline:
         py = venv_python_path(self.dest, self.os_name)
         kw = {"creationflags": 0x00000008 | 0x00000200} if os.name == "nt" else {"start_new_session": True}
         subprocess.Popen([str(py), str(self.dest / "main.py")], cwd=str(self.dest),
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True, **kw)
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True, **kw)
 
 
 # --------------------------------------------------------------------------- #
@@ -589,7 +692,7 @@ def run_gui(initial_dest: Optional[Path]) -> int:
         except OSError as e:
             messagebox.showerror(APP_TITLE, f"Impossibile usare la cartella scelta:\n{e}")
             return
-        if sys.version_info < MIN_PY:
+        if not FROZEN and sys.version_info < MIN_PY:
             messagebox.showerror(APP_TITLE, "Serve Python 3.10 o successivo.")
             return
         setup.pack_forget()

@@ -1,0 +1,166 @@
+:<<"::CMDLITERAL"
+@echo off
+rem ===========================================================================
+rem  INSTALLER - Analisi Metrologica  (un solo file per Windows, macOS e Linux)
+rem ===========================================================================
+rem  Controlla se c'e' un Python adatto (con tkinter) e, solo se manca, lo installa;
+rem  poi apre la finestra di installazione (scelta della cartella, barra di
+rem  avanzamento, collegamento sul Desktop). Il codice e' incluso in fondo a questo
+rem  file. Indirizzo da cui l'installer scarica l'applicativo: SOURCE_URL in cima
+rem  alla parte Python (oggi GitHub; per passare a un server basta cambiarlo).
+rem
+rem  File generato da distribution/build_installer.py: NON modificarlo a mano.
+rem  WINDOWS : doppio clic.   macOS : doppio clic su Installa.command.
+rem  Linux   : sh Installa.cmd
+rem ===========================================================================
+if not "%~1"=="_min" start "" /min cmd /c ""%~f0" _min" & exit /b
+powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "$t=[IO.File]::ReadAllText('%~f0'); $i=$t.IndexOf('#PS_'+'BEGIN'); $j=$t.IndexOf('::CMD'+'LITERAL',$i); Invoke-Expression $t.Substring($i,$j-$i)"
+exit /b %ERRORLEVEL%
+
+#PS_BEGIN
+$ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName PresentationFramework
+$PyVersion = '3.12.6'
+
+function Test-Py($exe) {
+    # Python >= 3.10 con tkinter funzionante
+    try {
+        & $exe -c "import sys, tkinter; sys.exit(0 if sys.version_info >= (3, 10) else 1)" 2>$null
+        return ($LASTEXITCODE -eq 0)
+    } catch { return $false }
+}
+
+function Find-Python {
+    $cands = @()
+    foreach ($d in ($env:PATH -split ';')) {
+        if ($d -and $d -notmatch 'WindowsApps') { $cands += (Join-Path $d 'python.exe') }
+    }
+    $base = Join-Path $env:LocalAppData 'Programs\Python'
+    if (Test-Path $base) {
+        Get-ChildItem $base -Directory -Filter 'Python*' | ForEach-Object { $cands += (Join-Path $_.FullName 'python.exe') }
+    }
+    foreach ($c in $cands) {
+        if ((Test-Path $c) -and (Test-Py $c)) { return $c }
+    }
+    return $null
+}
+
+try {
+    $py = Find-Python
+    if (-not $py) {
+        [void][Windows.MessageBox]::Show("Non e' stato trovato Python 3.10 o successivo.`nVerra' scaricato e installato Python $PyVersion (solo per l'utente corrente, senza diritti di amministratore).`n`nPremi OK: comparira' la finestra di installazione di Python.", 'Analisi Metrologica', 'OK', 'Information')
+        $inst = Join-Path $env:TEMP "python-$PyVersion-amd64.exe"
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        Invoke-WebRequest -Uri "https://www.python.org/ftp/python/$PyVersion/python-$PyVersion-amd64.exe" -OutFile $inst -UseBasicParsing
+        Start-Process -FilePath $inst -ArgumentList '/passive','InstallAllUsers=0','PrependPath=1','Include_launcher=0','Include_test=0','Include_tcltk=1' -Wait
+        Remove-Item $inst -Force -ErrorAction SilentlyContinue
+        $py = Find-Python
+        if (-not $py) { throw 'Installazione automatica di Python non riuscita.' }
+    }
+
+    # Estrae la finestra di installazione (incorporata in fondo a questo file) e la avvia senza console
+    $k  = $t.LastIndexOf('##PYSRC_' + 'BEGIN')
+    $nl = $t.IndexOf("`n", $k)
+    $gui = Join-Path $env:TEMP 'am_installer_gui.py'
+    [IO.File]::WriteAllText($gui, $t.Substring($nl + 1), (New-Object Text.UTF8Encoding $false))
+    $pyw = Join-Path (Split-Path $py) 'pythonw.exe'
+    Start-Process -FilePath $pyw -ArgumentList ('"' + $gui + '"')
+    exit 0
+} catch {
+    [void][Windows.MessageBox]::Show("Impossibile avviare l'installazione:`n$($_.Exception.Message)", 'Analisi Metrologica', 'OK', 'Error')
+    exit 1
+}
+::CMDLITERAL
+
+# ============================== macOS / Linux ===============================
+case "$(uname -s)" in
+    Darwin) AM_OS=macos ;;
+    Linux)  AM_OS=linux ;;
+    *) echo "Sistema non supportato: $(uname -s)"; exit 1 ;;
+esac
+PY_VERSION="3.12.6"
+
+echo "Analisi Metrologica - preparazione dell'installer ($AM_OS)..."
+
+# Python >= 3.10 con tkinter (per la finestra); in mancanza si ripiega sulla modalita' testuale
+py_ok()  { "$1" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' >/dev/null 2>&1; }
+tk_ok()  { "$1" -c 'import tkinter' >/dev/null 2>&1; }
+venv_ok(){ "$1" -c 'import venv, ensurepip' >/dev/null 2>&1; }
+
+find_python() {   # $1 = "tk" per pretendere tkinter
+    for cand in python3.13 python3.12 python3.11 python3.10 python3; do
+        p="$(command -v "$cand" 2>/dev/null)"
+        [ -n "$p" ] || continue
+        [ "$AM_OS" = macos ] && [ "$p" = "/usr/bin/python3" ] && continue   # stub di Xcode
+        py_ok "$p" && venv_ok "$p" || continue
+        if [ "$1" = tk ]; then tk_ok "$p" || continue; fi
+        echo "$p"; return 0
+    done
+    if [ "$AM_OS" = macos ]; then
+        for p in /opt/homebrew/bin/python3 /usr/local/bin/python3 /Library/Frameworks/Python.framework/Versions/3.*/bin/python3; do
+            [ -x "$p" ] && py_ok "$p" || continue
+            if [ "$1" = tk ]; then tk_ok "$p" || continue; fi
+            echo "$p"; return 0
+        done
+    fi
+    return 1
+}
+
+install_python() {
+    echo "Installo Python 3 (potrebbe chiedere la password)..."
+    if [ "$AM_OS" = macos ]; then
+        if command -v brew >/dev/null 2>&1; then
+            brew install python@3.12 python-tk@3.12 || return 1
+        else
+            pkg="/tmp/python-$PY_VERSION.pkg"
+            curl -fsSL -o "$pkg" "https://www.python.org/ftp/python/$PY_VERSION/python-$PY_VERSION-macos11.pkg" || return 1
+            sudo installer -pkg "$pkg" -target / || return 1
+            rm -f "$pkg"
+        fi
+    else
+        if   command -v apt-get >/dev/null 2>&1; then sudo apt-get update && sudo apt-get install -y python3 python3-venv python3-pip python3-tk
+        elif command -v dnf     >/dev/null 2>&1; then sudo dnf install -y python3 python3-pip python3-tkinter
+        elif command -v pacman  >/dev/null 2>&1; then sudo pacman -S --noconfirm python python-pip tk
+        elif command -v zypper  >/dev/null 2>&1; then sudo zypper install -y python3 python3-pip python3-tk
+        else echo "Gestore pacchetti non riconosciuto: installa a mano Python 3.10+ (con venv e tkinter)."; return 1
+        fi
+    fi
+}
+
+install_tk() {
+    echo "Installo il supporto grafico (tkinter)..."
+    if [ "$AM_OS" = macos ]; then
+        command -v brew >/dev/null 2>&1 && brew install python-tk@3.12
+    elif command -v apt-get >/dev/null 2>&1; then sudo apt-get install -y python3-tk
+    elif command -v dnf     >/dev/null 2>&1; then sudo dnf install -y python3-tkinter
+    elif command -v pacman  >/dev/null 2>&1; then sudo pacman -S --noconfirm tk
+    elif command -v zypper  >/dev/null 2>&1; then sudo zypper install -y python3-tk
+    fi
+}
+
+PY="$(find_python tk)"
+if [ -z "$PY" ]; then
+    PY="$(find_python)"                      # c'e' un Python ma senza tkinter?
+    if [ -z "$PY" ]; then
+        install_python || { echo "[ERRORE] Installazione di Python non riuscita."; exit 1; }
+    else
+        install_tk
+    fi
+    PY="$(find_python tk)"
+    [ -z "$PY" ] && PY="$(find_python)"      # senza tkinter: modalita' testuale
+    [ -z "$PY" ] && { echo "[ERRORE] Python 3.10+ non disponibile: apri un nuovo terminale e riesegui."; exit 1; }
+fi
+
+GUI="$(mktemp -d)/am_installer_gui.py"
+sed -n '/^##PYSRC_BEGIN$/,$p' "$0" | tail -n +2 > "$GUI"
+[ -s "$GUI" ] || { echo "[ERRORE] Il file installer e' incompleto: scaricalo di nuovo."; exit 1; }
+
+if tk_ok "$PY"; then
+    nohup "$PY" "$GUI" $AM_GUI_ARGS >/dev/null 2>&1 &
+    echo "Finestra di installazione avviata."
+else
+    echo "tkinter non disponibile: installazione in modalita' testuale."
+    "$PY" "$GUI" --cli $AM_GUI_ARGS
+fi
+exit 0
+##PYSRC_BEGIN
