@@ -198,6 +198,7 @@ import threading
 import time
 import urllib.request
 import zipfile
+from collections import deque
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -215,6 +216,22 @@ NOWIN = {"creationflags": 0x08000000} if os.name == "nt" else {}  # niente conso
 FROZEN = bool(getattr(sys, "frozen", False))   # True nell'.exe/.app creato con PyInstaller
 PY_VERSION = "3.12.6"
 DEVNULL_IN = {"stdin": subprocess.DEVNULL}     # evita errori di handle quando non c'e' console
+
+
+def fmt_elapsed(sec: float) -> str:
+    sec = int(max(0, sec))
+    return f"{sec // 60:02d}:{sec % 60:02d}"
+
+
+def fmt_remaining(sec: float) -> str:
+    """Durata residua in parole, arrotondata (le stime sono grossolane: niente falsa precisione)."""
+    if sec < 45:
+        return "meno di 1 minuto"
+    m = int(round(sec / 60))
+    if m < 60:
+        return f"circa {m} min"
+    h, m = divmod(m, 60)
+    return f"circa {h} h {m:02d} min"
 
 
 def detect_os() -> str:
@@ -617,7 +634,11 @@ def run_gui(initial_dest: Optional[Path]) -> int:
     bar = ttk.Progressbar(prog, maximum=100, mode="determinate")
     bar.pack(fill="x")
     pct_var = tk.StringVar(value="0%")
-    ttk.Label(prog, textvariable=pct_var).pack(anchor="e")
+    eta_var = tk.StringVar(value="")
+    row_p = ttk.Frame(prog)
+    row_p.pack(fill="x")
+    ttk.Label(row_p, textvariable=eta_var, foreground="#555555").pack(side="left")
+    ttk.Label(row_p, textvariable=pct_var).pack(side="right")
     ttk.Label(prog, text="Non chiudere questa finestra: con una GPU NVIDIA il download puo' richiedere "
                          "diversi minuti.", foreground="#555555", wraplength=500).pack(anchor="w", pady=(6, 0))
 
@@ -644,6 +665,38 @@ def run_gui(initial_dest: Optional[Path]) -> int:
     launch_btn = ttk.Button(pbtns, text="Avvia l'applicazione")
     close_btn = ttk.Button(pbtns, text="Chiudi", command=root.destroy)
 
+    # ---------- tempo trascorso / rimanente ----------
+    tm = {"t0": 0.0, "pct": 0.0, "rate": None, "samples": deque(), "on": False}
+
+    def update_eta() -> None:
+        now = time.time()
+        el = now - tm["t0"]
+        p = tm["pct"]
+        if p >= 100:
+            eta_var.set(f"Completata in {fmt_elapsed(el)}")
+            return
+        sm = tm["samples"]
+        sm.append((now, p))
+        while sm and now - sm[0][0] > 60:      # finestra mobile di 60 secondi
+            sm.popleft()
+        if el < 8 or p < 2:
+            eta_var.set(f"Trascorso {fmt_elapsed(el)} - calcolo del tempo rimanente...")
+            return
+        overall = p / el
+        t1, p1 = sm[0]
+        window = (p - p1) / (now - t1) if now - t1 >= 10 else None
+        inst = overall if not window or window <= 0 else 0.5 * overall + 0.5 * window
+        tm["rate"] = inst if tm["rate"] is None else 0.8 * tm["rate"] + 0.2 * inst
+        if not tm["rate"] or tm["rate"] <= 0:
+            eta_var.set(f"Trascorso {fmt_elapsed(el)}")
+            return
+        eta_var.set(f"Trascorso {fmt_elapsed(el)} - rimanente (stima): {fmt_remaining((100 - p) / tm['rate'])}")
+
+    def tick() -> None:
+        if tm["on"]:
+            update_eta()
+            root.after(1000, tick)
+
     # ---------- logica ----------
     def append_log(line: str) -> None:
         log_text.config(state="normal")
@@ -656,6 +709,7 @@ def run_gui(initial_dest: Optional[Path]) -> int:
             while True:
                 kind, a, b = ui_q.get_nowait()
                 if kind == "p":
+                    tm["pct"] = a
                     bar["value"] = a
                     pct_var.set(f"{int(a)}%")
                     if b:
@@ -670,6 +724,12 @@ def run_gui(initial_dest: Optional[Path]) -> int:
 
     def finish(ok: bool, err: str) -> None:
         state["running"] = False
+        tm["on"] = False
+        if ok:
+            tm["pct"] = 100
+            update_eta()
+        else:
+            eta_var.set(f"Interrotta dopo {fmt_elapsed(time.time() - tm['t0'])}")
         cancel_btn.pack_forget()
         if ok:
             bar["value"] = 100
@@ -701,6 +761,9 @@ def run_gui(initial_dest: Optional[Path]) -> int:
                         emit=lambda p, t: ui_q.put(("p", p, t)),
                         log=lambda l: ui_q.put(("l", l, "")))
         state["pipe"], state["running"] = pipe, True
+        tm.update(t0=time.time(), pct=0.0, rate=None, on=True)
+        tm["samples"].clear()
+        tick()
 
         def work() -> None:
             try:

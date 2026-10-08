@@ -82,13 +82,25 @@ If strSystemPython = "" Then
     End If
 End If
 
+' --- Percorso preferito: finestra grafica con barra di avanzamento (nessun terminale) ---
+Dim strGuiPy, strGuiScript
+strGuiPy = objFSO.GetParentFolderName(strSystemPython) & "\pythonw.exe"
+strGuiScript = strScriptDir & "\distribution\installer_gui.py"
+If objFSO.FileExists(strGuiPy) And objFSO.FileExists(strGuiScript) Then
+    If objShell.Run(Q & strSystemPython & Q & " -c ""import tkinter""", 0, True) = 0 Then
+        objShell.Run Q & strGuiPy & Q & " " & Q & strGuiScript & Q & " --dest " & Q & strScriptDir & Q, 1, True
+        WScript.Quit 0
+    End If
+End If
+
+' --- Ripiego (tkinter assente): installazione in background, senza finestra di terminale ---
 MsgBox "Verranno installati solo i componenti necessari a questo computer." & vbCrLf & vbCrLf & _
-       "Si aprira' una finestra con l'avanzamento (qualche minuto, in base alla connessione). " & _
-       "Non chiuderla finche' non termina.", 64, "Installazione dell'ambiente"
+       "L'installazione procede in background (qualche minuto, in base alla connessione): " & _
+       "attendi il messaggio di conclusione.", 64, "Installazione dell'ambiente"
 
 ' L'installer (pacchetto installer/) usa il Python di sistema solo per creare il venv,
-' poi prosegue da solo dentro il venv. Finestra visibile, si attende la fine.
-intExitCode = objShell.Run("cmd /c " & Q & Q & strSystemPython & Q & " -m installer --os windows --component core --yes" & strForce & Q, 1, True)
+' poi prosegue da solo dentro il venv. Nessuna finestra, si attende la fine.
+intExitCode = objShell.Run("cmd /c " & Q & Q & strSystemPython & Q & " -m installer --os windows --component core --yes" & strForce & Q, 0, True)
 
 If intExitCode <> 0 Or Not objFSO.FileExists(strScriptDir & "\.install_state.json") Then
     MsgBox "L'installazione non e' andata a buon fine (codice " & intExitCode & ")." & vbCrLf & vbCrLf & _

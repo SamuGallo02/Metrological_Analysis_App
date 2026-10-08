@@ -50,7 +50,7 @@ If Not blnInstalled Then
                        "Avviare ora l'installazione?", 36, "Installazione necessaria")
     If intAnswer <> 6 Then WScript.Quit 0
     objShell.Run """" & objFSO.GetParentFolderName(WScript.ScriptFullName) & "\Installa_Windows.vbs""", 1, True
-    If Not objFSO.FileExists(strScriptDir & "\.install_state.json") Then WScript.Quit 1
+    WScript.Quit 0 ' l'installer ha gia' offerto di avviare l'app: non la riavviamo qui
 End If
 
 objShell.Run """" & strVenvPythonw & """ """ & strMainPath & """", 0, False
