@@ -4,12 +4,12 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (QHBoxLayout, QHeaderView, QLabel, QMessageBox, QProgressBar, QPushButton,
+from PySide6.QtWidgets import (QDialog, QHBoxLayout, QHeaderView, QLabel, QMessageBox, QProgressBar, QPushButton,
                                QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget, QAbstractItemView)
 
 from ..i18n import LanguageManager, current_language, tr, tr_error
 from ..params import DEFAULT_LANGUAGE, LANGUAGES
-from ..qt_utils import run_async
+from .qt_utils import run_async
 
 
 class LanguageWidget(QWidget):
@@ -135,3 +135,34 @@ class LanguageWidget(QWidget):
         if code and QMessageBox.question(self, tr("Remove"), tr("Remove the language pack?")) == QMessageBox.StandardButton.Yes:
             self.mgr.remove(code)
             self._fill()
+
+
+class LanguageDialog(QDialog):
+    """Window with the language list: opened by the language button."""
+
+    def __init__(self, parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self.setWindowTitle(tr("Language"))
+        self.setMinimumSize(520, 420)
+        lay = QVBoxLayout(self)
+        self.widget = LanguageWidget(parent=self)
+        lay.addWidget(self.widget, 1)
+        close = QPushButton(tr("Close"))
+        close.clicked.connect(self.accept)
+        row = QHBoxLayout()
+        row.addStretch(1)
+        row.addWidget(close)
+        lay.addLayout(row)
+
+
+class LanguageButton(QPushButton):
+    """Button showing the language in use (in its own language); it opens the language window."""
+
+    def __init__(self, parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        code = current_language()
+        native = LANGUAGES.get(code, LANGUAGES[DEFAULT_LANGUAGE])[1]
+        self.setText(f"\U0001F310  {native}")
+        self.setToolTip(tr("Change language"))
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.clicked.connect(lambda: LanguageDialog(self.window()).exec())

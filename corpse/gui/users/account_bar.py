@@ -7,7 +7,8 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QMessageBox, QPushButton, QWidget
 
 from common.i18n import tr
-from common.qt_utils import run_async
+from common.ui.language import LanguageButton
+from common.ui.qt_utils import run_async
 
 from corpse.functions.users.session import Session
 from .labels import role_label
@@ -31,6 +32,7 @@ class AccountBar(QFrame):
         self.btn_out = QPushButton()
         self.btn_out.clicked.connect(self.logout_requested.emit)
         lay.addWidget(self.label, 1)
+        lay.addWidget(LanguageButton())
         for b in (self.btn_profile, self.btn_retry, self.btn_out):
             lay.addWidget(b)
         self.refresh()

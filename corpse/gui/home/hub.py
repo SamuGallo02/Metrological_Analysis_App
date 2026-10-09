@@ -7,6 +7,7 @@ from typing import Callable, Dict, Optional
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
+from common.format import darker
 from common.i18n import tr, tr_dyn
 
 from corpse.functions.home.hub_params import ANALYSES, CARD_MIN_SIZE, MAX_WIDTH
@@ -20,7 +21,7 @@ class AnalysisCard(QFrame):
         self.setMinimumSize(*CARD_MIN_SIZE)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setStyleSheet(f"QFrame {{ background-color: {color}; border-radius: 10px; }}"
-                           f"QFrame:hover {{ background-color: {color}dd; }}")
+                           f"QFrame:hover {{ background-color: {darker(color)}; }}")
         lay = QVBoxLayout(self)
         lay.setContentsMargins(15, 15, 15, 15)
         lay.setSpacing(8)

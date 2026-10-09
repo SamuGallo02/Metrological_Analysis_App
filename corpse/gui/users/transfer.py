@@ -7,7 +7,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QDialog, QLabel, QProgressBar, QPushButton, QVBoxLayout, QWidget
 
 from common.i18n import tr, tr_error
-from common.qt_utils import Worker
+from common.ui.qt_utils import Worker
 
 from corpse.functions.users.api import ApiError, Cancelled
 

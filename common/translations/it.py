@@ -1,6 +1,7 @@
 VERSION = 2
 
 STRINGS = {
+    "Change language": "Cambia lingua",
     "Damaged files": "File danneggiati",
     "Some installed libraries are damaged:": "Alcune librerie installate sono danneggiate:",
     "Repair them now? Only the damaged packages are downloaded again, then the app reopens by itself.": "Ripararle ora? Vengono scaricati di nuovo solo i pacchetti danneggiati, poi l'app si riapre da sola.",

@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 )
 
 from corpse.gui.home.hub import AnalysisHub
+from common.format import darker
 from common.i18n import tr
 from corpse.gui.analysis.analysis_gui import StereoAnalysisPage
 from common.ui.widgets import set_manual_opener
@@ -50,7 +51,7 @@ class MenuCard(QFrame):
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setStyleSheet(f"""
             QFrame {{ background-color: {color}; border-radius: 10px; }}
-            QFrame:hover {{ background-color: {color}dd; }}
+            QFrame:hover {{ background-color: {darker(color)}; }}
         """)
         card_layout = QVBoxLayout(self)
         card_layout.setContentsMargins(15, 15, 15, 15)

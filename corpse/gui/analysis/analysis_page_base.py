@@ -189,7 +189,7 @@ class AnalysisPageBase(QWidget):
         self.btn_run.setFixedWidth(220)
         self.btn_run.setStyleSheet("""
             QPushButton { background-color: #2e7d32; color: white; font-weight: bold; font-size: 13px; border-radius: 5px; }
-            QPushButton:hover { background-color: #388e3c; }
+            QPushButton:hover { background-color: #1b5e20; }
             QPushButton:disabled { background-color: #444444; color: #888888; }
         """)
         self.btn_run.setEnabled(False)
@@ -200,7 +200,7 @@ class AnalysisPageBase(QWidget):
         self.btn_export.setFixedWidth(160)
         self.btn_export.setStyleSheet("""
             QPushButton { background-color: #1565c0; color: white; font-weight: bold; font-size: 13px; border-radius: 5px; }
-            QPushButton:hover { background-color: #1976d2; }
+            QPushButton:hover { background-color: #0d47a1; }
             QPushButton:disabled { background-color: #444444; color: #888888; }
         """)
         self.btn_export.setEnabled(False)

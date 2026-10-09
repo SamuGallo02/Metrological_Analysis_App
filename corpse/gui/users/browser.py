@@ -15,7 +15,7 @@ from common.i18n import tr, tr_error
 import re
 
 from common.params import AREA_MINE, AREAS_SHARED, SPECIES_EXAMPLE, SPECIES_RE
-from common.qt_utils import run_async
+from common.ui.qt_utils import run_async
 
 from corpse.functions.users.session import Session
 from .labels import area_label

@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QDialog, QDialogButtonBox, QFo
 from common.format import fmt_time
 from common.i18n import tr, tr_error
 from common.params import ROLE_SERVER, ROLE_USER
-from common.qt_utils import run_async
+from common.ui.qt_utils import run_async
 
 from corpse.functions.users.session import Session
 from .browser import ServerBrowserWidget

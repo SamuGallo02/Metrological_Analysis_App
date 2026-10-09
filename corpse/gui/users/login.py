@@ -11,7 +11,8 @@ from PySide6.QtWidgets import (QDialog, QFormLayout, QFrame, QHBoxLayout, QLabel
 
 from common.i18n import tr, tr_error
 from common.params import DEFAULT_SERVER_URL
-from common.qt_utils import run_async
+from common.ui.language import LanguageButton
+from common.ui.qt_utils import run_async
 
 from corpse.functions.users.api import OfflineError
 from corpse.functions.users.session import Session
@@ -39,8 +40,15 @@ class LoginDialog(QDialog):
         self._wait_scope = ""
 
         # Opening page: introduction on the left, login card in the center-right
-        page = QHBoxLayout(self)
-        page.setContentsMargins(48, 32, 48, 32)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(16, 12, 16, 0)
+        top = QHBoxLayout()
+        top.addStretch(1)
+        top.addWidget(LanguageButton())              # language can be changed before signing in
+        outer.addLayout(top)
+        page = QHBoxLayout()
+        outer.addLayout(page, 1)
+        page.setContentsMargins(32, 8, 32, 32)
         page.setSpacing(56)
         page.addStretch(1)
         hero = QVBoxLayout()

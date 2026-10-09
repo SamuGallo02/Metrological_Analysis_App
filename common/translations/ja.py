@@ -1,6 +1,7 @@
 VERSION = 2
 
 STRINGS = {
+    'Change language': '言語を変更',
     'Damaged files': 'ファイルが破損しています',
     'Some installed libraries are damaged:': 'インストール済みのライブラリの一部が破損しています:',
     'Repair them now? Only the damaged packages are downloaded again, then the app reopens by itself.': '今すぐ修復しますか？破損したパッケージだけを再ダウンロードし、アプリは自動的に再起動します。',

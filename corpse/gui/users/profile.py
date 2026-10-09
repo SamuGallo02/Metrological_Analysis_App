@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (QFileDialog, QFormLayout, QGroupBox, QHBoxLayout,
 
 from common.i18n import tr, tr_error
 from common.params import PROFILE_FIELDS
-from common.qt_utils import run_async
+from common.ui.qt_utils import run_async
 from common.ui.language import LanguageWidget
 
 from corpse.functions.users.params import LOCAL_FOLDERS

@@ -1,6 +1,7 @@
 VERSION = 2
 
 STRINGS = {
+    "Change language": "切换语言",
     "Damaged files": "文件已损坏",
     "Some installed libraries are damaged:": "部分已安装的库已损坏：",
     "Repair them now? Only the damaged packages are downloaded again, then the app reopens by itself.": "现在修复吗？只会重新下载损坏的软件包，然后应用会自动重新打开。",

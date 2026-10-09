@@ -6,7 +6,7 @@ from typing import Any, Callable, Optional
 from PySide6.QtCore import QObject, QThread, Signal
 from PySide6.QtWidgets import QMessageBox, QWidget
 
-from .i18n import tr
+from ..i18n import tr
 
 
 class Worker(QThread):
