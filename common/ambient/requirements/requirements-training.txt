@@ -1,0 +1,4 @@
+# Extras installed ONLY when the user enables the training components from the
+# training page, after the GPU build of PyTorch (if a GPU is present).
+# One library per line; empty lines or lines with # are ignored.
+nvidia-ml-py

@@ -1,0 +1,278 @@
+"""
+Training page: interface for training a new YOLO model.
+Training logic in training/worker.py, hardware detection in
+training/hardware.py, constants and paths in training/config.py - only the
+interface lives here. Contract with the app: TrainingPage(on_home).
+
+Shared dependencies (read-only, never to be modified to work on
+training): build_top_bar, HardwareAccelerationWidget, centered_content.
+
+Autore: Samuele Gallo
+"""
+
+from __future__ import annotations
+
+import shutil
+import webbrowser
+from pathlib import Path
+from typing import Optional
+
+from PySide6.QtWidgets import (
+    QComboBox,
+    QFileDialog,
+    QFormLayout,
+    QHBoxLayout,
+    QLabel,
+    QMessageBox,
+    QPushButton,
+    QSpinBox,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
+
+from common.ui.widgets import build_top_bar
+from corpse.gui.training.components import HardwareAccelerationWidget
+from common.ui.layout import centered_content
+from corpse.functions.training.config import (
+    BASE_MODEL_OPTIONS, COLAB_URL, DEFAULT_BATCH, DEFAULT_EPOCHS, DEFAULT_IMGSZ,
+    MODELS_DIR, TDATASET_DIR,
+)
+from corpse.functions.training.hardware import check_internet_connection, get_hardware_info
+from corpse.functions.training.worker import TrainingWorker
+
+
+class TrainingPage(QWidget):
+    """
+    Management page for training a new YOLO agent.
+    It used to be a modal window (TrainingDialog); it is now one of the sections
+    reachable from the home, with a button to go back.
+    """
+
+    def __init__(self, on_home, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.on_home = on_home
+        self.worker: Optional[TrainingWorker] = None
+
+        TDATASET_DIR.mkdir(exist_ok=True, parents=True)
+        MODELS_DIR.mkdir(exist_ok=True, parents=True)
+
+        self.device_code, self.device_desc = get_hardware_info()
+        self.is_online = check_internet_connection()
+
+        self._build_ui()
+        self._populate_tdatasets()
+        self._check_model_download_status()
+
+    def _build_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.addLayout(build_top_bar(self, self.on_home))
+
+        content = QVBoxLayout()
+
+        title = QLabel("<h2>Addestramento Nuovo Modello YOLO</h2>")
+        content.addWidget(title)
+
+        hw_box = QWidget()
+        hw_box.setStyleSheet("background-color: #2b2b2b; border-radius: 6px; padding: 10px;")
+        hw_layout = QVBoxLayout(hw_box)
+
+        lbl_hw = QLabel(f"<b>Hardware Rilevato:</b> {self.device_desc}")
+        hw_layout.addWidget(lbl_hw)
+
+        if self.device_code == "cpu" and self.is_online:
+            lbl_colab_info = QLabel("<i>Nota: L'addestramento su CPU può richiedere molto tempo. È consigliata la GPU di Google Colab.</i>")
+            lbl_colab_info.setStyleSheet("color: #ffca28;")
+            hw_layout.addWidget(lbl_colab_info)
+
+            btn_colab = QPushButton("Apri Google Colab per Training Cloud")
+            btn_colab.setStyleSheet("background-color: #f57c00; color: white; font-weight: bold; margin-top: 5px;")
+            btn_colab.clicked.connect(self._open_colab)
+            hw_layout.addWidget(btn_colab)
+
+        content.addWidget(hw_box)
+
+        # Extended diagnostic panel: lets you check the CUDA status in
+        # detail and, if needed, reinstall PyTorch with GPU support
+        # right from here before starting a heavy training run.
+        self.hw_widget = HardwareAccelerationWidget(self)
+        content.addWidget(self.hw_widget)
+
+        form_layout = QFormLayout()
+
+        tdataset_layout = QHBoxLayout()
+        self.combo_tdatasets = QComboBox()
+        self.combo_tdatasets.currentIndexChanged.connect(self._on_tdataset_selected)
+
+        btn_add_tdataset = QPushButton("Aggiungi Cartella...")
+        btn_add_tdataset.setToolTip("Copia una nuova cartella dataset all'interno di Dataset_Training/")
+        btn_add_tdataset.clicked.connect(self._add_tdataset_folder)
+
+        tdataset_layout.addWidget(self.combo_tdatasets, stretch=1)
+        tdataset_layout.addWidget(btn_add_tdataset)
+        form_layout.addRow("Dataset (training):", tdataset_layout)
+
+        self.lbl_yaml_path = QLabel("Nessun data.yaml trovato")
+        self.lbl_yaml_path.setStyleSheet("color: #aaaaaa; font-style: italic;")
+        form_layout.addRow("File di Configurazione:", self.lbl_yaml_path)
+
+        model_layout = QHBoxLayout()
+        self.combo_base_model = QComboBox()
+        self.combo_base_model.addItems(BASE_MODEL_OPTIONS)
+        self.combo_base_model.currentIndexChanged.connect(self._check_model_download_status)
+
+        self.lbl_download_status = QLabel("")
+        model_layout.addWidget(self.combo_base_model, stretch=1)
+        model_layout.addWidget(self.lbl_download_status)
+        form_layout.addRow("Modello Base:", model_layout)
+
+        self.spin_epochs = QSpinBox()
+        self.spin_epochs.setRange(1, 1000)
+        self.spin_epochs.setValue(DEFAULT_EPOCHS)
+        form_layout.addRow("Numero Epoche:", self.spin_epochs)
+
+        self.spin_imgsz = QSpinBox()
+        self.spin_imgsz.setRange(320, 2048)
+        self.spin_imgsz.setSingleStep(32)
+        self.spin_imgsz.setValue(DEFAULT_IMGSZ)
+        form_layout.addRow("Dimensione Immagini (px):", self.spin_imgsz)
+
+        self.spin_batch = QSpinBox()
+        self.spin_batch.setRange(1, 128)
+        self.spin_batch.setValue(DEFAULT_BATCH)
+        form_layout.addRow("Batch Size:", self.spin_batch)
+
+        content.addLayout(form_layout)
+
+        content.addWidget(QLabel("Console di avanzamento:"))
+        self.txt_console = QTextEdit()
+        self.txt_console.setReadOnly(True)
+        self.txt_console.setStyleSheet("background-color: #121212; color: #00ff00; font-family: monospace;")
+        content.addWidget(self.txt_console, stretch=1)
+
+        self.btn_start = QPushButton("AVVIA TRAINING LOCALE")
+        self.btn_start.setStyleSheet("background-color: #2e7d32; color: white; font-weight: bold; padding: 8px;")
+        self.btn_start.clicked.connect(self._start_training)
+        content.addWidget(self.btn_start)
+
+        layout.addLayout(centered_content(content, max_width=900), stretch=1)
+
+    def _populate_tdatasets(self) -> None:
+        self.combo_tdatasets.clear()
+        if not TDATASET_DIR.exists():
+            return
+
+        subdirs = [d for d in TDATASET_DIR.iterdir() if d.is_dir()]
+        if not subdirs:
+            self.combo_tdatasets.addItem("Nessun dataset presente", userData=None)
+            self.lbl_yaml_path.setText("Manca data.yaml")
+            return
+
+        for folder in sorted(subdirs, key=lambda x: x.name):
+            yaml_file = folder / "data.yaml"
+            if not yaml_file.exists():
+                yaml_file = folder / "data.yml"
+
+            if yaml_file.exists():
+                self.combo_tdatasets.addItem(f"{folder.name} (✓ data.yaml)", userData=str(yaml_file))
+            else:
+                self.combo_tdatasets.addItem(f"{folder.name} (✗ Manca data.yaml)", userData=None)
+
+        self._on_tdataset_selected()
+
+    def _on_tdataset_selected(self) -> None:
+        yaml_path = self.combo_tdatasets.currentData()
+        if yaml_path:
+            self.lbl_yaml_path.setText(f"<font color='green'>{yaml_path}</font>")
+        else:
+            self.lbl_yaml_path.setText("<font color='red'>Nessun file data.yaml trovato in questa cartella</font>")
+
+    def _add_tdataset_folder(self) -> None:
+        TDATASET_DIR.mkdir(parents=True, exist_ok=True)
+        initial_dir = str(TDATASET_DIR.resolve())
+
+        source_dir = QFileDialog.getExistingDirectory(self, "Seleziona cartella dataset da importare", initial_dir)
+        if not source_dir:
+            return
+
+        source_path = Path(source_dir)
+        if source_path.parent.resolve() == TDATASET_DIR.resolve():
+            self._populate_tdatasets()
+            for i in range(self.combo_tdatasets.count()):
+                if source_path.name in self.combo_tdatasets.itemText(i):
+                    self.combo_tdatasets.setCurrentIndex(i)
+                    break
+            return
+
+        dest_path = TDATASET_DIR / source_path.name
+        if dest_path.exists():
+            reply = QMessageBox.question(
+                self, "Cartella Esistente",
+                f"La cartella '{source_path.name}' esiste già in datasets/Dataset_Locale/dataset_Training/. Sovrascrivere?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+            try:
+                shutil.rmtree(dest_path)
+            except Exception as e:
+                QMessageBox.critical(self, "Errore", f"Impossibile sovrascrivere:\n{e}")
+                return
+
+        try:
+            shutil.copytree(source_path, dest_path)
+            QMessageBox.information(self, "Importazione Completata", f"Dataset '{source_path.name}' importato con successo.")
+            self._populate_tdatasets()
+            for i in range(self.combo_tdatasets.count()):
+                if source_path.name in self.combo_tdatasets.itemText(i):
+                    self.combo_tdatasets.setCurrentIndex(i)
+                    break
+        except Exception as e:
+            QMessageBox.critical(self, "Errore di Copia", f"Impossibile importare il dataset:\n{e}")
+
+    def _check_model_download_status(self) -> None:
+        model_name = self.combo_base_model.currentText()
+        local_path = MODELS_DIR / model_name
+        if local_path.is_file():
+            self.lbl_download_status.setText("<font color='#4caf50'><b>✓ Scaricato</b></font>")
+        else:
+            self.lbl_download_status.setText("<font color='#ff9800'><b>↓ Da scaricare</b></font>")
+
+    def _open_colab(self) -> None:
+        webbrowser.open(COLAB_URL)
+
+    def _start_training(self) -> None:
+        yaml_path = self.combo_tdatasets.currentData()
+        if not yaml_path or not Path(yaml_path).is_file():
+            QMessageBox.warning(self, "Dataset Invalido", "Seleziona un dataset contenente un file data.yaml valido.")
+            return
+
+        model_name = self.combo_base_model.currentText()
+        model_path = str(MODELS_DIR / model_name) if (MODELS_DIR / model_name).is_file() else model_name
+
+        self.btn_start.setEnabled(False)
+        self.txt_console.append(">>> Inizializzazione del processo di training...")
+
+        self.worker = TrainingWorker(
+            data_yaml=yaml_path,
+            base_model=model_path,
+            epochs=self.spin_epochs.value(),
+            imgsz=self.spin_imgsz.value(),
+            batch=self.spin_batch.value(),
+            device=self.device_code
+        )
+        self.worker.log_signal.connect(self.txt_console.append)
+        self.worker.finished_signal.connect(self._on_training_finished)
+        self.worker.error_signal.connect(self._on_training_error)
+        self.worker.start()
+
+    def _on_training_finished(self, output_path: str) -> None:
+        self.btn_start.setEnabled(True)
+        self.txt_console.append(f"\n>>> TRAINING COMPLETATO CON SUCCESSO!\n>>> Salvato in: {output_path}")
+        self._check_model_download_status()
+        QMessageBox.information(self, "Training Completato", f"Modello salvato in:\n{output_path}")
+
+    def _on_training_error(self, err_msg: str) -> None:
+        self.btn_start.setEnabled(True)
+        self.txt_console.append(f"\n>>> ERRORE DURANTE IL TRAINING:\n{err_msg}")
+        QMessageBox.critical(self, "Errore Training", f"Si è verificato un errore:\n{err_msg}")

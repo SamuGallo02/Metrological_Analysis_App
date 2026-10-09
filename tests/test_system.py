@@ -6,9 +6,9 @@ from common.params import ROLE_SERVER
 from server import config
 from server.app import make_server
 from server.db import Database
-from users.api import ApiClient, ApiError, Cancelled, OfflineError
-from users.session import Session
-from users.store import LocalStore
+from corpse.functions.users.api import ApiClient, ApiError, Cancelled, OfflineError
+from corpse.functions.users.session import Session
+from corpse.functions.users.store import LocalStore
 from tests.util import KEY, TestServer, png_bytes
 
 
@@ -115,7 +115,7 @@ class TestAdminKey(Base):
         self.user("perm1")
         u = ApiClient(self.url).login("perm1", "password123", KEY)
         self.assertEqual(u["role"], "server")
-        plain = ApiClient(self.url); plain.login("perm1", "password123")        # senza chiave: resta amministratore
+        plain = ApiClient(self.url); plain.login("perm1", "password123")        # without a key: stays administrator
         self.assertEqual(plain.me()["role"], "server"); self.assertTrue(plain.users())
         self.assertEqual([x["role"] for x in self.admin().users() if x["username"] == "perm1"], ["server"])
         self.assertTrue(any(e["action"] == "promote.admin_key" for e in self.admin().events()))
@@ -139,17 +139,17 @@ class TestAdminKey(Base):
             except ApiError as e: codes.append((e.status, e.retry_after))
         self.assertEqual([c[0] for c in codes], [403] * 5 + [429, 429])
         self.assertTrue(290 <= codes[5][1] <= 301, codes[5])
-        # anche la chiave giusta e' rifiutata durante la pausa, e non promuove
+        # even the correct key is rejected during the pause, and does not promote
         with self.assertRaises(ApiError) as e: ApiClient(self.url).login("brute0", "password123", KEY)
         self.assertEqual(e.exception.status, 429)
         with self.assertRaises(ApiError) as e: ApiClient(self.url).register("brute9", "password123", KEY)
         self.assertEqual(e.exception.status, 429)
-        # ...ma il server NON e' bloccato: salute, accesso normale, file, altri utenti
+        # ...but the server is NOT blocked: health, normal login, files, other users
         self.assertTrue(ApiClient(self.url).health()["ok"])
         c = ApiClient(self.url); c.login("brute0", "password123"); self.assertEqual(c.me()["role"], "user")
         ApiClient(self.url).register("normale1", "password123")
         self.assertTrue(self.admin().users())
-        # passati 5 minuti si puo' di nuovo usare la chiave
+        # after 5 minutes the key can be used again
         for k, (n, until) in list(self.srv.httpd.handler.key_throttle._d.items()):
             self.srv.httpd.handler.key_throttle._d[k] = (n, time.time() - 1)
         self.assertEqual(ApiClient(self.url).login("brute0", "password123", KEY)["role"], "server")
@@ -166,7 +166,7 @@ class TestAdminKey(Base):
             import json
             for _ in range(5): post("zz1234", "bad", "1.1.1.1")
             self.assertEqual(post("zz1234", "bad", "1.1.1.1"), 429)
-            self.assertEqual(post("zz5678", "bad", "2.2.2.2"), 403)         # altro IP: non bloccato
+            self.assertEqual(post("zz5678", "bad", "2.2.2.2"), 403)         # other IP: not blocked
         finally:
             s.close()
 
@@ -181,10 +181,10 @@ class TestAdminKey(Base):
 
     def test_key_is_not_in_the_source_code(self):
         root = Path(__file__).resolve().parent.parent
-        for pkg in ("server", "users", "common", "analysis", "training", "manual"):
+        for pkg in ("server", "common", "corpse"):
             for p in (root / pkg).rglob("*.py"):
                 self.assertNotIn("abcd", p.read_text(encoding="utf-8"), p)
-        self.assertEqual((root / "server" / "admin_key.txt").read_text().strip(), "abcd")   # solo nel file ignorato da git
+        self.assertEqual((root / "server" / "admin_key.txt").read_text().strip(), "abcd")   # only in the git-ignored file
 
     def test_key_loading_and_hash(self):
         with self.subTest("env"):
@@ -212,7 +212,7 @@ class TestProfile(Base):
         with self.assertRaises(ApiError) as e: c.update_profile(email="non-una-mail")
         self.assertEqual(e.exception.status, 400)
         with self.assertRaises(ApiError): c.update_profile(bio="x" * 501)
-        c.update_profile(role="server", username="altro", quota_mb=99999)       # campi non ammessi ignorati
+        c.update_profile(role="server", username="altro", quota_mb=99999)       # disallowed fields ignored
         me = c.me(); self.assertEqual((me["role"], me["username"]), ("user", "prof1"))
 
     def test_admin_sees_profiles(self):
@@ -260,18 +260,51 @@ class TestFiles(Base):
 
     def test_models_quarantine(self):
         u, a = self.user("mod"), self.admin()
-        r = u.upload("models", "best.pt", self.f("best.pt", b"PK-modello" * 100))
-        self.assertTrue(r["pending"]); self.assertEqual(r["path"], "_pending/mod/best.pt")
+        r = u.upload("models", "Pinna nobilis/best.pt", self.f("best.pt", b"PK-modello" * 100))
+        self.assertTrue(r["pending"]); self.assertEqual(r["path"], "_pending/mod/Pinna nobilis/best.pt")
         other = self.user("mod2")
         self.assertNotIn("_pending", [e["name"] for e in other.list("models")])
         with self.assertRaises(ApiError) as e: other.list("models", "_pending")
         self.assertEqual(e.exception.status, 403)
-        with self.assertRaises(ApiError): other.download("models", "_pending/mod/best.pt", self.work / "q.pt")
-        with self.assertRaises(ApiError) as e: u.approve("_pending/mod/best.pt")
+        with self.assertRaises(ApiError): other.download("models", "_pending/mod/Pinna nobilis/best.pt", self.work / "q.pt")
+        with self.assertRaises(ApiError) as e: u.approve("_pending/mod/Pinna nobilis/best.pt")
         self.assertEqual(e.exception.status, 403)
-        self.assertEqual(a.approve("_pending/mod/best.pt", "yolo_mod.pt"), "yolo_mod.pt")
-        self.assertEqual(other.download("models", "yolo_mod.pt", self.work / "m.pt").read_bytes(), b"PK-modello" * 100)
+        # approving without a new name keeps the species folder
+        self.assertEqual(a.approve("_pending/mod/Pinna nobilis/best.pt"), "Pinna nobilis/best.pt")
+        self.assertEqual(other.download("models", "Pinna nobilis/best.pt", self.work / "m.pt").read_bytes(),
+                         b"PK-modello" * 100)
+        self.assertIn("Pinna nobilis", [e["name"] for e in other.list("models")])
+        # explicit new name
+        u.upload("models", "Paracentrotus lividus/m2.pt", self.f("m2.pt", b"PK2" * 50))
+        self.assertEqual(a.approve("_pending/mod/Paracentrotus lividus/m2.pt", "Paracentrotus lividus/riccio.pt"),
+                         "Paracentrotus lividus/riccio.pt")
         self.assertFalse(a.upload("models", "ufficiale.pt", self.f("uf.pt", b"x" * 50))["pending"])
+
+    def test_models_need_scientific_name_folder(self):
+        u = self.user("spec")
+        for bad in ("flat.pt", "pesce/x.pt", "pinna nobilis/x.pt", "Pinna/x.pt", "Pinna Nobilis/x.pt"):
+            with self.subTest(bad), self.assertRaises(ApiError) as e:
+                u.upload("models", bad, self.f("x.pt", b"PK" * 30))
+            self.assertEqual(e.exception.status, 422)
+        r = u.upload("models", "Pinna nobilis nobilis/y.pt", self.f("y.pt", b"PK" * 30))      # with subspecies
+        self.assertTrue(r["pending"])
+
+    def test_server_areas_use_local_folder_names(self):
+        """On the lab computer the server data and the local data of the app are the same folder."""
+        from common.params import LOCAL_FOLDER_NAMES
+        self.admin().upload("datasets", "set1/a.txt", self.f("a.txt", b"x"))
+        self.assertTrue((self.data / LOCAL_FOLDER_NAMES["training"] / "set1" / "a.txt").is_file())
+        self.user("zed").upload("mine", "n.txt", self.f("n.txt", b"y"))
+        self.assertTrue((self.data / LOCAL_FOLDER_NAMES["users"] / "zed" / "n.txt").is_file())
+
+    def test_user_dataset_is_merged_into_the_server_dataset(self):
+        """A dataset folder uploaded by a user is added to the server datasets; existing files are never overwritten."""
+        a, u = self.admin(), self.user("dsu")
+        a.upload("datasets", "coralli/a.png", self.f("a.png", png_bytes()))
+        u.upload("datasets", "coralli/b.txt", self.f("b.txt", b"label"))                 # same folder: files are added
+        self.assertEqual(sorted(e["name"] for e in a.list("datasets", "coralli")), ["a.png", "b.txt"])
+        with self.assertRaises(ApiError) as e: u.upload("datasets", "coralli/b.txt", self.f("b.txt", b"other"))
+        self.assertEqual(e.exception.status, 409)
 
     def test_mkdir_rules(self):
         u, a = self.user("dir"), self.admin()
@@ -309,13 +342,13 @@ class TestMine(Base):
     def test_owner_has_full_control(self):
         u = self.user("own1")
         u.upload("mine", "doc/a.png", self.f("a.png", png_bytes()))
-        u.upload("mine", "doc/a.png", self.f("a.png", png_bytes()))              # sovrascrivere e' lecito
+        u.upload("mine", "doc/a.png", self.f("a.png", png_bytes()))              # overwriting is allowed
         u.mkdir("mine", "altra"); u.move("mine", "doc/a.png", "altra/b.png")
         self.assertEqual([e["name"] for e in u.list("mine", "altra")], ["b.png"])
         self.assertEqual(u.download("mine", "altra/b.png", self.work / "m.png").read_bytes(), png_bytes())
         u.delete("mine", "altra")
         self.assertNotIn("altra", [e["name"] for e in u.list("mine")])
-        u.upload("mine", "m.pt", self.f("m.pt", b"modello"))                     # modelli privati: niente quarantena
+        u.upload("mine", "m.pt", self.f("m.pt", b"modello"))                     # private models: no quarantine
         self.assertIn("m.pt", [e["name"] for e in u.list("mine")])
 
     def test_private_to_each_user(self):
@@ -334,8 +367,8 @@ class TestMine(Base):
         self.assertEqual(u.usage()["used"], 700_000)
         with self.assertRaises(ApiError) as e: u.upload("mine", "b.csv", self.f("b.csv", b"x" * 700_000))
         self.assertEqual(e.exception.status, 413)
-        u.upload("mine", "a.csv", self.f("a.csv", b"y" * 900_000))               # sovrascrittura: conta la differenza
-        with self.assertRaises(ApiError): u.update_user(uid, quota_mb=5)         # l'utente non cambia la propria quota
+        u.upload("mine", "a.csv", self.f("a.csv", b"y" * 900_000))               # overwrite: the difference counts
+        with self.assertRaises(ApiError): u.update_user(uid, quota_mb=5)         # the user cannot change their own quota
 
 
 class TestSession(Base):
@@ -371,9 +404,9 @@ class TestSession(Base):
         s = Session(store); s.register("sk1234", "password123", self.url)
         s.login("sk1234", "password123", self.url, key=KEY)
         self.assertTrue(s.is_admin and s.can("users.manage"))
-        self.assertEqual(store._users()["sk1234"]["role"], "server")             # in locale: amministratore permanente
+        self.assertEqual(store._users()["sk1234"]["role"], "server")             # locally: permanent administrator
         s2 = Session(LocalStore(Path(self.tmp.name) / "local5b")); s2.login("sk1234", "password123", self.url)
-        self.assertTrue(s2.is_admin)                                              # anche senza chiave
+        self.assertTrue(s2.is_admin)                                              # even without a key
         with self.assertRaises(ApiError) as e:
             Session(LocalStore(Path(self.tmp.name) / "local6")).register("sk9999", "password123", self.url, key="no")
         self.assertEqual(e.exception.status, 403)

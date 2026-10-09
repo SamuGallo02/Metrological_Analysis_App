@@ -1,5 +1,5 @@
-"""Limite ai tentativi: dopo N errori la chiave resta bloccata per un po'. Non blocca mai il server:
-chi e' bloccato riceve subito un errore 429 con il tempo residuo e le altre richieste proseguono."""
+"""Attempt limit: after N errors the key stays blocked for a while. Never blocks the server:
+whoever is blocked immediately gets a 429 error with the remaining time and other requests carry on."""
 from __future__ import annotations
 
 import threading
@@ -16,7 +16,7 @@ class Throttle:
         self._lock = threading.Lock()
 
     def check(self, *ids: str) -> None:
-        """Solleva AppError 429 (con retry_after) se uno degli identificativi e' bloccato."""
+        """Raises AppError 429 (with retry_after) if one of the identifiers is blocked."""
         now = time.time()
         with self._lock:
             for i in ids:
@@ -26,11 +26,11 @@ class Throttle:
                                    minutes=max(1, int((until - now + 59) // 60)), scope="key", retry_after=int(until - now) + 1)
 
     def fail(self, *ids: str) -> bool:
-        """Registra un errore; True se ha fatto scattare il blocco."""
+        """Records an error; True if it triggered the block."""
         now = time.time()
         locked = False
         with self._lock:
-            if len(self._d) > self.max_entries:                       # pulizia: scaduti
+            if len(self._d) > self.max_entries:                       # cleanup: expired
                 self._d = {k: v for k, v in self._d.items() if v[1] > now}
             for i in ids:
                 n, until = self._d.get(i, (0, 0.0))

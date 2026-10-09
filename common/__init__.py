@@ -1,2 +1,2 @@
-"""Parti condivise da tutte le sezioni (utenti, analisi, training, server): nessuna conosce le altre,
-tutte conoscono solo `common`."""
+"""Parts shared by all sections (users, analysis, training, server): none knows the others,
+all know only `common`."""

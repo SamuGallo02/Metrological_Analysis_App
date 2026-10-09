@@ -1,27 +1,27 @@
 """
-Demo dal vivo: apre la webcam (integrata o una USB esterna collegata) e
-mostra in tempo reale il rilevamento YOLO sui soggetti inquadrati. Utile
-per far vedere rapidamente il modello in azione senza dover prima
-registrare foto o video — riusa la stessa pipeline di rilevamento
-(ObjectAnalyzer.detect_in_image + render_overlay) usata dalle pagine
-Analisi Foto/Video, cosi' la demo mostra esattamente lo stesso
-comportamento dell'applicativo.
+Live demo: opens the webcam (built-in or an external USB one) and
+shows YOLO detection in real time on the subjects in frame. Useful
+to quickly show the model in action without first having to
+record photos or videos - it reuses the same detection pipeline
+(ObjectAnalyzer.detect_in_image + render_overlay) used by the
+Photo/Video Analysis pages, so the demo shows exactly the same
+behavior as the application.
 
-Supporta anche una modalita' STEREO DAL VIVO, per chi ha collegato il
-sensing-rig con due camere sincronizzate: in questo caso riusa
-ObjectAnalyzer.analyze_frame_pair (la stessa pipeline dell'Analisi Video
-Stereo) per mostrare, oltre al rilevamento, anche dimensioni e distanza
-reali stimate frame per frame — con la calibrazione stereo salvata
-dall'app (stereo_calibration.json), se presente.
+It also supports a LIVE STEREO mode, for those who have connected the
+sensing-rig with two synchronized cameras: in this case it reuses
+ObjectAnalyzer.analyze_frame_pair (the same pipeline as Stereo
+Video Analysis) to show, besides detection, also the estimated real
+size and distance frame by frame - with the stereo calibration saved
+by the app (stereo_calibration.json), if present.
 
-Uso:
+Usage:
     python tools/webcam_demo.py
     python tools/webcam_demo.py --model models/yolo11n-seg.pt --camera 1
-    python tools/webcam_demo.py --class all      # mostra tutte le classi, non solo "person"
-    python tools/webcam_demo.py --list-cameras   # elenca le camere disponibili ed esce
+    python tools/webcam_demo.py --class all      # show all classes, not just "person"
+    python tools/webcam_demo.py --list-cameras   # list available cameras and exit
     python tools/webcam_demo.py --mode stereo --camera-left 1 --camera-right 2
 
-Premi 'q' o ESC in una finestra video per uscire.
+Press 'q' or ESC in a video window to quit.
 
 Autore: Samuele Gallo
 """
@@ -38,16 +38,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import cv2
 
-from core.analysis import ObjectAnalyzer, ObjectDetection, render_overlay
-from core.calibration import load_calibration
-from core.camera_utils import list_available_cameras, open_camera
+from corpse.functions.analysis.analysis import ObjectAnalyzer, ObjectDetection, render_overlay
+from corpse.functions.analysis.calibration import load_calibration
+from corpse.functions.analysis.camera_utils import list_available_cameras, open_camera
 
-MODELS_DIR = Path(__file__).resolve().parent.parent / "models"
+from common.paths import MODELS_DIR  # noqa: E402
 DEFAULT_CLASS = "person"
 
 
 def list_cameras(max_index: int = 6) -> List[int]:
-    """Elenca le camere disponibili (integrata + eventuali USB esterne) e le stampa a schermo."""
+    """Lists the available cameras (built-in + any external USB ones) and prints them to screen."""
     print("Ricerca camere disponibili...")
     found = list_available_cameras(max_index)
     if found:
@@ -63,19 +63,19 @@ def list_cameras(max_index: int = 6) -> List[int]:
 
 
 def pick_default_model() -> Optional[Path]:
-    """Sceglie il primo modello .pt trovato in models/, se ce n'è uno."""
+    """Picks the first .pt model found in models/, if there is one."""
     if not MODELS_DIR.is_dir():
         return None
-    models = sorted(MODELS_DIR.glob("*.pt"))
+    models = sorted(p for p in MODELS_DIR.rglob("*.pt") if "_pending" not in p.parts)
     return models[0] if models else None
 
 
 def _draw_stereo_overlay(image, detections: List[ObjectDetection]):
     """
-    Come core.analysis.render_overlay, ma la didascalia include anche
-    dimensioni e distanza reali quando disponibili (il punto della modalita'
-    stereo). Tenuta qui, separata da render_overlay, per non appesantire con
-    del testo specifico-demo la funzione di overlay usata da tutta l'app.
+    Like core.analysis.render_overlay, but the caption also includes real
+    size and distance when available (the point of stereo mode). Kept here,
+    separate from render_overlay, so as not to burden the overlay function used
+    by the whole app with demo-specific text.
     """
     overlay = image.copy()
 
@@ -109,7 +109,7 @@ def _resolve_model(args) -> Path:
 
 
 def run_mono(args) -> None:
-    """Modalita' originale: una sola camera, solo rilevamento (nessuna misura, come Analisi Foto/Video singola)."""
+    """Original mode: a single camera, detection only (no measurements, like single Photo/Video Analysis)."""
     model_path = _resolve_model(args)
     print(f"Caricamento modello: {model_path}")
     analyzer = ObjectAnalyzer(str(model_path))
@@ -162,9 +162,9 @@ def run_mono(args) -> None:
 
 def run_stereo(args) -> None:
     """
-    Modalita' stereo dal vivo: due camere sincronizzate (il sensing-rig),
-    misure reali frame per frame come nell'Analisi Video Stereo — con la
-    differenza che qui le camere sono live invece che due file video.
+    Live stereo mode: two synchronized cameras (the sensing-rig),
+    real measurements frame by frame as in Stereo Video Analysis - with the
+    difference that here the cameras are live instead of two video files.
     """
     if args.camera_left is None or args.camera_right is None:
         available = list_cameras()

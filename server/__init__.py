@@ -1,1 +1,1 @@
-"""Server utenti e database. Dipende solo da `common`. Avvio: python -m server serve"""
+"""User and database server. Depends only on `common`. Start: python -m server serve"""

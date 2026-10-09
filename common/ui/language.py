@@ -1,4 +1,4 @@
-"""Scelta e download delle lingue. Non dipende da nessuna pagina."""
+"""Language selection and download. Does not depend on any page."""
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
@@ -13,7 +13,7 @@ from ..qt_utils import run_async
 
 
 class LanguageWidget(QWidget):
-    """Elenco delle lingue: English e' sempre installata, le altre si scaricano dal sito."""
+    """List of languages: English is always installed, the others are downloaded from the website."""
 
     def __init__(self, manager: Optional[LanguageManager] = None, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -52,7 +52,7 @@ class LanguageWidget(QWidget):
         self._fill()
         self.fetch()
 
-    # ---- dati --------------------------------------------------------------
+    # ---- data --------------------------------------------------------------
     def fetch(self) -> None:
         self.status.setText(tr("Checking the available languages..."))
 
@@ -102,7 +102,7 @@ class LanguageWidget(QWidget):
                                "installed": tr("Use this language")}.get(st, tr("Use this language")))
         self.btn_remove.setEnabled(bool(code) and code != DEFAULT_LANGUAGE and code in self.mgr.installed())
 
-    # ---- azioni ------------------------------------------------------------
+    # ---- actions -----------------------------------------------------------
     def _main_action(self) -> None:
         code = self._code()
         if not code:

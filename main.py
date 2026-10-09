@@ -1,8 +1,8 @@
 """
-Applicativo per l'Analisi Metrologica Stereo-Fotogrammetrica
+Application for Stereo-Photogrammetric Metrological Analysis
 ============================================================
-Modulo principale per l'inizializzazione dell'interfaccia grafica
-e l'orchestrazione delle dipendenze di sistema.
+Main module for initializing the graphical interface
+and orchestrating the system dependencies.
 
 Autore: Samuele Gallo
 """
@@ -13,57 +13,72 @@ import ctypes
 import os
 import sys
 
-# Registrazione dell'ID univoco su Windows per la barra delle applicazioni
+# Registering the unique ID on Windows for the taskbar
 try:
     ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("StereoMetrology.AnalysisApp.1.0")
 except Exception:
     pass
 
-# Disabilitazione preventiva degli hook di introspezione dinamica
+# Preemptively disabling the dynamic introspection hooks
 os.environ["SHIBOKEN_DISABLE_IMPORTHOOK"] = "1"
 
 
+def self_repair(deep: bool = False) -> None:
+    """Checks the files of the virtual environment and, if some are damaged, repairs them and restarts."""
+    from pathlib import Path
+
+    from common.ambient.installer import integrity
+    from common.ambient.repair_dialog import ask_repair
+
+    if integrity.startup_check(Path(__file__).resolve().parent, ask_repair, deep):
+        sys.exit(0)
+
+
 def bootstrap() -> None:
-    """Pre-carica le librerie scientifiche e inizializza l'applicazione Qt."""
+    """Preloads the scientific libraries and initializes the Qt application."""
+    if "--no-check" not in sys.argv:
+        self_repair()  # before importing the libraries: a truncated DLL would crash the import
     try:
         import cv2
         import numpy as np
         import pandas as pd
 
-        from core.analysis import ObjectAnalyzer
-        from core.reporting import compute_summary, export_csv
-    except ImportError as err:
-        print(f"[ERROR] Impossibile caricare i moduli fondamentali: {err}")
+        from corpse.functions.analysis.analysis import ObjectAnalyzer
+        from corpse.functions.analysis.reporting import compute_summary, export_csv
+    except (ImportError, OSError) as err:
+        print(f"[ERROR] Cannot load the core modules: {err}")
+        if "--no-check" not in sys.argv:
+            self_repair(deep=True)  # sizes were fine: look at the content of every file
         sys.exit(1)
 
     from pathlib import Path
 
     from PySide6.QtWidgets import QApplication, QDialog
 
-    app = QApplication(sys.argv)
+    app = QApplication.instance() or QApplication(sys.argv)
     app.setApplicationName("StereoMetrologyAnalysis")
 
     from common.i18n import init_language
-    from gui.home_gui import AppWindow
-    from users.session import Session
-    from users.store import LocalStore
-    from users.ui import LoginDialog
+    from common.paths import MODELS_DIR, RESULTS_DIR, STEREO_PHOTO_DIR, TRAINING_DIR
+    from corpse.gui.home.home_gui import AppWindow
+    from corpse.functions.users.session import Session
+    from corpse.functions.users.store import LocalStore
+    from corpse.gui.users import LoginDialog
 
-    init_language()  # lingua scelta dall'utente (inglese se nessuna)
+    init_language()  # language chosen by the user (English if none)
 
     root = Path(__file__).resolve().parent
     session = Session(LocalStore(default_folders={
-        "photos": root / "Dataset_Foto_Stereo", "models": root / "models",
-        "datasets": root / "Dataset_Training", "results": root / "Results",
+        "photos": STEREO_PHOTO_DIR, "models": MODELS_DIR, "datasets": TRAINING_DIR, "results": RESULTS_DIR,
     }))
-    if not session.resume():  # sessione salvata valida, oppure server spento con sessione precedente
-        dialog = LoginDialog(session)  # accesso, registrazione, chiave admin o "continua senza accedere"
+    if not session.resume():  # valid saved session, or server off with a previous session
+        dialog = LoginDialog(session)  # login, registration, admin key or "continue without logging in"
         dialog.showMaximized()
         if dialog.exec() != QDialog.DialogCode.Accepted:
             sys.exit(0)
 
     window = AppWindow(session)
-    window.showMaximized()  # Apertura forzata a schermo intero
+    window.showMaximized()  # Forced full-screen opening
 
     sys.exit(app.exec())
 

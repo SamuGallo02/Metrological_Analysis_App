@@ -21,41 +21,43 @@ Installazione manuale da sorgente (sviluppo):
 ```bash
 git clone https://github.com/SamuGallo02/Metrological_Analysis_App.git
 cd Metrological_Analysis_App
-python distribution/installer_gui.py --dest .      # oppure --cli senza finestra
-python main.py        # con l'ambiente creato (venv / venv_mac / venv_linux)
+python common/ambient/distribution/installer_gui.py --dest .      # oppure --cli senza finestra
+python main.py        # all'avvio controlla i file del venv e propone la riparazione se qualcosa è danneggiato (`--no-check` per saltare); con l'ambiente creato (librery/venv, librery/venv_mac, librery/venv_linux)
 ```
 
-Avvio rapido dopo l'installazione: `launchers/AnalisiMetrologica.vbs` (Windows), `launchers/AvviaAnalisiMetrologica.command` (macOS), `launchers/AvviaAnalisiMetrologica.sh` (Linux).
+Avvio rapido dopo l'installazione: `common/launchers/AnalisiMetrologica.vbs` (Windows), `common/launchers/AvviaAnalisiMetrologica.command` (macOS), `common/launchers/AvviaAnalisiMetrologica.sh` (Linux).
 Gli extra per il training si installano dalla pagina *Training* dell'applicazione.
 
 ## Struttura
 
 ```text
-assets/          risorse grafiche
-config/          configurazione persistente (classi tracciate)
-common/          parametri globali, impostazioni, traduzioni, sicurezza (condiviso)
-users/           account, accesso, profilo, cartelle del server
-server/          server HTTP (solo per chi lo ospita, non installato dagli utenti)
-analysis/        schermata con le 4 analisi
-manual/          manuale d'uso
-core/            algoritmi: analisi, calibrazione, pairing, tracking, report
-gui/             interfaccia PySide6
-training/        pagina e worker per l'addestramento di nuovi modelli YOLO
-installer/       rilevamento OS/GPU, creazione venv, scelta build PyTorch
-distribution/    sorgenti per generare gli installer (build_installer.py, installer_gui.py)
-launchers/       avvio dell'applicazione per sistema operativo
-tools/           demo webcam, acquisizione coppie di test, generazione dei pacchetti lingua
-tests/           test automatici (python -m unittest discover -s tests -t .)
-docs/            INTEGRAZIONE.md e SERVER.md
-main.py          punto di ingresso
-requirements.txt / requirements-training.txt
+main.py                 punto di ingresso
+common/                 parti condivise da tutte le sezioni
+  ambient/              installer (installer/), librerie richieste (requirements/) e script per gli installer (distribution/)
+  assets/ config/       icona e configurazione persistente (classi tracciate)
+  errors/ paths/ security/ settings/   errori, percorsi, sicurezza e impostazioni
+  translations/         pacchetti lingua (it, es, de, fr, zh, ja); l'inglese e' nel codice
+  launchers/            avvio dell'applicazione per sistema operativo
+  ui/                   widget comuni e selezione della lingua
+  params.py             parametri globali (nomi, lingue, indirizzi, cartelle)
+corpse/                 il cuore dell'applicazione
+  functions/            logica, senza interfaccia: analysis, home, training, users
+  gui/                  interfaccia PySide6: analysis, home, manual, training, users
+datasets/Dataset_Locale/  dati dell'utente: foto, video, dataset di training, modelli, risultati
+librery/                ambienti virtuali creati dall'installer (venv, venv_mac, venv_linux)
+server/                 server HTTP per account e cartelle condivise (non installato dagli utenti)
+tools/                  demo webcam, acquisizione coppie di test, generazione dei pacchetti lingua
+tests/  docs/           test automatici e documentazione
+common/ambient/requirements/  elenco delle librerie (core e training)
 ```
 
-Non sono nel repository (vedi `.gitignore`): ambienti virtuali, pesi dei modelli (`*.pt`), dataset e immagini, file locali dell'installer.
+Ogni sezione importa solo `common` e se stessa (verificato da `tests/test_isolation.py`); la home e' l'unica che le collega.
+
+Non sono nel repository (vedi `.gitignore`): ambienti virtuali, pesi dei modelli (`*.pt`), dataset e immagini, file locali dell'installer, chiave del server.
 
 ## Dati operativi
 
-- **Modelli YOLO** (`models/`): inserire i file `.pt` oppure importarli con "Aggiungi modello...".
+- **Modelli YOLO** (`datasets/Dataset_Locale/models/`): inserire i file `.pt` oppure importarli con "Aggiungi modello...".
 - **Dataset stereo**: cartelle con le acquisizioni (nomi basati su timestamp), importabili con "Aggiungi cartella...".
 
 ## Uso
@@ -74,4 +76,4 @@ Non sono nel repository (vedi `.gitignore`): ambienti virtuali, pesi dei modelli
 
 ## Rigenerare gli installer
 
-`python distribution/build_installer.py` crea `distribution/output/Installa.cmd` e `Installa.command` (non versionati: si pubblicano nel sito).
+`python common/ambient/distribution/build_installer.py` crea `common/ambient/distribution/output/Installa.cmd` e `Installa.command` (non versionati: si pubblicano nel sito).

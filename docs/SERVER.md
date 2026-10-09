@@ -3,14 +3,30 @@
 Solo libreria standard di Python 3.10+ (nessuna installazione, nessuna interfaccia grafica).
 
 ```
-python -m server --data server_data create-admin NOME        # chiede la password (min 8 caratteri)
-python -m server --data server_data serve --host 0.0.0.0 --port 8765
-python -m server --data server_data serve --no-register       # solo l'amministratore crea gli account
-python -m server --data server_data serve --trust-proxy       # dietro Caddy/nginx: IP reale da X-Forwarded-For
+python -m server create-admin NOME                            # chiede la password (min 8 caratteri)
+python -m server serve --host 0.0.0.0 --port 8765
+python -m server serve --no-register                          # solo l'amministratore crea gli account
+python -m server serve --trust-proxy                          # dietro Caddy/nginx: IP reale da X-Forwarded-For
 python -m server hash-key                                     # stampa sha256:<hex> da mettere al posto della chiave
 ```
-Dati: `server_data/server.db` (utenti, sessioni, registro) e `server_data/files/{photos,models,datasets,mine/<utente>}/`.
-**Backup**: copia l'intera cartella `server_data` (a server fermo, oppure `sqlite3 server.db ".backup copia.db"`).
+## Dati: server e cartella locale coincidono
+Senza `--data` il server usa la cartella dei dati locali dell'app, `datasets/Dataset_Locale/`. Sul computer che ospita il
+server, quindi, le cartelle del server e quelle locali dell'amministratore sono le stesse:
+
+| Area del server | Cartella |
+|---|---|
+| `photos` | `dataset_Foto_Stereo/` |
+| `models` | `models/` (una sottocartella per specie, con il nome scientifico: `Pinna nobilis/modello.pt`) |
+| `datasets` | `dataset_Training/` |
+| `mine` (cartella personale di ogni utente, come un "drive") | `users/<utente>/` |
+
+Il database (utenti, sessioni, registro) è `server.db` nella stessa cartella.
+
+- **Modelli**: chi li carica indica il nome scientifico (Genere specie); finiscono in `models/_pending/<utente>/<Genere specie>/`
+  (quarantena) finché un amministratore non li approva, e vengono pubblicati in `models/<Genere specie>/`.
+- **Dataset**: le cartelle caricate dagli utenti vengono inserite nei dataset del server; i file già presenti non si sovrascrivono.
+- **Backup**: copia `datasets/Dataset_Locale` a server fermo, oppure solo `server.db` con `sqlite3 server.db ".backup copia.db"`.
+- Per usare un'altra cartella: `python -m server --data PERCORSO serve`.
 
 ## Chiave di accesso amministratore
 - Nelle finestre di registrazione e accesso c'è il campo **Chiave di accesso** (facoltativo).
@@ -50,7 +66,7 @@ After=network.target
 [Service]
 WorkingDirectory=/opt/analisi
 Environment=AM_ADMIN_KEY=...la-tua-chiave-lunga...
-ExecStart=/usr/bin/python3 -m server --data /opt/analisi/server_data serve --host 127.0.0.1 --port 8765 --trust-proxy
+ExecStart=/usr/bin/python3 -m server --data /opt/analisi/datasets/Dataset_Locale serve --host 127.0.0.1 --port 8765 --trust-proxy
 Restart=always
 User=analisi
 [Install]

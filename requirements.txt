@@ -1,9 +1,0 @@
-# Dipendenze dirette dell'applicativo (le transitive le risolve pip).
-# PyTorch NON e' qui: lo sceglie l'installer in base a sistema operativo e GPU
-# (vedi installer/plan.py). Per sviluppo a mano: pip install torch torchvision
-# e poi pip install -r requirements.txt
-PySide6>=6.5
-opencv-python>=4.5
-numpy
-pandas
-ultralytics>=8.3.0

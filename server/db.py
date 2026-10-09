@@ -1,4 +1,4 @@
-"""Archivio utenti, sessioni e registro attivita' (SQLite)."""
+"""Store for users, sessions and activity log (SQLite)."""
 from __future__ import annotations
 
 import re
@@ -41,7 +41,7 @@ class Database:
             """)
             have = {r[1] for r in c.execute("PRAGMA table_info(users)")}
             for col, decl in _COLUMNS.items():
-                if col not in have:                          # database creato da una versione precedente
+                if col not in have:                          # database created by a previous version
                     c.execute(f"ALTER TABLE users ADD COLUMN {col} {decl}")
 
     def _c(self) -> sqlite3.Connection:
@@ -50,16 +50,19 @@ class Database:
         con.execute("PRAGMA foreign_keys=ON")
         return _Ctx(con)
 
-    # ---- utenti ------------------------------------------------------------
-    def create_user(self, username: str, password: str, role: str = ROLE_USER) -> Dict[str, Any]:
+    # ---- users ------------------------------------------------------------
+    def create_user(self, username: str, password: str, role: str = ROLE_USER, email: str = "") -> Dict[str, Any]:
         username, password = validate_username(username), validate_password(password)
+        email = email.strip() if isinstance(email, str) else ""
+        if email and (len(email) > PROFILE_FIELDS["email"] or not _EMAIL.match(email)):
+            raise AppError("Invalid email address.")
         if role not in ROLES:
             raise AppError("Invalid role.")
         salt, h = hash_password(password)
         try:
             with self._c() as c:
-                uid = c.execute("INSERT INTO users(username,role,salt,pw_hash,created) VALUES(?,?,?,?,?)",
-                                (username, role, salt, h, time.time())).lastrowid
+                uid = c.execute("INSERT INTO users(username,role,salt,pw_hash,created,email) VALUES(?,?,?,?,?,?)",
+                                (username, role, salt, h, time.time(), email)).lastrowid
         except sqlite3.IntegrityError:
             raise AppError("Username already taken.", 409)
         return self.get_user(uid)
@@ -106,7 +109,7 @@ class Database:
         return self.get_user(uid)
 
     def promote(self, uid: int) -> Dict[str, Any]:
-        """Rende l'account amministratore in modo permanente (chiave di accesso corretta)."""
+        """Makes the account a permanent administrator (correct access key)."""
         return self.update_user(uid, role=ROLE_SERVER)
 
     def update_profile(self, uid: int, data: Dict[str, Any]) -> Dict[str, Any]:
@@ -138,13 +141,13 @@ class Database:
         with self._c() as c:
             c.execute("DELETE FROM users WHERE id=?", (uid,))
 
-    # ---- accesso -----------------------------------------------------------
+    # ---- login -----------------------------------------------------------
     def authenticate(self, username: str, password: str) -> Dict[str, Any]:
-        """Verifica le credenziali (5 password errate -> account bloccato 5 minuti). Non emette token."""
+        """Verifies credentials (5 wrong passwords -> account locked for 5 minutes). Does not issue tokens."""
         with self._c() as c:
             r = c.execute("SELECT * FROM users WHERE username=?", ((username or "").strip(),)).fetchone()
             if r is None:
-                hash_password(password or "")          # tempo di risposta simile se l'utente non esiste
+                hash_password(password or "")          # similar response time if the user does not exist
                 raise AppError("Invalid credentials.", 401)
             now = time.time()
             if r["locked_until"] > now:
@@ -183,7 +186,7 @@ class Database:
         with self._c() as c:
             c.execute("DELETE FROM tokens WHERE digest=?", (token_digest(token),))
 
-    # ---- registro attivita' ------------------------------------------------
+    # ---- activity log ------------------------------------------------
     def log(self, username: str, action: str, area: str = "", path: str = "", size: int = 0) -> None:
         with self._c() as c:
             c.execute("INSERT INTO events(ts,username,action,area,path,size) VALUES(?,?,?,?,?,?)",
@@ -195,7 +198,7 @@ class Database:
 
 
 class _Ctx:
-    """Connessione che fa commit all'uscita e si chiude sempre."""
+    """Connection that commits on exit and always closes."""
     def __init__(self, con):
         self.con = con
 

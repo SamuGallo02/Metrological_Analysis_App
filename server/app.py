@@ -1,8 +1,8 @@
-"""API HTTP (JSON) del server. Solo libreria standard.
+"""HTTP (JSON) API of the server. Standard library only.
 
-Autenticazione: intestazione  Authorization: Bearer <token>  (si ottiene con /api/login).
-Gli errori hanno la forma {"error": testo inglese, "key": ..., "params": {...}, "retry_after": s}: il client
-li traduce nella lingua dell'utente.
+Authentication: header  Authorization: Bearer <token>  (obtained with /api/login).
+Errors have the form {"error": English text, "key": ..., "params": {...}, "retry_after": s}: the client
+translates them into the user's language.
 """
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ class Handler(BaseHTTPRequestHandler):
     cfg: ServerConfig
     key_throttle: Throttle
 
-    # ---- utilita' ----------------------------------------------------------
+    # ---- utilities ----------------------------------------------------------
     def log_message(self, fmt, *args):
         log.info("%s %s", self.address_string(), fmt % args)
 
@@ -75,7 +75,7 @@ class Handler(BaseHTTPRequestHandler):
         return self.db.user_from_token(h[7:].strip()) if h.lower().startswith("bearer ") else None
 
     def _drain(self) -> None:
-        """Scarta il corpo non letto (la connessione e' keep-alive)."""
+        """Discards the unread body (the connection is keep-alive)."""
         n = int(self.headers.get("Content-Length") or 0)
         while n > 0:
             chunk = self.rfile.read(min(n, CHUNK))
@@ -83,10 +83,10 @@ class Handler(BaseHTTPRequestHandler):
                 break
             n -= len(chunk)
 
-    # ---- chiave di accesso amministratore -----------------------------------
+    # ---- administrator access key -----------------------------------
     def _use_key(self, key: Any, *extra_ids: str) -> bool:
-        """True se la chiave e' giusta; False se non e' stata fornita; AppError se errata o bloccata.
-        5 errori dallo stesso indirizzo (o sullo stesso account) bloccano SOLO la chiave per 5 minuti."""
+        """True if the key is correct; False if it was not provided; AppError if wrong or blocked.
+        5 errors from the same address (or on the same account) block ONLY the key for 5 minutes."""
         key = str(key or "")
         if not key:
             return False
@@ -100,7 +100,7 @@ class Handler(BaseHTTPRequestHandler):
             raise AppError("The access key is not enabled on this server.", 403)
         raise AppError("Invalid access key.", 403)
 
-    # ---- smistamento -------------------------------------------------------
+    # ---- dispatching -------------------------------------------------------
     def do_GET(self): self._route()
     def do_POST(self): self._route()
     def do_PUT(self): self._route()
@@ -142,7 +142,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, {"ok": True})
             if path == "/api/password" and method == "POST":
                 d = self._json()
-                self.db.authenticate(user["username"], str(d.get("old", "")))      # verifica la vecchia password
+                self.db.authenticate(user["username"], str(d.get("old", "")))      # check the old password
                 self.db.update_user(user["id"], password=str(d.get("new", "")))
                 return self._send(200, {"ok": True})
             if path.startswith("/api/files"):
@@ -166,14 +166,14 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 pass
 
-    # ---- accesso -----------------------------------------------------------
+    # ---- login -----------------------------------------------------------
     def _login(self, d: Dict[str, Any]) -> None:
         name = str(d.get("username", ""))
         user = self.db.authenticate(name, str(d.get("password", "")))
-        # la chiave si controlla solo a password corretta, cosi' non rivela nulla a chi non ha l'account
+        # the key is checked only when the password is correct, so it reveals nothing to someone without the account
         promoted = self._use_key(d.get("key"), "user:" + user["username"].lower())
         if promoted and user["role"] != ROLE_SERVER:
-            user = self.db.promote(user["id"])              # amministratore permanente
+            user = self.db.promote(user["id"])              # permanent administrator
             self.db.log(user["username"], "promote.admin_key")
         token = self.db.issue_token(user["id"])
         self.db.log(user["username"], "login")
@@ -184,11 +184,11 @@ class Handler(BaseHTTPRequestHandler):
             raise AppError("Registration is disabled: ask an administrator for an account.", 403)
         as_admin = self._use_key(d.get("key"))
         u = self.db.create_user(str(d.get("username", "")), str(d.get("password", "")),
-                                ROLE_SERVER if as_admin else ROLE_USER)
+                                ROLE_SERVER if as_admin else ROLE_USER, email=d.get("email") or "")
         self.db.log(u["username"], "register.admin" if as_admin else "register")
         self._send(201, {"user": u})
 
-    # ---- amministrazione ---------------------------------------------------
+    # ---- administration ---------------------------------------------------
     def _admin(self, path: str, method: str, q: Dict[str, str], me: Dict[str, Any]) -> None:
         if path == "/api/events" and method == "GET":
             return self._send(200, {"events": self.db.events(int(q.get("limit", 200)))})
@@ -219,7 +219,7 @@ class Handler(BaseHTTPRequestHandler):
         self._drain()
         raise AppError("Resource not found.", 404)
 
-    # ---- file --------------------------------------------------------------
+    # ---- files --------------------------------------------------------------
     def _files(self, path: str, method: str, q: Dict[str, str], user: Dict[str, Any], admin: bool) -> None:
         area, rel, name = q.get("area", ""), q.get("path", ""), user["username"]
         mine = area == AREA_MINE
@@ -235,7 +235,7 @@ class Handler(BaseHTTPRequestHandler):
             self.db.log(name, "mkdir", area, made)
             return self._send(201, {"path": made})
         if (method, path) in (("DELETE", "/api/files"), ("POST", "/api/files/move"), ("POST", "/api/files/approve")):
-            if not (admin or (mine and path != "/api/files/approve")):       # nelle aree comuni solo l'admin
+            if not (admin or (mine and path != "/api/files/approve")):       # in common areas only the admin
                 self._drain()
                 raise AppError("Users cannot modify or delete the server's shared files.", 403)
             if method == "DELETE":
@@ -304,7 +304,7 @@ class Handler(BaseHTTPRequestHandler):
             if dest.exists() and not (admin or area == AREA_MINE):
                 raise AppError("A file with this name already exists (you cannot overwrite it).", 409)
         except AppError:
-            self.close_connection = True      # il corpo non viene letto: si chiude la connessione
+            self.close_connection = True      # the body is not read: the connection is closed
             raise
         tmp = self.store.tmp_path(area, owner)
         got = 0
@@ -325,7 +325,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 class _Server(ThreadingHTTPServer):
-    def handle_error(self, request, client_address):      # reset di connessione = client che chiude: non e' un errore
+    def handle_error(self, request, client_address):      # connection reset = client closing: not an error
         import sys
         if isinstance(sys.exc_info()[1], (ConnectionError, BrokenPipeError, TimeoutError)):
             return
@@ -334,14 +334,14 @@ class _Server(ThreadingHTTPServer):
 
 def make_server(data_dir: Path, host: str = "127.0.0.1", port: int = 8765, allow_register: bool = True,
                 admin_key: Optional[str] = None, trust_proxy: bool = False) -> ThreadingHTTPServer:
-    """admin_key=None: la chiave si legge da ambiente/file (vedi server.config); '' la disattiva."""
+    """admin_key=None: the key is read from environment/file (see server.config); '' disables it."""
     data_dir = Path(data_dir)
     cfg = ServerConfig(data_dir, allow_register, load_admin_key(data_dir) if admin_key is None else admin_key,
                        trust_proxy)
-    # una sottoclasse per server: piu' server nello stesso processo (test) non si condividono lo stato
+    # one subclass per server: several servers in the same process (tests) do not share state
     handler = type("BoundHandler", (Handler,), {
         "key_throttle": Throttle(KEY_MAX_FAILS, KEY_LOCK_SECONDS), "db": Database(data_dir / "server.db"),
-        "store": Storage(data_dir / "files"), "cfg": cfg})
+        "store": Storage(data_dir), "cfg": cfg})
     httpd = _Server((host, port), handler)
     httpd.handler = handler
     httpd.daemon_threads = True

@@ -1,7 +1,7 @@
-"""Elenca tutti i testi traducibili del codice: primo argomento letterale di tr(), N_(), AppError(), ApiError()...
+"""Lists all translatable texts in the code: first literal argument of tr(), N_(), AppError(), ApiError()...
 
-    python -m tools.extract_strings            # stampa il numero e i testi
-Non-letterali (tr(variabile)) vengono segnalati: vanno resi letterali o passati a tr_dyn().
+    python -m tools.extract_strings            # prints the count and the texts
+Non-literals (tr(variable)) are reported: they must be made literal or passed to tr_dyn().
 """
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Dict, List, Set, Tuple
 
 ROOT = Path(__file__).resolve().parent.parent
-PACKAGES = ("common", "users", "server", "analysis", "training", "manual", "gui")      # gui: solo il collante dell'app
+PACKAGES = ("common", "corpse", "server")
 CALLS = {"tr", "N_", "AppError", "ApiError", "OfflineError", "Cancelled"}
 
 

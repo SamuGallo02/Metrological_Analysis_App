@@ -1,4 +1,4 @@
-"""Formati di visualizzazione condivisi."""
+"""Shared display formats."""
 from __future__ import annotations
 
 import time

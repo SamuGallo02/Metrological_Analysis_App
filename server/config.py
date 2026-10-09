@@ -1,12 +1,12 @@
-"""Configurazione del server e caricamento della chiave amministratore.
+"""Server configuration and loading of the administrator key.
 
-La chiave NON e' nel codice. Viene letta, nell'ordine, da:
-  1. variabile d'ambiente AM_ADMIN_KEY
-  2. file  server/admin_key.txt   (contiene SOLO la chiave)
-  3. file  <cartella dati>/admin_key.txt
-Il contenuto puo' essere la chiave in chiaro oppure  sha256:<hex>  (creato con `python -m server hash-key`),
-cosi' sul server resta solo l'impronta. Per non pubblicarla: nel .gitignore decommenta la riga
-`server/admin_key.txt` quando il progetto va sul server.
+The key is NOT in the code. It is read, in order, from:
+  1. environment variable AM_ADMIN_KEY
+  2. file  server/admin_key.txt   (contains ONLY the key)
+  3. file  <data folder>/admin_key.txt
+The content can be the plain key or  sha256:<hex>  (created with `python -m server hash-key`),
+so that only the fingerprint stays on the server. To avoid publishing it: in .gitignore uncomment the line
+`server/admin_key.txt` when the project goes on the server.
 """
 from __future__ import annotations
 
@@ -33,11 +33,11 @@ def load_admin_key(data_dir: Path) -> str:
                 return f.read_text(encoding="utf-8").strip()
             except OSError:
                 continue
-    return ""                                   # nessuna chiave: la funzione e' disattivata
+    return ""                                   # no key: the feature is disabled
 
 
 def key_matches(candidate: str, stored: str) -> bool:
-    """Confronto a tempo costante; `stored` puo' essere 'sha256:<hex>'."""
+    """Constant-time comparison; `stored` may be 'sha256:<hex>'."""
     if not stored or not candidate:
         return False
     if stored.lower().startswith("sha256:"):
@@ -55,9 +55,9 @@ class ServerConfig:
     data_dir: Path
     allow_register: bool = True
     admin_key: str = ""
-    trust_proxy: bool = False                  # True solo dietro Caddy/nginx: usa X-Forwarded-For per l'IP
+    trust_proxy: bool = False                  # True only behind Caddy/nginx: uses X-Forwarded-For for the IP
 
     def client_ip(self, peer: str, forwarded: Optional[str]) -> str:
         if self.trust_proxy and forwarded:
-            return forwarded.split(",")[-1].strip() or peer      # l'ultimo lo aggiunge il nostro proxy
+            return forwarded.split(",")[-1].strip() or peer      # the last one is added by our proxy
         return peer

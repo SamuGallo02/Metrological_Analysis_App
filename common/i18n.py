@@ -1,10 +1,10 @@
-"""Traduzioni. La lingua base e' l'inglese (preinstallata): i testi nel codice SONO le chiavi.
+"""Translations. The base language is English (preinstalled): the texts in the code ARE the keys.
 
     from common.i18n import tr
-    label = tr("Sign in")                       # testo inglese -> testo nella lingua scelta
-    msg = tr("{n} files uploaded.", n=3)         # segnaposto con nome
+    label = tr("Sign in")                       # English text -> text in the chosen language
+    msg = tr("{n} files uploaded.", n=3)         # named placeholder
 
-Gli altri idiomi sono pacchetti JSON scaricabili (LanguageManager) salvati nella cartella dell'utente:
+The other languages are downloadable JSON packs (LanguageManager) saved in the user's folder:
     {"code": "it", "name": "Italian", "native": "Italiano", "version": 1,
      "strings": {"Sign in": "Accedi", ...}, "manual": "# ..."}
 """
@@ -28,12 +28,12 @@ _manual: str = ""
 
 
 def tr(text: str, **kw: Any) -> str:
-    """Traduce un testo letterale (il controllo di copertura dei pacchetti lo cerca nel codice)."""
+    """Translates a literal text (the pack coverage check looks for it in the code)."""
     return tr_dyn(text, **kw)
 
 
 def tr_dyn(text: str, **kw: Any) -> str:
-    """Come tr() ma per testi non letterali (es. messaggi ricevuti dal server): non e' estratto dal codice."""
+    """Like tr() but for non-literal texts (e.g. messages received from the server): it is not extracted from the code."""
     out = _strings.get(text, text)
     if kw:
         try:
@@ -44,12 +44,12 @@ def tr_dyn(text: str, **kw: Any) -> str:
 
 
 def N_(text: str) -> str:
-    """Segna un testo da tradurre che viene mostrato piu' tardi con tr_dyn() (es. elenchi nei file di parametri)."""
+    """Marks a text to translate that is shown later with tr_dyn() (e.g. lists in the parameter files)."""
     return text
 
 
 def tr_error(e: BaseException) -> str:
-    """Messaggio di un errore nella lingua corrente (gli AppError portano chiave e parametri)."""
+    """Message of an error in the current language (AppErrors carry key and parameters)."""
     key, params = getattr(e, "key", None), getattr(e, "params", None)
     return tr_dyn(key, **(params or {})) if key else str(e)
 
@@ -59,12 +59,12 @@ def current_language() -> str:
 
 
 def current_manual() -> str:
-    """Testo del manuale nella lingua corrente ('' se il pacchetto non lo contiene)."""
+    """Manual text in the current language ('' if the pack does not contain it)."""
     return _manual
 
 
 def set_language(code: str, folder: Optional[Path] = None) -> bool:
-    """Attiva una lingua gia' installata. 'en' e' sempre disponibile. Ritorna False se non installata."""
+    """Activates an already installed language. 'en' is always available. Returns False if not installed."""
     global _lang, _strings, _manual
     if code == DEFAULT_LANGUAGE:
         _lang, _strings, _manual = DEFAULT_LANGUAGE, {}, ""
@@ -77,7 +77,7 @@ def set_language(code: str, folder: Optional[Path] = None) -> bool:
 
 
 def init_language(folder: Optional[Path] = None) -> str:
-    """Da chiamare all'avvio: applica la lingua salvata nelle impostazioni (se ancora installata)."""
+    """To be called at startup: applies the language saved in the settings (if still installed)."""
     code = Settings(folder).get("language", DEFAULT_LANGUAGE)
     if not set_language(code, folder):
         set_language(DEFAULT_LANGUAGE)
@@ -89,7 +89,7 @@ def _packs_dir(folder: Optional[Path] = None) -> Path:
 
 
 class LanguageManager:
-    """Elenco, download, rimozione e attivazione dei pacchetti lingua."""
+    """Listing, download, removal and activation of language packs."""
 
     def __init__(self, folder: Optional[Path] = None, index_url: Optional[str] = None):
         self.folder = Path(folder) if folder else user_data_dir()
@@ -108,13 +108,13 @@ class LanguageManager:
         return int((read_json(self.dir / f"{code}.json", {}) or {}).get("version", 0))
 
     def fetch_index(self) -> List[Dict[str, Any]]:
-        """[{code, name, native, version, file, sha256, size}] dei pacchetti scaricabili."""
+        """[{code, name, native, version, file, sha256, size}] of the downloadable packs."""
         with urllib.request.urlopen(self.index_url, timeout=NET_TIMEOUT) as r:
             data = json.loads(r.read().decode("utf-8"))
         return [e for e in data.get("languages", []) if e.get("code") in LANGUAGES and e["code"] != DEFAULT_LANGUAGE]
 
     def install(self, entry: Dict[str, Any], progress: Optional[Callable[[int, int], None]] = None) -> Path:
-        """Scarica e verifica (SHA-256) il pacchetto descritto da una voce dell'indice."""
+        """Downloads and verifies (SHA-256) the pack described by an index entry."""
         url = urljoin(self.index_url, entry["file"])
         with urllib.request.urlopen(url, timeout=NET_TIMEOUT) as r:
             total = int(r.headers.get("Content-Length") or entry.get("size") or 0)

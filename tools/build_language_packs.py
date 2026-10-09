@@ -1,10 +1,10 @@
-"""Costruisce i pacchetti lingua scaricabili da tools/translations/<codice>.py.
+"""Builds the downloadable language packs from common/translations/<code>.py.
 
-    python -m tools.build_language_packs --check            # solo verifica (copertura, segnaposto, manuale)
-    python -m tools.build_language_packs --out site/locales # crea <codice>.json e index.json da pubblicare sul sito
+    python -m tools.build_language_packs --check            # check only (coverage, placeholders, manual)
+    python -m tools.build_language_packs --out site/locales # creates <code>.json and index.json to publish on the site
 
-Ogni file tools/translations/<codice>.py contiene:  VERSION = 1,  STRINGS = {"English text": "traduzione"},  MANUAL = "..."
-Aumenta VERSION quando cambi una traduzione: l'app propone l'aggiornamento.
+Each file common/translations/<code>.py contains:  VERSION = 1,  STRINGS = {"English text": "translation"},  MANUAL = "..."
+Increase VERSION when you change a translation: the app offers the update.
 """
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from common.params import DEFAULT_LANGUAGE, LANGUAGES            # noqa: E402
-from manual.content import MANUAL                                  # noqa: E402
+from corpse.gui.manual.content import MANUAL                                  # noqa: E402
 from tools.extract_strings import extract                          # noqa: E402
 
 _PH = re.compile(r"\{[a-z_]+\}")
@@ -59,7 +59,7 @@ def problems_for(code: str, strings: Dict[str, str], manual: str, keys: set) -> 
 
 
 def load(code: str):
-    return importlib.import_module(f"tools.translations.{code}")
+    return importlib.import_module(f"common.translations.{code}")
 
 
 def main(argv=None) -> int:

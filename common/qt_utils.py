@@ -1,4 +1,4 @@
-"""Piccoli strumenti Qt condivisi: esecuzione di funzioni fuori dal thread grafico."""
+"""Small shared Qt tools: running functions outside the GUI thread."""
 from __future__ import annotations
 
 from typing import Any, Callable, Optional
@@ -10,7 +10,7 @@ from .i18n import tr
 
 
 class Worker(QThread):
-    """Esegue una funzione fuori dal thread grafico. done(risultato) o failed(eccezione)."""
+    """Runs a function outside the GUI thread. done(result) or failed(exception)."""
     done = Signal(object)
     failed = Signal(object)
 
@@ -21,7 +21,7 @@ class Worker(QThread):
     def run(self) -> None:
         try:
             self.done.emit(self.fn())
-        except Exception as e:                       # noqa: BLE001 - riportata alla GUI
+        except Exception as e:                       # noqa: BLE001 - reported to the GUI
             self.failed.emit(e)
 
 

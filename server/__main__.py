@@ -9,6 +9,7 @@ from pathlib import Path
 
 from common.errors import AppError
 from common.params import ROLE_SERVER
+from common.paths import LOCAL_DIR
 
 from .app import make_server
 from .config import hash_key, load_admin_key
@@ -18,7 +19,7 @@ from .params import DEFAULT_PORT
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="server", description="Users and database server")
-    ap.add_argument("--data", default="server_data", help="data folder (users and files)")
+    ap.add_argument("--data", default=str(LOCAL_DIR), help="data folder (database and files); by default the local data folder of the app")
     sub = ap.add_subparsers(dest="cmd", required=True)
     sv = sub.add_parser("serve", help="start the server")
     sv.add_argument("--host", default="127.0.0.1", help="0.0.0.0 to accept connections from the network")

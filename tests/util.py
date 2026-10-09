@@ -1,4 +1,4 @@
-"""Server di prova e utilita' comuni ai test."""
+"""Test server and common test utilities."""
 import struct, tempfile, threading, zlib
 from pathlib import Path
 
@@ -18,7 +18,7 @@ def png_bytes():
 
 
 class TestServer:
-    """Avvia un server temporaneo con un amministratore 'admin' e la chiave KEY."""
+    """Starts a temporary server with an 'admin' administrator and the key KEY."""
     def __init__(self, **kw):
         self.tmp = tempfile.TemporaryDirectory()
         self.data = Path(self.tmp.name) / "srv"

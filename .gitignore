@@ -1,7 +1,5 @@
 # --- Ambienti virtuali ---
-venv/
-venv_mac/
-venv_linux/
+librery/
 
 # --- IDE e cache Python ---
 .idea/
@@ -22,7 +20,7 @@ datasets/
 *.jpeg
 *.png
 *.csv
-!assets/**
+!common/assets/**
 
 # --- File locali dell'installer ---
 .install_state.json
@@ -32,8 +30,14 @@ setup_log.txt
 .wheels/
 
 # --- Installer generati (si pubblicano nel sito, non nel repository) ---
-distribution/output/
+common/ambient/distribution/output/
 
 # --- Server: dati e chiave di accesso privata (mai nel repository) ---
 server_data/
 server/admin_key.txt
+
+# --- Virtual environments (any location) ---
+venv/
+venv_mac/
+venv_linux/
+.venv/

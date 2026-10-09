@@ -55,11 +55,11 @@ class TestI18n(unittest.TestCase):
         self.assertEqual(mgr.installed(), ["en", "it"]); self.assertEqual(mgr.installed_version("it"), entries["it"]["version"])
         self.assertTrue(mgr.activate("it"))
         self.assertEqual(i18n.tr("Sign in"), "Accedi"); self.assertEqual(i18n.tr("{n} items", n=2), "2 elementi")
-        self.assertEqual(i18n.tr("English only text"), "English only text")          # senza traduzione: inglese
+        self.assertEqual(i18n.tr("English only text"), "English only text")          # without translation: English
         self.assertIn("Manuale", i18n.current_manual())
         self.assertEqual(i18n.tr_error(AppError("The password must be at least {n} characters long.", n=8)),
                          "La password deve contenere almeno 8 caratteri.")
-        # riavvio dell'app: la lingua salvata torna attiva
+        # app restart: the saved language becomes active again
         i18n.set_language("en"); self.assertEqual(i18n.init_language(folder), "it"); self.assertEqual(i18n.tr("Sign in"), "Accedi")
         mgr.remove("it")
         self.assertEqual(i18n.current_language(), "en"); self.assertEqual(mgr.installed(), ["en"])

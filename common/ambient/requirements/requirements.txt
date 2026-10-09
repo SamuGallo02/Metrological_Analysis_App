@@ -1,0 +1,9 @@
+# Direct dependencies of the application (pip resolves the transitive ones).
+# PyTorch is NOT here: the installer chooses it based on operating system and GPU
+# (see installer/plan.py). For manual development: pip install torch torchvision
+# e poi pip install -r requirements.txt
+PySide6>=6.5
+opencv-python>=4.5
+numpy
+pandas
+ultralytics>=8.3.0
