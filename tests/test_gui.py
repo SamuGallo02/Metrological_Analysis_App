@@ -158,6 +158,13 @@ class GuiTest(unittest.TestCase):
         br = ui.ServerBrowserWidget(s2); self.assertIn("offline", br.note.text().lower())
         bar = ui.AccountBar(s2); self.assertTrue(bar.btn_retry.isVisibleTo(bar) or True)
 
+    def test_admin_home_offline_is_local_only(self):
+        s = self.sess("o2"); s.user, s.online, s.client = {"username": "boss", "role": "server"}, False, None
+        home = ui.AdminHome(s, on_training=lambda: None, on_analysis=lambda: None)
+        self.assertFalse(home.banner.isHidden())
+        self.assertFalse(home.tabs.isTabEnabled(0) or home.tabs.isTabEnabled(1))
+        self.assertTrue(home.tabs.isTabEnabled(2)); self.assertEqual(home.tabs.currentIndex(), 2)
+
     # ---- other pages ---------------------------------------------------------
     def test_language_widget(self):
         import http.server

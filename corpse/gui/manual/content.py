@@ -16,7 +16,7 @@ When the application starts you see the welcome page.
 - **Continue without signing in**: use analysis and training offline, without an account. The server folders and your profile are not available.
 - **Language**: the language button at the top right of the welcome page and of the account bar changes the language at any time.
 
-If the server cannot be reached, you can still sign in with an account already used on this computer: the application works offline and reconnects when you press *Reconnect*.
+If the server cannot be reached, you can still sign in with an account already used on this computer: the application works offline and reconnects when you press *Reconnect*. This also applies to administrators: until the server is back, the Management page offers only local work (training and analysis).
 
 ## Your data on this computer
 

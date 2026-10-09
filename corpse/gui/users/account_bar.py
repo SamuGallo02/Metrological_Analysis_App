@@ -17,6 +17,7 @@ from .labels import role_label
 class AccountBar(QFrame):
     logout_requested = Signal()
     profile_requested = Signal()
+    state_changed = Signal()               # online/offline changed (after a successful reconnect)
 
     def __init__(self, session: Session, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -50,6 +51,7 @@ class AccountBar(QFrame):
     def _retry(self) -> None:
         def done(ok: bool) -> None:
             self.refresh()
+            self.state_changed.emit()
             if not ok:
                 QMessageBox.information(self, tr("Server"), tr("The server is still unreachable."))
         run_async(self, self.session.reconnect, done)

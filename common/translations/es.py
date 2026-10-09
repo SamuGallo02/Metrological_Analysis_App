@@ -1,5 +1,6 @@
 VERSION = 2
 STRINGS = {
+"The server is unreachable: you are working locally only. Users and server folders are available again after you reconnect.": "El servidor no está accesible: está trabajando solo en local. Los usuarios y las carpetas del servidor volverán a estar disponibles tras reconectar.",
 "Repairing files": "Reparando archivos",
 "Checking the files...": "Comprobando los archivos...",
 "The repair did not succeed. Check your connection and free space, then restart the application.": "La reparación no tuvo éxito. Compruebe la conexión y el espacio libre y reinicie la aplicación.",
@@ -327,7 +328,7 @@ Al iniciar la aplicación aparece la página de bienvenida.
 - **Continuar sin iniciar sesión**: use el análisis y el entrenamiento sin conexión y sin cuenta. Las carpetas del servidor y su perfil no están disponibles.
 - **Idioma**: el botón de idioma, arriba a la derecha en la página de bienvenida y en la barra de la cuenta, cambia el idioma en cualquier momento.
 
-Si no se puede acceder al servidor, aún puede iniciar sesión con una cuenta ya usada en este equipo: la aplicación funciona sin conexión y se reconecta al pulsar *Reconectar*.
+Si no se puede acceder al servidor, aún puede iniciar sesión con una cuenta ya usada en este equipo: la aplicación funciona sin conexión y se reconecta al pulsar *Reconectar*. Esto vale también para los administradores: hasta que el servidor vuelva, la página Gestión ofrece solo el trabajo local (entrenamiento y análisis).
 
 ## Sus datos en este equipo
 

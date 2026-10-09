@@ -161,6 +161,8 @@ class AppWindow(QMainWindow):
             self.home_page = HomePage(session, on_analysis=lambda: self.stack.setCurrentWidget(self.analysis_hub),
                                       on_training=self._open_training, on_server=self._open_server)
 
+        if session.is_admin:
+            self.account_bar.state_changed.connect(self.home_page.apply_state)
         for page in (self.home_page, self.analysis_hub, *self.analysis_targets.values(), self.training_page):
             self.stack.addWidget(page)
         self._dynamic: Dict[str, QWidget] = {}          # pages recreated on every opening (profile, server)

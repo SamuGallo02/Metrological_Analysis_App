@@ -1,5 +1,6 @@
 VERSION = 2
 STRINGS = {
+"The server is unreachable: you are working locally only. Users and server folders are available again after you reconnect.": "Le serveur est injoignable : vous travaillez uniquement en local. Les utilisateurs et les dossiers du serveur seront de nouveau disponibles après la reconnexion.",
 "Repairing files": "Réparation des fichiers",
 "Checking the files...": "Vérification des fichiers...",
 "The repair did not succeed. Check your connection and free space, then restart the application.": "La réparation a échoué. Vérifiez votre connexion et l'espace libre, puis redémarrez l'application.",
@@ -327,7 +328,7 @@ Au démarrage de l'application, la page d'accueil s'affiche.
 - **Continuer sans se connecter** : utilisez l'analyse et l'entraînement hors ligne, sans compte. Les dossiers du serveur et votre profil ne sont pas disponibles.
 - **Langue** : le bouton de langue, en haut à droite de la page d'accueil et de la barre du compte, change la langue à tout moment.
 
-Si le serveur est injoignable, vous pouvez toujours vous connecter avec un compte déjà utilisé sur cet ordinateur : l'application fonctionne hors ligne et se reconnecte lorsque vous appuyez sur *Reconnecter*.
+Si le serveur est injoignable, vous pouvez toujours vous connecter avec un compte déjà utilisé sur cet ordinateur : l'application fonctionne hors ligne et se reconnecte lorsque vous appuyez sur *Reconnecter*. Cela vaut aussi pour les administrateurs : tant que le serveur n'est pas revenu, la page Gestion ne propose que le travail local (entraînement et analyse).
 
 ## Vos données sur cet ordinateur
 

@@ -388,6 +388,15 @@ class TestSession(Base):
         with self.assertRaises(OfflineError): Session(store).login("sess", "sbagliata", dead)
         with self.assertRaises(OfflineError): Session(store).login("sconosciuto", "password123", dead)
 
+    def test_admin_signs_in_offline_and_works_locally(self):
+        store = LocalStore(Path(self.tmp.name) / "local_adm"); s = Session(store)
+        store.remember_user({"username": "boss", "role": "server"}, "password123", self.url)   # earlier online sign-in
+        s2 = Session(store)
+        self.assertEqual(s2.login("boss", "password123", "http://127.0.0.1:9"), "offline")      # server down / other address
+        self.assertTrue(s2.is_admin and not s2.online)
+        self.assertTrue(s2.can("analysis.run") and s2.can("training.run"))
+        self.assertFalse(s2.can("users.manage") or s2.can("files.insert"))                      # server actions are off
+
     def test_wrong_password_online_is_not_offline_fallback(self):
         store = LocalStore(Path(self.tmp.name) / "local2")
         s = Session(store); s.register("sess2", "password123", self.url); s.login("sess2", "password123", self.url)

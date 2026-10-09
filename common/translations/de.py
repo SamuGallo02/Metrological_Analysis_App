@@ -1,5 +1,6 @@
 VERSION = 2
 STRINGS = {
+"The server is unreachable: you are working locally only. Users and server folders are available again after you reconnect.": "Der Server ist nicht erreichbar: Sie arbeiten nur lokal. Benutzer und Serverordner stehen nach dem erneuten Verbinden wieder zur Verfügung.",
 "Repairing files": "Dateien werden repariert",
 "Checking the files...": "Dateien werden geprüft...",
 "The repair did not succeed. Check your connection and free space, then restart the application.": "Die Reparatur ist fehlgeschlagen. Prüfen Sie Verbindung und freien Speicherplatz und starten Sie die Anwendung neu.",
@@ -328,7 +329,7 @@ Beim Start der Anwendung sehen Sie die Willkommensseite.
 - **Ohne Anmeldung fortfahren**: Nutzen Sie Analyse und Training offline ohne Konto. Die Serverordner und Ihr Profil sind nicht verfügbar.
 - **Sprache**: Die Sprachschaltfläche oben rechts auf der Willkommensseite und in der Kontoleiste ändert jederzeit die Sprache.
 
-Ist der Server nicht erreichbar, können Sie sich weiterhin mit einem auf diesem Computer bereits verwendeten Konto anmelden: Die Anwendung arbeitet offline und verbindet sich neu, wenn Sie *Neu verbinden* drücken.
+Ist der Server nicht erreichbar, können Sie sich weiterhin mit einem auf diesem Computer bereits verwendeten Konto anmelden: Die Anwendung arbeitet offline und verbindet sich neu, wenn Sie *Neu verbinden* drücken. Das gilt auch für Administratoren: Solange der Server nicht erreichbar ist, bietet die Seite Verwaltung nur lokale Arbeit (Training und Analyse).
 
 ## Ihre Daten auf diesem Computer
 

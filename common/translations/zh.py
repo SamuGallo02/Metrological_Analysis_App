@@ -1,6 +1,7 @@
 VERSION = 2
 
 STRINGS = {
+    "The server is unreachable: you are working locally only. Users and server folders are available again after you reconnect.": "服务器无法连接：您只能在本地工作。重新连接后，用户和服务器文件夹将再次可用。",
     "Repairing files": "正在修复文件",
     "Checking the files...": "正在检查文件...",
     "The repair did not succeed. Check your connection and free space, then restart the application.": "修复未成功。请检查网络连接和可用空间，然后重新启动应用程序。",
@@ -329,7 +330,7 @@ MANUAL = """\
 - **不登录继续**：无需账户，离线使用分析和训练。服务器文件夹和您的个人资料不可用。
 - **语言**：欢迎页面和账户栏右上角的语言按钮可随时切换语言。
 
-如果无法连接服务器，您仍可使用此电脑上已用过的账户登录：应用程序以离线模式运行，点击*重新连接*后会重新联网。
+如果无法连接服务器，您仍可使用此电脑上已用过的账户登录：应用程序以离线模式运行，点击*重新连接*后会重新联网。管理员也是如此：在服务器恢复之前，管理页面只提供本地工作（训练和分析）。
 
 ## 此电脑上的数据
 

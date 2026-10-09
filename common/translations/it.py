@@ -1,6 +1,7 @@
 VERSION = 2
 
 STRINGS = {
+    "The server is unreachable: you are working locally only. Users and server folders are available again after you reconnect.": "Il server non è raggiungibile: stai lavorando solo in locale. Utenti e cartelle del server torneranno disponibili dopo la riconnessione.",
     "Repairing files": "Riparazione dei file",
     "Checking the files...": "Controllo dei file...",
     "The repair did not succeed. Check your connection and free space, then restart the application.": "La riparazione non è riuscita. Controlla la connessione e lo spazio libero, poi riavvia l'applicazione.",
@@ -329,7 +330,7 @@ All'avvio dell'applicazione compare la pagina di benvenuto.
 - **Continua senza accedere**: usa analisi e addestramento offline, senza account. Le cartelle del server e il tuo profilo non sono disponibili.
 - **Lingua**: il pulsante della lingua in alto a destra nella pagina di benvenuto e nella barra dell'account cambia la lingua in qualsiasi momento.
 
-Se il server non è raggiungibile, puoi comunque accedere con un account già usato su questo computer: l'applicazione funziona offline e si riconnette quando premi *Riconnetti*.
+Se il server non è raggiungibile, puoi comunque accedere con un account già usato su questo computer: l'applicazione funziona offline e si riconnette quando premi *Riconnetti*. Vale anche per gli amministratori: finché il server non torna disponibile, la pagina Gestione offre solo il lavoro in locale (addestramento e analisi).
 
 ## I tuoi dati su questo computer
 

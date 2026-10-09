@@ -50,7 +50,7 @@ class LocalStore:
 
     def verify_offline(self, username: str, password: str, server_url: str) -> Optional[Dict[str, Any]]:
         rec = self._users().get((username or "").strip().lower())
-        if not rec or rec.get("server") != server_url:
+        if not rec:                                     # any server address: offline, only this computer's copy counts
             return None
         if not verify_password(password or "", rec["salt"], rec["pw_hash"]):
             return None

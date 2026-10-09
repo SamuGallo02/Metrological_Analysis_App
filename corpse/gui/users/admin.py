@@ -180,7 +180,13 @@ class AdminHome(QWidget):
                  parent: Optional[QWidget] = None):
         super().__init__(parent)
         lay = QVBoxLayout(self)
+        self.session = session
         lay.addWidget(QLabel(f"<h2>{tr('Management')}</h2>"))
+        self.banner = QLabel(tr("The server is unreachable: you are working locally only. Users and server folders "
+                                "are available again after you reconnect."))
+        self.banner.setWordWrap(True)
+        self.banner.setStyleSheet("background: #ffe0b2; color: #4e342e; border-radius: 6px; padding: 8px;")
+        lay.addWidget(self.banner)
         self.tabs = QTabWidget()
         self.users = UserAdminWidget(session)
         self.db = ServerBrowserWidget(session)
@@ -208,3 +214,20 @@ class AdminHome(QWidget):
         sl.addWidget(btn)
         sl.addStretch(1)
         lay.addWidget(sec)
+        self._lock_tabs()
+
+    def _lock_tabs(self) -> None:
+        """Offline: only the local work (training, analysis) is offered; the server tabs are disabled."""
+        online = self.session.online
+        self.banner.setVisible(not online)
+        for i in (0, 1):
+            self.tabs.setTabEnabled(i, online)
+        if not online:
+            self.tabs.setCurrentIndex(2)
+
+    def apply_state(self) -> None:
+        """Called after a reconnect: the server tabs come back and are reloaded."""
+        self._lock_tabs()
+        if self.session.online:
+            self.users.refresh()
+            self.db.refresh()
