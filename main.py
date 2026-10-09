@@ -72,6 +72,7 @@ def bootstrap() -> None:
     }))
     if not session.resume():  # valid saved session, or server off with a previous session
         dialog = LoginDialog(session)  # login, registration, admin key or "continue without logging in"
+        dialog.showMaximized()  # opens full screen; the user can restore and maximize it again
         if dialog.exec() != QDialog.DialogCode.Accepted:
             sys.exit(0)
 

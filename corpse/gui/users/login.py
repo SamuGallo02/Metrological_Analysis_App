@@ -35,7 +35,8 @@ class LoginDialog(QDialog):
         self.session = session
         self.setWindowTitle(tr("Sign in"))
         self.setMinimumSize(860, 540)
-        self.resize(1040, 640)              # comfortable fixed size: the page is not stretched over the whole screen
+        self.resize(1040, 640)              # size when restored from full screen
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowMinMaxButtonsHint)   # maximize/restore button
         self.mode = "online"
         self._wait = 0                      # remaining lockout seconds
         self._wait_scope = ""
