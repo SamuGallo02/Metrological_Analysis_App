@@ -1,11 +1,5 @@
 """
-Pagina di Training: interfaccia per addestrare un nuovo modello YOLO.
-Logica di addestramento in training/worker.py, rilevamento hardware in
-training/hardware.py, costanti e percorsi in training/config.py — qui resta
-solo l'interfaccia. Contratto verso l'app: TrainingPage(on_home).
-
-Dipendenze condivise (solo in lettura, mai da modificare per lavorare sul
-training): build_top_bar, HardwareAccelerationWidget, centered_content.
+Modulo dell'Interfaccia Grafica per il Training di un Nuovo Modello YOLO.
 
 Autore: Samuele Gallo
 """
@@ -17,6 +11,7 @@ import webbrowser
 from pathlib import Path
 from typing import Optional
 
+from PySide6.QtCore import QThread, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
@@ -34,12 +29,81 @@ from PySide6.QtWidgets import (
 from gui.common_widgets import build_top_bar
 from gui.gui_components import HardwareAccelerationWidget
 from gui.home_layout import centered_content
-from training.config import (
-    BASE_MODEL_OPTIONS, COLAB_URL, DEFAULT_BATCH, DEFAULT_EPOCHS, DEFAULT_IMGSZ,
-    MODELS_DIR, TDATASET_DIR,
-)
-from training.hardware import check_internet_connection, get_hardware_info
-from training.worker import TrainingWorker
+
+MODELS_DIR = Path("models")
+TDATASET_DIR = Path("Dataset_Training")
+
+
+def check_internet_connection() -> bool:
+    """Verifica rapida della presenza di una connessione internet attiva."""
+    import socket
+    try:
+        socket.create_connection(("8.8.8.8", 53), timeout=2)
+        return True
+    except OSError:
+        return False
+
+
+def get_hardware_info() -> tuple[str, str]:
+    """Rileva l'hardware disponibile per l'addestramento YOLO (GPU PyTorch/CUDA, MPS o CPU)."""
+    try:
+        import torch
+        if torch.cuda.is_available():
+            device_name = torch.cuda.get_device_name(0)
+            vram_gb = torch.cuda.get_device_properties(0).total_memory / (1024 ** 3)
+            return "0", f"GPU CUDA ({device_name} - {vram_gb:.1f} GB VRAM)"
+        elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            return "mps", "Apple Silicon GPU (MPS)"
+    except ImportError:
+        pass
+    return "cpu", "CPU di sistema (Non ottimizzata per training intensivi)"
+
+
+class TrainingWorker(QThread):
+    """Thread secondario che esegue l'addestramento YOLO senza bloccare la GUI."""
+    log_signal = Signal(str)
+    finished_signal = Signal(str)
+    error_signal = Signal(str)
+
+    def __init__(self, data_yaml: str, base_model: str, epochs: int, imgsz: int, batch: int, device: str) -> None:
+        super().__init__()
+        self.data_yaml = data_yaml
+        self.base_model = base_model
+        self.epochs = epochs
+        self.imgsz = imgsz
+        self.batch = batch
+        self.device = device
+
+    def run(self) -> None:
+        try:
+            from ultralytics import YOLO
+
+            self.log_signal.emit(f"Caricamento modello base: {self.base_model}...")
+            model = YOLO(self.base_model)
+
+            self.log_signal.emit(f"Avvio addestramento su device '{self.device}' per {self.epochs} epoche...")
+            results = model.train(
+                data=self.data_yaml,
+                epochs=self.epochs,
+                imgsz=self.imgsz,
+                batch=self.batch,
+                device=self.device,
+                project="runs/train",
+                name="custom_yolo_model",
+                exist_ok=True
+            )
+
+            best_model_path = Path(results.save_dir) / "weights" / "best.pt"
+            if best_model_path.exists():
+                MODELS_DIR.mkdir(exist_ok=True)
+                dest_path = MODELS_DIR / f"trained_{self.base_model}"
+                shutil.copy2(best_model_path, dest_path)
+                self.finished_signal.emit(str(dest_path))
+            else:
+                self.error_signal.emit("Training terminato ma non è stato trovato il file dei pesi salvato.")
+
+        except Exception as exc:
+            self.error_signal.emit(str(exc))
 
 
 class TrainingPage(QWidget):
@@ -118,7 +182,12 @@ class TrainingPage(QWidget):
 
         model_layout = QHBoxLayout()
         self.combo_base_model = QComboBox()
-        self.combo_base_model.addItems(BASE_MODEL_OPTIONS)
+        self.model_options = [
+            "yolo11n-seg.pt", "yolo11s-seg.pt", "yolo11m-seg.pt", "yolo11l-seg.pt",
+            "yolov8n-seg.pt", "yolov8s-seg.pt", "yolov8m-seg.pt", "yolov8l-seg.pt",
+            "yolo11n.pt", "yolo11s.pt", "yolo11m.pt", "yolo11l.pt"
+        ]
+        self.combo_base_model.addItems(self.model_options)
         self.combo_base_model.currentIndexChanged.connect(self._check_model_download_status)
 
         self.lbl_download_status = QLabel("")
@@ -128,18 +197,18 @@ class TrainingPage(QWidget):
 
         self.spin_epochs = QSpinBox()
         self.spin_epochs.setRange(1, 1000)
-        self.spin_epochs.setValue(DEFAULT_EPOCHS)
+        self.spin_epochs.setValue(50)
         form_layout.addRow("Numero Epoche:", self.spin_epochs)
 
         self.spin_imgsz = QSpinBox()
         self.spin_imgsz.setRange(320, 2048)
         self.spin_imgsz.setSingleStep(32)
-        self.spin_imgsz.setValue(DEFAULT_IMGSZ)
+        self.spin_imgsz.setValue(640)
         form_layout.addRow("Dimensione Immagini (px):", self.spin_imgsz)
 
         self.spin_batch = QSpinBox()
         self.spin_batch.setRange(1, 128)
-        self.spin_batch.setValue(DEFAULT_BATCH)
+        self.spin_batch.setValue(8)
         form_layout.addRow("Batch Size:", self.spin_batch)
 
         content.addLayout(form_layout)
@@ -239,7 +308,7 @@ class TrainingPage(QWidget):
             self.lbl_download_status.setText("<font color='#ff9800'><b>↓ Da scaricare</b></font>")
 
     def _open_colab(self) -> None:
-        webbrowser.open(COLAB_URL)
+        webbrowser.open("https://colab.research.google.com/#create=true")
 
     def _start_training(self) -> None:
         yaml_path = self.combo_tdatasets.currentData()

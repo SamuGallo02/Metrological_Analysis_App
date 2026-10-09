@@ -1,0 +1,2 @@
+Copy this file to admin_key.txt and replace this text with ONLY the key (one line).
+You can store its fingerprint instead:  python -m server hash-key   -> sha256:<hex>

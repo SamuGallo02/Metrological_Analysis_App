@@ -42,6 +42,8 @@ SOURCE_URL = os.environ.get(
     "AM_SOURCE_URL",
     "https://github.com/SamuGallo02/Metrological_Analysis_App/archive/refs/heads/main.zip",
 )
+# cartelle del repository che non vengono installate sul computer degli utenti
+SERVER_ONLY_DIRS = {"server", "server_data", "tests", "docs", "site"}
 MIN_PY = (3, 10)
 OS_LABELS = {"windows": "Windows", "macos": "macOS", "linux": "Linux"}
 NOWIN = {"creationflags": 0x08000000} if os.name == "nt" else {}  # niente console su Windows
@@ -128,17 +130,6 @@ def find_system_python() -> Optional[str]:
     return None
 
 
-def free_gb(path: Path) -> float:
-    p = Path(path)
-    while not p.exists() and p != p.parent:
-        p = p.parent
-    return shutil.disk_usage(str(p)).free / 1e9
-
-
-GPU_NEED_GB = 10.0   # picco di spazio per PyTorch CUDA (download + installazione)
-CPU_NEED_GB = 3.0
-
-
 def has_nvidia() -> bool:
     return shutil.which("nvidia-smi") is not None or (
         os.name == "nt" and Path(r"C:\Program Files\NVIDIA Corporation\NVSMI\nvidia-smi.exe").exists())
@@ -160,14 +151,12 @@ class Pipeline:
     """emit(percentuale, testo) aggiorna la barra; log(riga) alimenta i dettagli."""
 
     def __init__(self, dest: Path, os_name: str, shortcut: bool, update_code: bool,
-                 emit: Callable[[float, str], None], log: Callable[[str], None], cpu_only: bool = False):
-        self.cpu_only = cpu_only
+                 emit: Callable[[float, str], None], log: Callable[[str], None]):
         self.dest, self.os_name = dest, os_name
         self.shortcut, self.update_code = shortcut, update_code
         self.emit, self.log = emit, log
         self.proc: Optional[subprocess.Popen] = None
         self.python: Optional[str] = None
-        self.warnings: list = []
         self.cancelled = False
 
     def cancel(self) -> None:
@@ -268,6 +257,8 @@ class Pipeline:
                 name = info.filename
                 if name.startswith("__MACOSX") or not name.startswith(strip) or name == strip:
                     continue
+                if name[len(strip):].split("/", 1)[0] in SERVER_ONLY_DIRS:
+                    continue  # il server, i test e il sito non servono agli utenti
                 target = os.path.realpath(os.path.join(base, name[len(strip):]))
                 if not target.startswith(base + os.sep):
                     continue  # difesa da percorsi malevoli nello zip
@@ -292,17 +283,12 @@ class Pipeline:
     def run_components(self) -> None:
         cmd = [self.python, "-m", "installer", "--os", self.os_name,
                "--component", "core", "--yes", "--progress"]
-        if self.cpu_only:
-            cmd.append("--cpu-only")
         self.log("> " + " ".join(cmd))
         self.proc = subprocess.Popen(cmd, cwd=str(self.dest), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                      text=True, encoding="utf-8", errors="replace", **DEVNULL_IN, **NOWIN)
         for line in self.proc.stdout:
             line = line.rstrip()
-            if line.startswith("@@WARN"):
-                self.warnings.append(line[6:].strip())
-                self.log("[ATTENZIONE] " + line[6:].strip())
-            elif line.startswith("@@PROGRESS"):
+            if line.startswith("@@PROGRESS"):
                 parts = line.split(" ", 2)
                 try:
                     pct = float(parts[1])
@@ -383,8 +369,7 @@ class Pipeline:
         self._check()
         if self.shortcut:
             self.create_shortcut()
-        self.emit(100, "Installazione completata" if not self.warnings
-                  else "Installazione completata con avvisi: " + " ".join(self.warnings))
+        self.emit(100, "Installazione completata")
 
     def launch(self) -> None:
         py = venv_python_path(self.dest, self.os_name)
@@ -452,10 +437,6 @@ def run_gui(initial_dest: Optional[Path]) -> int:
     ttk.Checkbutton(setup, text="Crea un collegamento sul Desktop", variable=shortcut_var).pack(anchor="w", pady=(10, 0))
     ttk.Checkbutton(setup, text="Riscarica il codice anche se e' gia' presente (aggiornamento)",
                     variable=update_var).pack(anchor="w")
-    gpu_var = tk.BooleanVar(value=True)
-    if has_nvidia() and detected != "macos":
-        ttk.Checkbutton(setup, text="Installa il supporto GPU NVIDIA (download ~2.6 GB: molto piu' veloce in analisi, "
-                                    "ma allunga l'installazione)", variable=gpu_var).pack(anchor="w")
 
     gpu_txt = ("GPU NVIDIA rilevata: verra' installato PyTorch con supporto GPU (download di alcuni GB)."
                if has_nvidia() and detected != "macos" else
@@ -591,8 +572,7 @@ def run_gui(initial_dest: Optional[Path]) -> int:
         if ok:
             bar["value"] = 100
             pct_var.set("100%")
-            if "avvis" not in status_var.get():
-                status_var.set("Installazione completata.")
+            status_var.set("Installazione completata.")
             launch_btn.pack(side="right")
             close_btn.pack(side="right", padx=8)
         else:
@@ -610,23 +590,6 @@ def run_gui(initial_dest: Optional[Path]) -> int:
         except OSError as e:
             messagebox.showerror(APP_TITLE, f"Impossibile usare la cartella scelta:\n{e}")
             return
-        need = GPU_NEED_GB if (has_nvidia() and detected != "macos") else CPU_NEED_GB
-        free = free_gb(dest)
-        if "onedrive" in str(dest).lower() and not messagebox.askyesno(
-                APP_TITLE, "La cartella scelta e' dentro OneDrive: la sincronizzazione di migliaia di file "
-                           "rallenta l'installazione e consuma spazio sul disco.\n\n"
-                           "Ti consigliamo una cartella fuori da OneDrive (es. C:\\Analisi_Metrologica).\n\n"
-                           "Continuare comunque?"):
-            return
-        if free < CPU_NEED_GB:
-            messagebox.showerror(APP_TITLE, f"Spazio libero insufficiente: {free:.1f} GB disponibili, "
-                                            f"ne servono almeno {CPU_NEED_GB:.0f}. Scegli un'altra cartella o libera spazio.")
-            return
-        if free < need and not messagebox.askyesno(
-                APP_TITLE, f"Spazio libero: {free:.1f} GB. Per PyTorch con supporto GPU ne servono circa "
-                           f"{need:.0f} GB.\n\nSe continui verra' installata la versione CPU (potrai attivare la GPU "
-                           "in seguito, dopo aver liberato spazio).\n\nContinuare?"):
-            return
         if not FROZEN and sys.version_info < MIN_PY:
             messagebox.showerror(APP_TITLE, "Serve Python 3.10 o successivo.")
             return
@@ -634,7 +597,7 @@ def run_gui(initial_dest: Optional[Path]) -> int:
         prog.pack(fill="both", expand=True)
         pipe = Pipeline(dest, detected, shortcut_var.get(), update_var.get(),
                         emit=lambda p, t: ui_q.put(("p", p, t)),
-                        log=lambda l: ui_q.put(("l", l, "")), cpu_only=not gpu_var.get())
+                        log=lambda l: ui_q.put(("l", l, "")))
         state["pipe"], state["running"] = pipe, True
         tm.update(t0=time.time(), pct=0.0, rate=None, on=True)
         tm["samples"].clear()
@@ -675,7 +638,7 @@ def run_gui(initial_dest: Optional[Path]) -> int:
     return 0
 
 
-def run_cli(dest: Path, shortcut: bool, update: bool, cpu_only: bool = False) -> int:
+def run_cli(dest: Path, shortcut: bool, update: bool) -> int:
     last = [-1]
 
     def emit(p: float, t: str) -> None:
@@ -683,7 +646,7 @@ def run_cli(dest: Path, shortcut: bool, update: bool, cpu_only: bool = False) ->
             last[0] = int(p)
             print(f"[{int(p):3d}%] {t}", flush=True)
 
-    pipe = Pipeline(dest, detect_os(), shortcut, update, emit, lambda l: print("   " + l, flush=True), cpu_only)
+    pipe = Pipeline(dest, detect_os(), shortcut, update, emit, lambda l: print("   " + l, flush=True))
     try:
         pipe.run()
     except Exception as e:
@@ -698,7 +661,6 @@ def main() -> int:
     ap.add_argument("--dest", help="cartella di installazione")
     ap.add_argument("--no-shortcut", action="store_true")
     ap.add_argument("--update", action="store_true", help="riscarica il codice anche se presente")
-    ap.add_argument("--cpu-only", action="store_true", help="non installare il supporto GPU")
     a = ap.parse_args()
     dest = Path(a.dest).expanduser() if a.dest else None
     if not a.cli:
@@ -708,7 +670,7 @@ def main() -> int:
             print("tkinter non disponibile: passo alla modalita' testuale.")
             a.cli = True
     if a.cli:
-        return run_cli(dest or default_dest(), not a.no_shortcut, a.update, a.cpu_only)
+        return run_cli(dest or default_dest(), not a.no_shortcut, a.update)
     return run_gui(dest)
 
 

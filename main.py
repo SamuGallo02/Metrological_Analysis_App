@@ -36,13 +36,33 @@ def bootstrap() -> None:
         print(f"[ERROR] Impossibile caricare i moduli fondamentali: {err}")
         sys.exit(1)
 
-    from PySide6.QtWidgets import QApplication
-    from gui.home_gui import AppWindow
+    from pathlib import Path
+
+    from PySide6.QtWidgets import QApplication, QDialog
 
     app = QApplication(sys.argv)
     app.setApplicationName("StereoMetrologyAnalysis")
 
-    window = AppWindow()
+    from common.i18n import init_language
+    from gui.home_gui import AppWindow
+    from users.session import Session
+    from users.store import LocalStore
+    from users.ui import LoginDialog
+
+    init_language()  # lingua scelta dall'utente (inglese se nessuna)
+
+    root = Path(__file__).resolve().parent
+    session = Session(LocalStore(default_folders={
+        "photos": root / "Dataset_Foto_Stereo", "models": root / "models",
+        "datasets": root / "Dataset_Training", "results": root / "Results",
+    }))
+    if not session.resume():  # sessione salvata valida, oppure server spento con sessione precedente
+        dialog = LoginDialog(session)  # accesso, registrazione, chiave admin o "continua senza accedere"
+        dialog.showMaximized()
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            sys.exit(0)
+
+    window = AppWindow(session)
     window.showMaximized()  # Apertura forzata a schermo intero
 
     sys.exit(app.exec())

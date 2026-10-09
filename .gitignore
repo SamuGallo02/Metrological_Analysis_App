@@ -33,3 +33,7 @@ setup_log.txt
 
 # --- Installer generati (si pubblicano nel sito, non nel repository) ---
 distribution/output/
+
+# --- Server: dati e chiave di accesso privata (mai nel repository) ---
+server_data/
+server/admin_key.txt

@@ -33,13 +33,20 @@ Gli extra per il training si installano dalla pagina *Training* dell'applicazion
 ```text
 assets/          risorse grafiche
 config/          configurazione persistente (classi tracciate)
+common/          parametri globali, impostazioni, traduzioni, sicurezza (condiviso)
+users/           account, accesso, profilo, cartelle del server
+server/          server HTTP (solo per chi lo ospita, non installato dagli utenti)
+analysis/        schermata con le 4 analisi
+manual/          manuale d'uso
 core/            algoritmi: analisi, calibrazione, pairing, tracking, report
 gui/             interfaccia PySide6
 training/        pagina e worker per l'addestramento di nuovi modelli YOLO
 installer/       rilevamento OS/GPU, creazione venv, scelta build PyTorch
 distribution/    sorgenti per generare gli installer (build_installer.py, installer_gui.py)
 launchers/       avvio dell'applicazione per sistema operativo
-tools/           demo webcam e acquisizione coppie di test
+tools/           demo webcam, acquisizione coppie di test, generazione dei pacchetti lingua
+tests/           test automatici (python -m unittest discover -s tests -t .)
+docs/            INTEGRAZIONE.md e SERVER.md
 main.py          punto di ingresso
 requirements.txt / requirements-training.txt
 ```
@@ -57,6 +64,13 @@ Non sono nel repository (vedi `.gitignore`): ambienti virtuali, pesi dei modelli
 2. Scegliere la classe dell'oggetto da misurare.
 3. "Avvia analisi", poi consultare immagini, lunghezza, larghezza e confidenza.
 4. "Esporta CSV" per il report.
+
+## Account, server e lingue
+
+- Al primo avvio si accede con un account, si usa l'app come ospite (offline) o si crea un account. Con la chiave di accesso corretta l'account diventa amministratore in modo permanente; dopo 5 tentativi errati la chiave è bloccata per 5 minuti (il server resta attivo).
+- La chiave non sta nel codice: si imposta sul server con `AM_ADMIN_KEY` oppure `server/admin_key.txt` (ignorato da git) o con l'hash `python -m server hash-key`. Dettagli in `docs/SERVER.md`.
+- La lingua base è l'inglese; le altre (italiano, spagnolo, tedesco, francese, cinese, giapponese) si scaricano dal Profilo. I pacchetti si generano con `python -m tools.build_language_packs --out site/locales` e si pubblicano nel sito.
+- Dal Profilo si modificano i propri dati e si gestiscono le cartelle.
 
 ## Rigenerare gli installer
 

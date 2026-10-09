@@ -105,10 +105,12 @@ PROGRESS_RE = re.compile(r"Progress\s+(\d+)\s+of\s+(\d+)")
 
 
 class Installer:
-    def __init__(self, os_name: str, dry_run: bool = False, progress: bool = False, cpu_only: bool = False):
+    def __init__(self, os_name: str, dry_run: bool = False, progress: bool = False, cpu_only: bool = False,
+                 prefetch: bool = False):
         self.os_name = os_name
         self.dry = dry_run
         self.progress = progress
+        self.prefetch = prefetch     # solo download dei wheel (l'app e' ancora aperta con PyTorch caricato)
         self.cpu_only = cpu_only     # l'utente rinuncia al supporto GPU (download da ~2.6 GB)
         self.fast = os.environ.get('AM_NO_FASTDL') != '1'
         self.info: SystemInfo = detect_system()
@@ -146,8 +148,8 @@ class Installer:
         if args and args[0] == "install":
             # niente compilazione dei .pyc (decine di secondi su migliaia di file) e niente controllo versione di pip
             args = ("install", "--no-compile", "--disable-pip-version-check") + args[1:]
-            if self.fast and not self.dry and hi > lo:
-                rc = self.fast_install(args, span)
+            if self.fast and not self.dry:
+                rc = self.fast_install(args, span if hi > lo else (0, 100))
                 if rc is not None:
                     if check and rc != 0:
                         raise RuntimeError(f"pip terminato con codice {rc}")
@@ -239,7 +241,8 @@ class Installer:
         return rc
 
     # ---- download veloce ----------------------------------------------------
-    def fast_install(self, args: Tuple[str, ...], span: Tuple[float, float]) -> Optional[int]:
+    def fast_install(self, args: Tuple[str, ...], span: Tuple[float, float],
+                     download_only: bool = False) -> Optional[int]:
         """Scarica i wheel in parallelo (a segmenti, con ripresa e verifica SHA-256) e li installa
         offline. Ritorna il codice di pip, oppure None se il metodo non e' applicabile e va usato
         pip normale (pip vecchio, sdist, errori di rete...)."""
@@ -290,6 +293,8 @@ class Installer:
             return None
         mb = sum(f.stat().st_size for f in files) / 1e6
         say(f"[OK] Scaricati {mb:.0f} MB in {time.time() - t0:.0f} s.")
+        if download_only:
+            return 0            # i wheel restano in .wheels: l'installazione vera avviene al riavvio dell'app
 
         # installazione offline dai file appena scaricati (si tolgono gli indici online)
         out, skip = [], False
@@ -593,6 +598,19 @@ class Installer:
         if not (variant.startswith("cu")) and free_gb(ROOT) < GPU_NEED_GB:
             raise RuntimeError(f"Spazio libero insufficiente ({free_gb(ROOT):.1f} GB): servono circa "
                                f"{GPU_NEED_GB:.0f} GB per PyTorch con GPU.")
+        if self.prefetch:
+            if variant.startswith("cu") and self.cuda_works():
+                say("[OK] PyTorch con GPU gia' presente: nulla da scaricare.")
+                self.report(100, "Nulla da scaricare")
+                return
+            cand = plan.training_torch_candidates(self.info)[0]
+            say(f"[..] Scarico PyTorch con supporto GPU ({cand.label}) senza installarlo ancora ...")
+            rc = self.fast_install(("install", "--force-reinstall", "torch", "torchvision",
+                                    "--index-url", cand.index_url), (0, 100), download_only=True)
+            if rc != 0:
+                raise RuntimeError("download dei componenti non riuscito: controlla la connessione e riprova")
+            self.report(100, "Download completato")
+            return
         if variant.startswith("cu") and self.cuda_works():
             say(f"[OK] PyTorch con GPU ({variant}) gia' presente e funzionante: non lo reinstallo.")
         else:
@@ -687,6 +705,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--wait-pid", type=int, default=0, help="attende la chiusura di questo processo (app)")
     ap.add_argument("--relaunch", action="store_true", help="riavvia l'app al termine")
     ap.add_argument("--cpu-only", action="store_true", help="non installare PyTorch con supporto GPU")
+    ap.add_argument("--prefetch", action="store_true", help="solo download dei componenti di training (senza installare)")
     ap.add_argument("--yes", action="store_true", help="non chiede conferme")
     ap.add_argument("--progress", action="store_true", help="stampa righe '@@PROGRESS n testo' per la GUI")
     a = ap.parse_args(argv)
@@ -704,7 +723,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     sys.stdout = sys.stderr = Tee(LOG_FILE)
     say(f"\n===== {time.strftime('%Y-%m-%d %H:%M:%S')} - installer ({a.component}) =====")
 
-    inst = Installer(os_name, a.dry_run, a.progress, a.cpu_only)
+    inst = Installer(os_name, a.dry_run, a.progress, a.cpu_only, a.prefetch)
 
     # Se non siamo gia' nel venv di progetto, lo creiamo e rilanciamo l'installer li'.
     in_venv = Path(sys.prefix).resolve() == state.venv_dir(os_name).resolve()

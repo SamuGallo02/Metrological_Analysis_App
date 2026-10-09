@@ -1,6 +1,6 @@
 """
 Widget e finestre di dialogo condivisi tra le pagine dell'applicativo:
-etichetta immagine cliccabile, finestra del manuale (work in progress),
+etichetta immagine cliccabile, finestra del manuale d'uso,
 barra superiore standard, rendering/zoom delle immagini.
 
 Autore: Samuele Gallo
@@ -13,7 +13,10 @@ from typing import Optional
 import cv2
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QImage, QPixmap
-from PySide6.QtWidgets import QDialog, QHBoxLayout, QLabel, QPushButton, QTextEdit, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QDialog, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+
+from common.i18n import tr
+from manual.page import ManualWidget
 
 
 class ClickableImageLabel(QLabel):
@@ -26,29 +29,15 @@ class ClickableImageLabel(QLabel):
 
 
 class ManualDialog(QDialog):
-    """
-    Finestra del manuale d'uso — contenuto ancora da scrivere (work in
-    progress). Il testo qui sotto e' un semplice segnaposto: quando avrai
-    pronto il manuale vero, sostituisci il testo passato a setPlainText().
-    """
+    """Finestra del manuale d'uso (manual/): nella lingua scelta, con indice e ricerca."""
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Manuale d'uso")
-        self.resize(520, 420)
-
+        self.setWindowTitle(tr("User manual"))
+        self.resize(900, 600)
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("<h3>Manuale d'uso — Work in Progress</h3>"))
-
-        text = QTextEdit()
-        text.setReadOnly(True)
-        text.setPlainText(
-            "Questa finestra conterra' il manuale d'uso completo dell'applicativo.\n\n"
-            "Contenuto non ancora disponibile — in arrivo in una prossima versione."
-        )
-        layout.addWidget(text)
-
-        btn_close = QPushButton("Chiudi")
+        layout.addWidget(ManualWidget(self), 1)
+        btn_close = QPushButton(tr("Close"))
         btn_close.clicked.connect(self.accept)
         layout.addWidget(btn_close)
 
@@ -56,18 +45,18 @@ class ManualDialog(QDialog):
 def build_top_bar(parent: QWidget, on_home) -> QHBoxLayout:
     """
     Barra superiore standard di ogni pagina: pulsante "torna alla home" a
-    sinistra, pulsante "Manuale d'uso (WIP)" a destra. Ritorna il layout
+    sinistra, pulsante "Manuale d'uso" a destra. Ritorna il layout
     gia' pronto da aggiungere in cima al layout della pagina chiamante.
     """
     bar = QHBoxLayout()
 
-    btn_back = QPushButton("← Torna alla home")
+    btn_back = QPushButton(tr("← Back to home"))
     btn_back.clicked.connect(on_home)
     bar.addWidget(btn_back)
 
     bar.addStretch(1)
 
-    btn_manual = QPushButton("Manuale d'uso (WIP)")
+    btn_manual = QPushButton(tr("User manual"))
     btn_manual.clicked.connect(lambda: ManualDialog(parent).exec())
     bar.addWidget(btn_manual)
 
