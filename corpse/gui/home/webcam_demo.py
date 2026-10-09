@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 )
 
 from common.i18n import tr
+from common.params import NO_WINDOW
 from corpse.functions.analysis.analysis import list_model_classes
 from corpse.functions.analysis.camera_utils import list_available_cameras
 from corpse.gui.analysis.analysis_page_base import MODELS_DIR, scan_models
@@ -231,7 +232,7 @@ class WebcamDemoButton(QPushButton):
             else:
                 args += ["--camera", str(dialog.selected_camera)]
             try:
-                self._process = subprocess.Popen(args, cwd=str(PROJECT_ROOT))
+                self._process = subprocess.Popen(args, cwd=str(PROJECT_ROOT), **NO_WINDOW)
             except Exception as exc:
                 QMessageBox.critical(self, tr("Error starting the demo"), tr("Could not start the demo:\n{error}", error=exc))
                 return

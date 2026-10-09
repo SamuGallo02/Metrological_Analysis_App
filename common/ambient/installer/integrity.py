@@ -124,8 +124,11 @@ def venv_is_project(venv: Optional[Path], project_venv: Path) -> bool:
 
 
 def launch_repair(project_root: Path, os_name: str, deep: bool = False) -> bool:
-    """Starts the repair in a detached process that waits for this app to close, fixes the damaged
-    packages and reopens the app. Returns True if the process started (the caller must quit)."""
+    """Starts the repair in a detached, windowless process that waits for this app to close, fixes the
+    damaged packages and reopens the app. Returns True if the process started (the caller must quit).
+    Used only when the repair cannot run inside the app (the damaged package is Qt itself)."""
+    from common.params import DETACHED_HIDDEN
+
     from . import state
     py = state.venv_python(os_name)
     if not py.exists():
@@ -133,33 +136,27 @@ def launch_repair(project_root: Path, os_name: str, deep: bool = False) -> bool:
     cmd = [str(py), "-m", "common.ambient.installer", "--os", os_name, "--repair", "--yes", "--relaunch",
            "--wait-pid", str(os.getpid())] + (["--deep"] if deep else [])
     try:
-        if os.name == "nt":
-            subprocess.Popen(cmd, cwd=str(project_root), creationflags=0x00000010, close_fds=True)  # visible console
-        else:
-            subprocess.Popen(cmd, cwd=str(project_root), start_new_session=True, close_fds=True,
-                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.Popen(cmd, cwd=str(project_root), **DETACHED_HIDDEN)
         return True
     except OSError:
         return False
 
 
-def startup_check(project_root: Path, ask: Callable[[str], bool], deep: bool = False) -> bool:
+def startup_check(deep: bool = False) -> Dict[str, Damage]:
     """Quick check of the project's virtual environment before the app loads its libraries.
-    If files are damaged and `ask(text)` agrees, starts the repair. Returns True if the app must quit
-    (repair started). Does nothing when the app runs outside the project venv (development)."""
+    Returns the damaged packages ({} if all is well, or if the app does not run in the project venv,
+    e.g. during development, or if the check itself fails: it must never block the app)."""
     from . import state
     from .sysinfo import detect_os
-    os_name = detect_os()
-    venv = state.venv_dir(os_name)
+    venv = state.venv_dir(detect_os())
     if not venv_is_project(current_venv(), venv):
-        return False
+        return {}
     try:
-        damaged = scan(venv, deep)
+        return scan(venv, deep)
     except Exception:
-        return False                                    # a failing check must never block the app
-    if not damaged:
-        return False
-    listing = "\n".join(f"- {d}" for d in list(damaged.values())[:6])
-    if not ask(listing):
-        return False
-    return launch_repair(project_root, os_name, deep)
+        return {}
+
+
+def touches_qt(damaged: Dict[str, Damage]) -> bool:
+    """True if Qt itself is damaged: the app cannot repair it while it is running (locked files)."""
+    return any(n.startswith(("pyside6", "shiboken6")) for n in damaged)

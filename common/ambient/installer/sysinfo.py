@@ -10,6 +10,8 @@ import sys
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
+from common.params import NO_WINDOW
+
 OS_WINDOWS, OS_MACOS, OS_LINUX = "windows", "macos", "linux"
 
 _NVSMI_FALLBACKS = (r"C:\Program Files\NVIDIA Corporation\NVSMI\nvidia-smi.exe",)
@@ -61,7 +63,7 @@ def _query_nvidia() -> Tuple[bool, str, Optional[Tuple[int, int]]]:
     if not smi:
         return False, "", None
     try:
-        out = subprocess.run([smi], capture_output=True, text=True, timeout=20)
+        out = subprocess.run([smi], capture_output=True, text=True, timeout=20, **NO_WINDOW)
     except Exception:
         return False, "", None
     if out.returncode != 0:
@@ -75,7 +77,7 @@ def _query_nvidia() -> Tuple[bool, str, Optional[Tuple[int, int]]]:
     name = ""
     try:
         q = subprocess.run([smi, "--query-gpu=name", "--format=csv,noheader"],
-                           capture_output=True, text=True, timeout=20)
+                           capture_output=True, text=True, timeout=20, **NO_WINDOW)
         if q.returncode == 0 and q.stdout.strip():
             name = q.stdout.strip().splitlines()[0].strip()
     except Exception:

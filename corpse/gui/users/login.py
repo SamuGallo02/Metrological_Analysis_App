@@ -34,7 +34,8 @@ class LoginDialog(QDialog):
         super().__init__(parent)
         self.session = session
         self.setWindowTitle(tr("Sign in"))
-        self.setMinimumSize(900, 520)
+        self.setMinimumSize(860, 540)
+        self.resize(1040, 640)              # comfortable fixed size: the page is not stretched over the whole screen
         self.mode = "online"
         self._wait = 0                      # remaining lockout seconds
         self._wait_scope = ""

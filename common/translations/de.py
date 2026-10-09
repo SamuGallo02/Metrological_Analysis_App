@@ -1,5 +1,8 @@
 VERSION = 2
 STRINGS = {
+"Repairing files": "Dateien werden repariert",
+"Checking the files...": "Dateien werden geprüft...",
+"The repair did not succeed. Check your connection and free space, then restart the application.": "Die Reparatur ist fehlgeschlagen. Prüfen Sie Verbindung und freien Speicherplatz und starten Sie die Anwendung neu.",
 "Change language": "Sprache ändern",
 "Damaged files": "Beschädigte Dateien",
 "Some installed libraries are damaged:": "Einige installierte Bibliotheken sind beschädigt:",
@@ -313,76 +316,96 @@ STRINGS = {
 MANUAL = """\
 # Benutzerhandbuch
 
-Metrologische Analyse vermisst reale Objekte in Fotos und Videos mithilfe der YOLO-Objekterkennung und der Stereogeometrie. Dieses Handbuch erklärt jeden Teil der Anwendung.
+Metrologische Analyse ist die Desktop-Anwendung des Nautilus-Projekts (Universität Padua) zum Vermessen realer Objekte, etwa von Unterwasserfauna, in Fotos und Videos. Sie verbindet die YOLO-Objekterkennung mit Stereogeometrie, um aus einem Bildpaar echte Längen, Breiten und Entfernungen zu berechnen. Dieses Handbuch erklärt jeden Teil der Anwendung.
 
 ## Erste Schritte
 
-Beim Start der Anwendung sehen Sie das Anmeldefenster.
+Beim Start der Anwendung sehen Sie die Willkommensseite.
 
-- **Anmelden**: Geben Sie die Serveradresse, Ihren Benutzernamen und Ihr Passwort ein.
-- **Registrieren**: Wählen Sie die Registerkarte *Registrieren*, um ein Konto zu erstellen. Neue Konten sind vom Typ *Benutzer*.
-- **Zugangsschlüssel** (optional): Wenn Sie den Administratorschlüssel haben, geben Sie ihn in das Feld *Zugangsschlüssel* ein. Ist der Schlüssel korrekt, wird Ihr Konto zum **dauerhaften Administrator** des Servers. Nach 5 falschen Schlüsseln wird der Schlüssel für 5 Minuten gesperrt; Sie können sich weiterhin ohne ihn anmelden.
-- **Ohne Anmeldung fortfahren**: Nutzen Sie Analyse und Training offline, ohne Konto. Die Serverordner und Ihr Profil sind nicht verfügbar.
+- **Registrieren**: Wählen Sie den Reiter *Registrieren* und geben Sie Benutzername, E-Mail und Passwort ein. Die Verbindung zum Nautilus-Server erfolgt automatisch: Sie müssen nie eine Adresse eintippen. Neue Konten sind vom Typ *Benutzer*.
+- **Anmelden**: Geben Sie Benutzername und Passwort ein. Nach 5 falschen Passwörtern wird das Konto für 5 Minuten gesperrt.
+- **Zugangsschlüssel**: nur für Administratoren. Drücken Sie *Ich habe einen Zugangsschlüssel* und geben Sie ihn ein; ist er korrekt, wird das Konto zum **dauerhaften Administrator**. Nach 5 falschen Schlüsseln wird der Schlüssel für 5 Minuten gesperrt, die Anmeldung ohne Schlüssel bleibt aber möglich.
+- **Ohne Anmeldung fortfahren**: Nutzen Sie Analyse und Training offline ohne Konto. Die Serverordner und Ihr Profil sind nicht verfügbar.
+- **Sprache**: Die Sprachschaltfläche oben rechts auf der Willkommensseite und in der Kontoleiste ändert jederzeit die Sprache.
 
-Nach 5 falschen Passwörtern wird ein Konto für 5 Minuten gesperrt. Wenn der Server nicht erreichbar ist, können Sie sich weiterhin mit einem Konto anmelden, das Sie bereits auf diesem Computer verwendet haben: Die Anwendung arbeitet im Offlinemodus und verbindet sich wieder, wenn Sie auf *Erneut verbinden* klicken.
+Ist der Server nicht erreichbar, können Sie sich weiterhin mit einem auf diesem Computer bereits verwendeten Konto anmelden: Die Anwendung arbeitet offline und verbindet sich neu, wenn Sie *Neu verbinden* drücken.
+
+## Ihre Daten auf diesem Computer
+
+Alles, was die Anwendung speichert, liegt im Projektordner *datasets/Dataset_Locale*, mit einem Ordner für jede Datenart.
+
+- **dataset_Foto** und **dataset_Foto_Stereo**: Einzelfotos und Fotopaare links/rechts.
+- **dataset_Video** und **dataset_Video_Stereo**: Einzelvideos und Stereovideos.
+- **dataset_Training**: annotierte Datensätze für das Training.
+- **models**: YOLO-Modelle (.pt); die vom Server heruntergeladenen sind nach Art gruppiert.
+- **results**: die als CSV exportierten Messwerte.
 
 ## Analyse
 
-Klicken Sie auf der Startseite auf **Analyse**. Der Analysebildschirm zeigt oben die Schaltfläche **Webcam-Demo** (YOLO-Live-Erkennung mit einer oder zwei Kameras, in einem separaten Fenster) und darunter die vier Analysearten:
+Drücken Sie auf der Startseite **Analyse**. Oben befindet sich die Schaltfläche **Webcam-Demo**; darunter wählen Sie eine von vier Analysen.
 
-1. **Fotoanalyse** – Erkennung und Segmentierung in einem einzelnen Foto.
-2. **Stereo-Fotoanalyse** – reale Messungen (Länge, Breite, Entfernung) an Fotopaaren (links/rechts).
-3. **Videoanalyse** – Erkennung und Tracking in einem einzelnen Video.
-4. **Stereo-Videoanalyse** – Erkennung, Tracking und reale Messungen in einem Stereovideo.
+1. **Fotoanalyse**: Erkennung und Segmentierung auf einem einzelnen Foto.
+2. **Stereo-Fotoanalyse**: reale Messungen (Länge, Breite, Entfernung) an Fotopaaren links/rechts.
+3. **Videoanalyse**: Erkennung und Tracking in einem einzelnen Video.
+4. **Stereo-Videoanalyse**: Erkennung, Tracking und reale Messungen in einem Stereovideo.
 
-Wählen Sie die gewünschte Art und folgen Sie der Seite, die sich öffnet: Wählen Sie die Eingabedateien aus, prüfen Sie die Kameraeinstellungen, starten Sie die Erkennung und lesen oder exportieren Sie die Messungen. Für die Stereoanalyse müssen beide Kameras kalibriert sein, und die linke und die rechte Eingabe müssen dieselbe Szene zeigen.
+Auf jeder Seite sind die Schritte gleich: Eingabeordner wählen, YOLO-Modell wählen, wählen welche Objekte analysiert werden (oder *Alle Objekte*; hinzugefügte Namen müssen den Bezeichnungen des Modells entsprechen), *AVVIA ANALISI* drücken und die Ergebnisse lesen. *ESPORTA CSV* speichert die Messwerte im Ordner *results*, und *Mostra solo variazioni* blendet wiederholte Zeilen aus.
+
+Die Stereoanalyse braucht zwei weitere Dinge. Der Eingabeordner muss die Unterordner *rx* (rechte Kamera) und *lx* (linke Kamera) enthalten, wie sie die Nautilus-Sensing-Rigs erzeugen: Fotos sind mit dem Aufnahmezeitpunkt benannt, und jeder Videoordner enthält nur eine Datei. Außerdem müssen Sie die Kamerakalibrierung eingeben, die *Basislinie* (Abstand der beiden Kameras, in mm) und die *Brennweite* (in Pixeln): Falsche Werte liefern falsche Messungen.
+
+## Webcam-Demo
+
+Die Webcam-Demo zeigt die YOLO-Erkennung live in einem eigenen Fenster. Wählen Sie den Modus (*Einzelkamera* oder *Live-Stereo (2 Kameras)*), die Kameras, das Modell und was erkannt werden soll, und drücken Sie *Start*. Im Stereomodus müssen die beiden Kameras verschiedene Geräte sein, und mindestens ein Modell muss im Ordner *models* liegen.
 
 ## Training
 
-Klicken Sie auf **Training**, um ein eigenes YOLO-Modell zu trainieren.
+Drücken Sie **Training**, um ein eigenes YOLO-Modell auf einem annotierten Datensatz zu trainieren (ein Ordner mit einer Datei *data.yaml*). Wählen Sie den Datensatz und starten Sie das lokale Training: Die Konsole zeigt den Fortschritt. Für aufwendigere Aufgaben öffnet dieselbe Seite Google Colab.
 
-- Beim ersten Mal teilt Ihnen die Anwendung mit, dass einige Erweiterungen installiert werden müssen, und bittet um Ihre Bestätigung. Klicken Sie auf *Installieren*: Ein Fortschrittsbalken zeigt die Installation, und die Anwendung wird nicht geschlossen.
-- Wenn Ihr Computer eine NVIDIA-Grafikkarte hat, wird eine GPU-Version von PyTorch (mehrere GB) heruntergeladen. Nach Abschluss des Downloads startet die Anwendung automatisch neu, um die Aktivierung abzuschließen.
-- Halten Sie den Computer während der Installation mit dem Internet verbunden. Wenn Sie sie unterbrechen, wird der Teil-Download beim nächsten Mal fortgesetzt.
-
-Trainierte Modelle können geteilt werden: siehe *Serverordner*.
+Die Trainingskomponenten werden nie von selbst installiert. Beim ersten Mal fragt die Anwendung nach Ihrer Bestätigung und zeigt einen Fortschrittsbalken. Mit einer NVIDIA-Grafikkarte wird eine GPU-Version von PyTorch (mehrere GB) heruntergeladen, und die Anwendung startet sich selbst neu, um die Aktivierung abzuschließen.
 
 ## Serverordner
 
-Wenn Sie online sind, zeigt die Seite **Serverordner** die freigegebenen Ordner.
+Wenn Sie online sind, zeigt **Serverordner** die vom Laborrechner geteilten Ordner.
 
-- **Fotos**: Sie können Fotos ansehen, herunterladen und hinzufügen. Bitte spenden Sie Fotos der Objekte, die Sie vermessen.
-- **YOLO-Modelle**: Sie können freigegebene Modelle herunterladen und Ihre eigenen hochladen. Hochgeladene Modelle werden zunächst in einem Quarantänebereich abgelegt und erst veröffentlicht, nachdem ein Administrator sie geprüft hat, weil eine Modelldatei Code enthalten kann.
-- **Datensätze**: Bildsammlungen und Labels, die für das Training verwendet werden.
+- **Fotos**: Fotos ansehen, herunterladen und hinzufügen. Bitte spenden Sie Fotos der Objekte, die Sie vermessen.
+- **YOLO-Modelle**: Laden Sie freigegebene Modelle herunter, gruppiert nach wissenschaftlichem Namen (zum Beispiel *Pinna nobilis*). Von Ihnen hochgeladene Modelle kommen in Quarantäne und werden erst veröffentlicht, nachdem ein Administrator sie geprüft hat, da eine Modelldatei Code enthalten kann.
+- **Datensätze**: Bildsammlungen und Labels für das Training. Von Ihnen hochgeladene Datensätze werden dem Datensatz des Servers hinzugefügt.
 
-Benutzer können Dateien lesen, herunterladen und hinzufügen, aber vorhandene Dateien weder ändern, umbenennen noch löschen: Das können nur Administratoren. Bereits vorhandene Dateien werden nie überschrieben. Unterbrochene Downloads werden an der Stelle fortgesetzt, an der sie angehalten wurden.
+Benutzer können Dateien lesen, herunterladen und hinzufügen, aber nur Administratoren können vorhandene ändern, umbenennen oder löschen. Vorhandene Dateien werden nie überschrieben, und unterbrochene Downloads werden an der Abbruchstelle fortgesetzt.
 
 ## Mein Profil
 
 Öffnen Sie **Mein Profil** in der oberen Leiste.
 
-- **Persönliche Daten**: Name, E-Mail, Organisation, Telefon und eine kurze Beschreibung. Sie werden auf dem Server gespeichert, und eine Kopie wird auf Ihrem Computer aufbewahrt. Hier können Sie auch Ihr Passwort ändern.
-- **Mein Ordner auf dem Server**: ein privater Bereich, den nur Sie sehen können und in dem Sie Dateien hinzufügen, umbenennen, verschieben und löschen können. Eine Leiste zeigt, wie viel Ihres Kontingents Sie belegt haben.
-- **Ordner auf diesem Computer**: Wählen Sie die Ordner, die standardmäßig angeboten werden, wenn Sie vom Server herunterladen oder dorthin hochladen.
-- **Sprache**: siehe unten.
+- **Persönliche Daten**: Name, E-Mail, Organisation, Telefon und eine Kurzbeschreibung, auf dem Server gespeichert. Hier können Sie auch Ihr Passwort ändern.
+- **Mein Ordner auf dem Server**: ein privater Bereich, wie ein persönliches Laufwerk, in dem Sie von jedem Ihrer Geräte Dateien hinzufügen, umbenennen, verschieben und löschen. Ein Balken zeigt Ihr Kontingent.
+- **Ordner auf diesem Computer**: Wählen Sie die Standardordner für Downloads und Uploads.
+- **Sprache**: Eine Sprache auswählen und herunterladen.
 
 ## Sprachen
 
-Englisch wird mit der Anwendung installiert. Öffnen Sie *Mein Profil* → *Sprache*, um Italienisch, Spanisch, Deutsch, Französisch, Chinesisch (Mandarin) oder Japanisch herunterzuladen. Jede Sprache wird einmal heruntergeladen und funktioniert danach offline; sie enthält auch dieses Handbuch. Die Änderung wird beim nächsten Start der Anwendung übernommen. Sie können eine Sprache jederzeit entfernen.
+Englisch wird mit der Anwendung installiert. Mit der Sprachschaltfläche oder über *Mein Profil* → *Sprache* laden Sie Italienisch, Spanisch, Deutsch, Französisch, Chinesisch (Mandarin) oder Japanisch herunter. Jede Sprache wird nur einmal heruntergeladen, funktioniert offline und enthält dieses Handbuch. Die Änderung wird beim nächsten Start der Anwendung wirksam.
 
 ## Für Administratoren
 
-Administratoren landen auf der Seite **Verwaltung**, die in drei Registerkarten gegliedert ist.
+Administratoren öffnen die Seite **Verwaltung** mit drei Reitern.
 
-- **Benutzer**: Benutzer erstellen, ihren Typ ändern (*Benutzer* oder *Server*), Konten deaktivieren oder löschen, Passwörter zurücksetzen, das Kontingent des persönlichen Ordners festlegen und die letzte Aktivität einsehen. Mindestens ein aktiver Administrator muss immer erhalten bleiben.
-- **Datenbank**: die Serverordner, mit voller Kontrolle. Modelle, die in *_pending* warten, können freigegeben und unter einem neuen Namen veröffentlicht werden.
-- **Training**: öffnet die Trainingsseite. Die metrologische Analyse bleibt in der unteren Zeile verfügbar.
+- **Benutzer**: Benutzer anlegen, ihren Typ ändern (*Benutzer* oder *Server*), Konten deaktivieren oder löschen, Passwörter zurücksetzen, Kontingente festlegen und die letzte Aktivität lesen. Mindestens ein aktiver Administrator muss bleiben.
+- **Datenbank**: die Serverordner mit voller Kontrolle. Modelle, die in *_pending* warten, können genehmigt und im Ordner ihrer Art veröffentlicht werden.
+- **Training**: öffnet die Trainingsseite.
+
+Der Server läuft auf dem Laborrechner. Starten Sie ihn mit *python -m server serve* im Projektordner (fügen Sie *--host 0.0.0.0* hinzu, um Verbindungen aus dem Netzwerk zu akzeptieren), beenden Sie ihn mit Strg+C und starten Sie ihn nach jeder Code-Aktualisierung neu.
+
+## Wartung und Reparatur
+
+Bei jedem Start prüft die Anwendung schnell, ob ihre Bibliotheken intakt sind. Ist eine Datei beschädigt, etwa nach einer vollen Festplatte oder einem unterbrochenen Download, bietet sie die Reparatur an: Nur die beschädigten Pakete werden erneut heruntergeladen, ein Fortschrittsfenster erscheint und es wird kein Konsolenfenster angezeigt. Ist alles in Ordnung, wird nichts neu installiert.
 
 ## Fehlerbehebung
 
-- **Der Server ist nicht erreichbar**: Prüfen Sie die Adresse und Ihre Verbindung und klicken Sie dann auf *Erneut verbinden*. In der Zwischenzeit können Sie offline weiterarbeiten.
-- **Der Zugangsschlüssel ist gesperrt**: Warten Sie, bis der Countdown abgelaufen ist. Die Anmeldung ohne Schlüssel ist immer möglich.
-- **Die Trainingsseite meldet fehlende Komponenten**: Klicken Sie auf *Installieren*, wenn Sie dazu aufgefordert werden, und lassen Sie den Computer bis zum Ende online.
-- **Eine Datei kann nicht hochgeladen werden**: Der Server akzeptiert in jedem Ordner nur bestimmte Dateitypen, und bereits vorhandene Dateien werden nicht überschrieben.
-- **Nicht genügend Platz in Ihrem Ordner**: Löschen Sie Dateien aus *Mein Ordner auf dem Server* oder bitten Sie einen Administrator, Ihr Kontingent zu erhöhen.
+- **Der Server ist nicht erreichbar**: Prüfen Sie Ihre Verbindung und drücken Sie *Neu verbinden*; in der Zwischenzeit können Sie offline weiterarbeiten.
+- **Der Zugangsschlüssel ist gesperrt**: Warten Sie das Ende des Countdowns ab; die Anmeldung ohne Schlüssel ist immer möglich.
+- **Das Training meldet fehlende Komponenten**: Drücken Sie auf Nachfrage *Installieren* und bleiben Sie bis zum Ende online.
+- **Eine Datei kann nicht hochgeladen werden**: Jeder Serverordner akzeptiert nur bestimmte Dateitypen, und vorhandene Dateien werden nicht überschrieben.
+- **Ein Modell wird abgelehnt**: Es muss in einem Ordner mit dem wissenschaftlichen Namen liegen, zum Beispiel *Pinna nobilis*.
+- **Zu wenig Platz in Ihrem Ordner**: Löschen Sie Dateien oder bitten Sie einen Administrator, Ihr Kontingent zu erhöhen.
 """

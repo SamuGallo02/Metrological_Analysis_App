@@ -1,5 +1,8 @@
 VERSION = 2
 STRINGS = {
+"Repairing files": "Réparation des fichiers",
+"Checking the files...": "Vérification des fichiers...",
+"The repair did not succeed. Check your connection and free space, then restart the application.": "La réparation a échoué. Vérifiez votre connexion et l'espace libre, puis redémarrez l'application.",
 "Change language": "Changer de langue",
 "Damaged files": "Fichiers endommagés",
 "Some installed libraries are damaged:": "Certaines bibliothèques installées sont endommagées :",
@@ -312,76 +315,96 @@ STRINGS = {
 MANUAL = """\
 # Manuel d'utilisation
 
-Analyse métrologique mesure des objets réels dans des photos et des vidéos, grâce à la détection d'objets YOLO et à la géométrie stéréo. Ce manuel explique chaque partie de l'application.
+Analyse Métrologique est l'application de bureau du projet Nautilus (Université de Padoue) pour mesurer des objets réels, comme la faune sous-marine, dans des photos et des vidéos. Elle associe la détection d'objets YOLO et la géométrie stéréo pour transformer une paire d'images en longueurs, largeurs et distances réelles. Ce manuel explique chaque partie de l'application.
 
 ## Premiers pas
 
-Au démarrage de l'application, la fenêtre de connexion s'affiche.
+Au démarrage de l'application, la page d'accueil s'affiche.
 
-- **Se connecter** : saisissez l'adresse du serveur, votre nom d'utilisateur et votre mot de passe.
-- **S'inscrire** : choisissez l'onglet *S'inscrire* pour créer un compte. Les nouveaux comptes sont de type *Utilisateur*.
-- **Clé d'accès** (facultatif) : si vous avez la clé d'administrateur, saisissez-la dans le champ *Clé d'accès*. Lorsque la clé est correcte, votre compte devient **administrateur permanent** du serveur. Après 5 clés erronées, la clé est verrouillée pendant 5 minutes ; vous pouvez toujours vous connecter sans elle.
+- **S'inscrire** : choisissez l'onglet *S'inscrire* et saisissez un nom d'utilisateur, votre e-mail et un mot de passe. La connexion au serveur Nautilus est automatique : vous ne saisissez jamais d'adresse. Les nouveaux comptes sont de type *Utilisateur*.
+- **Se connecter** : saisissez votre nom d'utilisateur et votre mot de passe. Après 5 mots de passe erronés, le compte est bloqué pendant 5 minutes.
+- **Clé d'accès** : réservée aux administrateurs. Appuyez sur *J'ai une clé d'accès* et saisissez-la ; si elle est correcte, le compte devient **administrateur permanent**. Après 5 clés erronées, la clé est bloquée pendant 5 minutes, mais vous pouvez toujours vous connecter sans elle.
 - **Continuer sans se connecter** : utilisez l'analyse et l'entraînement hors ligne, sans compte. Les dossiers du serveur et votre profil ne sont pas disponibles.
+- **Langue** : le bouton de langue, en haut à droite de la page d'accueil et de la barre du compte, change la langue à tout moment.
 
-Après 5 mots de passe erronés, un compte est verrouillé pendant 5 minutes. Si le serveur est injoignable, vous pouvez quand même vous connecter avec un compte déjà utilisé sur cet ordinateur : l'application fonctionne en mode hors ligne et se reconnecte lorsque vous appuyez sur *Se reconnecter*.
+Si le serveur est injoignable, vous pouvez toujours vous connecter avec un compte déjà utilisé sur cet ordinateur : l'application fonctionne hors ligne et se reconnecte lorsque vous appuyez sur *Reconnecter*.
+
+## Vos données sur cet ordinateur
+
+Tout ce que l'application enregistre se trouve dans le dossier du projet *datasets/Dataset_Locale*, avec un dossier pour chaque type de donnée.
+
+- **dataset_Foto** et **dataset_Foto_Stereo** : photos simples et paires de photos gauche/droite.
+- **dataset_Video** et **dataset_Video_Stereo** : vidéos simples et vidéos stéréo.
+- **dataset_Training** : jeux de données annotés utilisés pour l'entraînement.
+- **models** : modèles YOLO (.pt) ; ceux téléchargés depuis le serveur sont regroupés par espèce.
+- **results** : les mesures exportées en CSV.
 
 ## Analyse
 
-Appuyez sur **Analyse** sur la page d'accueil. L'écran d'analyse affiche en haut le bouton **Démo webcam** (détection YOLO en direct depuis une ou deux caméras, dans une fenêtre séparée) et, en dessous, les quatre types d'analyse :
+Appuyez sur **Analyse** dans la page d'accueil. En haut se trouve le bouton **Démo webcam** ; en dessous, choisissez l'une des quatre analyses.
 
-1. **Analyse de photo** – détection et segmentation sur une seule photo.
-2. **Analyse de photos stéréo** – mesures réelles (longueur, largeur, distance) sur des paires de photos gauche/droite.
-3. **Analyse de vidéo** – détection et suivi sur une seule vidéo.
-4. **Analyse de vidéos stéréo** – détection, suivi et mesures réelles sur une vidéo stéréo.
+1. **Analyse de photos** : détection et segmentation sur une seule photo.
+2. **Analyse de photos stéréo** : mesures réelles (longueur, largeur, distance) sur des paires de photos gauche/droite.
+3. **Analyse vidéo** : détection et suivi sur une seule vidéo.
+4. **Analyse vidéo stéréo** : détection, suivi et mesures réelles sur une vidéo stéréo.
 
-Choisissez le type dont vous avez besoin et suivez la page qui s'ouvre : sélectionnez les fichiers d'entrée, vérifiez les réglages des caméras, lancez la détection, puis consultez ou exportez les mesures. Pour l'analyse stéréo, les deux caméras doivent être calibrées et les entrées gauche et droite doivent montrer la même scène.
+Sur chaque page, les étapes sont les mêmes : choisissez le dossier d'entrée, choisissez le modèle YOLO, choisissez les objets à analyser (ou *Tous les objets* ; les noms ajoutés doivent correspondre aux étiquettes du modèle), appuyez sur *AVVIA ANALISI* et lisez les résultats. *ESPORTA CSV* enregistre les mesures dans le dossier *results* et *Mostra solo variazioni* masque les lignes répétées.
+
+L'analyse stéréo demande deux choses de plus. Le dossier d'entrée doit contenir les sous-dossiers *rx* (caméra droite) et *lx* (caméra gauche), tels que produits par les sensing rigs de Nautilus : les photos sont nommées avec l'heure de capture et chaque dossier vidéo contient un seul fichier. Vous devez aussi saisir l'étalonnage des caméras, la *ligne de base* (distance entre les deux caméras, en mm) et la *focale* (en pixels) : des valeurs erronées donnent des mesures erronées.
+
+## Démo webcam
+
+La démo webcam affiche la détection YOLO en direct dans une fenêtre séparée. Choisissez le mode (*Caméra unique* ou *Stéréo en direct (2 caméras)*), les caméras, le modèle et ce qu'il faut reconnaître, puis appuyez sur *Démarrer*. En mode stéréo, les deux caméras doivent être des appareils différents et au moins un modèle doit se trouver dans le dossier *models*.
 
 ## Entraînement
 
-Appuyez sur **Entraînement** pour entraîner votre propre modèle YOLO.
+Appuyez sur **Entraînement** pour entraîner votre propre modèle YOLO sur un jeu de données annoté (un dossier contenant un fichier *data.yaml*). Choisissez le jeu de données et lancez l'entraînement local : la console affiche la progression. Pour les travaux plus lourds, la même page ouvre Google Colab.
 
-- La première fois, l'application vous indique que certaines extensions doivent être installées et demande votre confirmation. Appuyez sur *Installer* : une barre de progression affiche l'installation et l'application n'est pas fermée.
-- Si votre ordinateur possède une carte graphique NVIDIA, une version GPU de PyTorch (plusieurs Go) est téléchargée. À la fin du téléchargement, l'application redémarre d'elle-même pour terminer l'activation.
-- Gardez l'ordinateur connecté à Internet pendant l'installation. Si vous l'interrompez, le téléchargement partiel est repris la prochaine fois.
-
-Les modèles entraînés peuvent être partagés : voir *Dossiers du serveur*.
+Les composants d'entraînement ne sont jamais installés tout seuls. La première fois, l'application demande votre confirmation et affiche une barre de progression. Avec une carte graphique NVIDIA, une version de PyTorch avec GPU (plusieurs Go) est téléchargée et l'application redémarre toute seule pour terminer l'activation.
 
 ## Dossiers du serveur
 
-Lorsque vous êtes en ligne, la page **Dossiers du serveur** affiche les dossiers partagés.
+Lorsque vous êtes en ligne, **Dossiers du serveur** affiche les dossiers partagés par l'ordinateur du laboratoire.
 
-- **Photos** : vous pouvez consulter, télécharger et ajouter des photos. Merci de faire don de photos des objets que vous mesurez.
-- **Modèles YOLO** : vous pouvez télécharger les modèles approuvés et envoyer les vôtres. Les modèles envoyés sont d'abord placés dans une zone de quarantaine et ne sont publiés qu'après vérification par un administrateur, car un fichier de modèle peut contenir du code.
-- **Jeux de données** : ensembles d'images et étiquettes utilisés pour l'entraînement.
+- **Photos** : consultez, téléchargez et ajoutez des photos. Nous vous demandons de donner les photos des objets que vous mesurez.
+- **Modèles YOLO** : téléchargez les modèles approuvés, regroupés par nom scientifique (par exemple *Pinna nobilis*). Les modèles que vous envoyez vont en quarantaine et ne sont publiés qu'après vérification par un administrateur, car un fichier de modèle peut contenir du code.
+- **Jeux de données** : ensembles d'images et d'étiquettes pour l'entraînement. Les jeux de données que vous envoyez sont ajoutés au jeu de données du serveur.
 
-Les utilisateurs peuvent lire, télécharger et ajouter des fichiers, mais ne peuvent ni modifier, ni renommer, ni supprimer les fichiers existants : seuls les administrateurs le peuvent. Les fichiers déjà existants ne sont jamais écrasés. Les téléchargements interrompus reprennent là où ils se sont arrêtés.
+Les utilisateurs peuvent lire, télécharger et ajouter des fichiers, mais seuls les administrateurs peuvent modifier, renommer ou supprimer les fichiers existants. Les fichiers existants ne sont jamais écrasés et les téléchargements interrompus reprennent là où ils s'étaient arrêtés.
 
 ## Mon profil
 
-Ouvrez **Mon profil** depuis la barre supérieure.
+Ouvrez **Mon profil** depuis la barre du haut.
 
-- **Données personnelles** : nom, e-mail, organisation, téléphone et une courte description. Elles sont stockées sur le serveur et une copie est conservée sur votre ordinateur. Vous pouvez aussi changer votre mot de passe ici.
-- **Mon dossier sur le serveur** : un espace privé que vous seul pouvez voir, où vous pouvez ajouter, renommer, déplacer et supprimer des fichiers. Une barre indique la part de votre quota que vous avez utilisée.
-- **Dossiers sur cet ordinateur** : choisissez les dossiers proposés par défaut lorsque vous téléchargez depuis le serveur ou y envoyez des fichiers.
-- **Langue** : voir ci-dessous.
+- **Données personnelles** : nom, e-mail, organisation, téléphone et une courte description, enregistrés sur le serveur. Vous pouvez aussi y changer votre mot de passe.
+- **Mon dossier sur le serveur** : un espace privé, comme un disque personnel, où vous ajoutez, renommez, déplacez et supprimez des fichiers depuis n'importe lequel de vos appareils. Une barre indique votre quota.
+- **Dossiers sur cet ordinateur** : choisissez les dossiers par défaut pour les téléchargements et les envois.
+- **Langue** : choisissez et téléchargez une langue.
 
 ## Langues
 
-L'anglais est installé avec l'application. Ouvrez *Mon profil* → *Langue* pour télécharger l'italien, l'espagnol, l'allemand, le français, le chinois (mandarin) ou le japonais. Chaque langue est téléchargée une seule fois, puis fonctionne hors ligne, et elle inclut ce manuel. Le changement est appliqué au prochain démarrage de l'application. Vous pouvez retirer une langue à tout moment.
+L'anglais est installé avec l'application. Utilisez le bouton de langue, ou *Mon profil* → *Langue*, pour télécharger l'italien, l'espagnol, l'allemand, le français, le chinois (mandarin) ou le japonais. Chaque langue est téléchargée une seule fois, fonctionne hors ligne et inclut ce manuel. Le changement s'applique au prochain démarrage de l'application.
 
 ## Pour les administrateurs
 
-Les administrateurs arrivent sur la page **Gestion**, organisée en trois onglets.
+Les administrateurs ouvrent la page **Gestion**, qui comporte trois onglets.
 
-- **Utilisateurs** : créez des utilisateurs, changez leur type (*Utilisateur* ou *Server*), désactivez ou supprimez des comptes, réinitialisez les mots de passe, définissez le quota du dossier personnel et consultez l'activité récente. Au moins un administrateur actif doit toujours rester.
-- **Base de données** : les dossiers du serveur, avec un contrôle total. Les modèles en attente dans *_pending* peuvent être approuvés et publiés sous un nouveau nom.
-- **Entraînement** : ouvre la page d'entraînement. L'analyse métrologique reste disponible dans la rangée du bas.
+- **Utilisateurs** : créez des utilisateurs, changez leur type (*Utilisateur* ou *Serveur*), désactivez ou supprimez des comptes, réinitialisez les mots de passe, définissez les quotas et consultez l'activité récente. Au moins un administrateur actif doit rester.
+- **Base de données** : les dossiers du serveur avec contrôle total. Les modèles en attente dans *_pending* peuvent être approuvés et publiés dans le dossier de leur espèce.
+- **Entraînement** : ouvre la page d'entraînement.
+
+Le serveur fonctionne sur l'ordinateur du laboratoire. Démarrez-le avec *python -m server serve* depuis le dossier du projet (ajoutez *--host 0.0.0.0* pour accepter les connexions du réseau), arrêtez-le avec Ctrl+C et redémarrez-le après chaque mise à jour du code.
+
+## Maintenance et réparation
+
+À chaque démarrage, l'application vérifie rapidement que ses bibliothèques sont intactes. Si un fichier est endommagé, par exemple après un disque plein ou un téléchargement interrompu, elle propose de le réparer : seuls les paquets endommagés sont téléchargés de nouveau, une fenêtre de progression s'affiche et aucune fenêtre de console n'apparaît. Quand tout va bien, rien n'est réinstallé.
 
 ## Dépannage
 
-- **Le serveur est injoignable** : vérifiez l'adresse et votre connexion, puis appuyez sur *Se reconnecter*. Vous pouvez continuer à travailler hors ligne en attendant.
-- **La clé d'accès est verrouillée** : attendez la fin du compte à rebours. Il est toujours possible de se connecter sans la clé.
-- **La page d'entraînement indique que des composants manquent** : appuyez sur *Installer* lorsque cela vous est demandé et gardez l'ordinateur en ligne jusqu'à la fin.
-- **Un fichier ne peut pas être envoyé** : le serveur n'accepte que certains types de fichiers dans chaque dossier, et les fichiers déjà existants ne sont pas écrasés.
-- **Espace insuffisant dans votre dossier** : supprimez des fichiers de *Mon dossier sur le serveur* ou demandez à un administrateur d'augmenter votre quota.
+- **Le serveur est injoignable** : vérifiez votre connexion et appuyez sur *Reconnecter* ; vous pouvez continuer à travailler hors ligne en attendant.
+- **La clé d'accès est bloquée** : attendez la fin du compte à rebours ; se connecter sans la clé est toujours possible.
+- **L'entraînement indique que des composants manquent** : appuyez sur *Installer* lorsque c'est demandé et restez en ligne jusqu'à la fin.
+- **Un fichier ne peut pas être envoyé** : chaque dossier du serveur n'accepte que certains types de fichiers et les fichiers existants ne sont pas écrasés.
+- **Un modèle est refusé** : il doit se trouver dans un dossier portant le nom scientifique, par exemple *Pinna nobilis*.
+- **Espace insuffisant dans votre dossier** : supprimez des fichiers ou demandez à un administrateur d'augmenter votre quota.
 """

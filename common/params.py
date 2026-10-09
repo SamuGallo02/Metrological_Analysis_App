@@ -1,4 +1,5 @@
 """Global application parameters (names, languages, addresses). A single place to edit."""
+import os
 
 APP_NAME = "Metrological Analysis"
 DATA_DIR_NAME = "AnalisiMetrologica"          # user data folder (settings, languages, session)
@@ -50,3 +51,12 @@ AREAS = AREAS_SHARED + (AREA_MINE,)
 
 # user profile fields -> maximum length (used by server and client)
 PROFILE_FIELDS = {"full_name": 80, "email": 120, "organization": 120, "phone": 40, "bio": 500}
+
+# ---- subprocesses on Windows: never show a console window ---------------------------------------------------------
+NO_WINDOW = {"creationflags": 0x08000000} if os.name == "nt" else {}                 # CREATE_NO_WINDOW
+DETACHED_HIDDEN = ({"creationflags": 0x00000008 | 0x00000200, "close_fds": True} if os.name == "nt"       # DETACHED_PROCESS | NEW_PROCESS_GROUP
+                   else {"start_new_session": True, "close_fds": True, "stdout": -3, "stderr": -3})        # -3 = subprocess.DEVNULL
+
+# lines the installer writes to stdout for the windows that show its progress: "@@PROGRESS <percent> <text>", "@@WARN <text>"
+PROGRESS_PREFIX = "@@PROGRESS"
+WARN_PREFIX = "@@WARN"

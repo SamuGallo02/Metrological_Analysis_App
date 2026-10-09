@@ -8,9 +8,9 @@ Autore: Samuele Gallo
 """
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication, QGroupBox, QHBoxLayout, QLabel, QMessageBox, QPushButton, QVBoxLayout
+from PySide6.QtWidgets import QGroupBox, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
 
-from corpse.functions.training.environment_manager import get_cuda_status, launch_training_installer
+from corpse.functions.training.environment_manager import get_cuda_status
 
 
 class HardwareAccelerationWidget(QGroupBox):
@@ -74,23 +74,7 @@ class HardwareAccelerationWidget(QGroupBox):
             self.btn_install.setText("Installa extra per il training")
         self.btn_install.setVisible(s["install_needed"] or s["extras_pending"])
 
-    def start_training_installation(self, confirm=True):
-        s = self._status
-        what = (f"PyTorch con supporto GPU ({s['install_variant']}, alcuni GB)" if s["install_needed"]
-                else "gli extra per il training (pochi MB)")
-        reply = QMessageBox.StandardButton.Yes if not confirm else QMessageBox.question(
-            self,
-            "Installa componenti",
-            f"Verranno scaricati {what}.\n\n"
-            "L'applicativo si chiuderà durante l'installazione e si riaprirà da solo al termine "
-            "(possono servire diversi minuti; su Windows compare una finestra con l'avanzamento).\n\n"
-            "Continuare?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if reply != QMessageBox.StandardButton.Yes:
-            return
-        if launch_training_installer():
-            QApplication.quit()
-        else:
-            QMessageBox.critical(self, "Errore", "Impossibile avviare l'installazione. "
-                                 "Riesegui l'installer del tuo sistema operativo.")
+    def start_training_installation(self, *_):
+        """Same flow as the Train button: confirmation, progress window, no console."""
+        from .setup_dialog import ensure_training_ready
+        ensure_training_ready(self)

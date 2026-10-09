@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 from common.ambient.installer import plan, state
+from common.params import DETACHED_HIDDEN
 from common.ambient.installer.sysinfo import detect_system
 
 from common.paths import PROJECT_ROOT  # noqa: E402
@@ -89,12 +90,7 @@ def launch_training_installer() -> bool:
     cmd = [str(py), "-m", "common.ambient.installer", "--os", os_name, "--component", "training",
            "--yes", "--relaunch", "--wait-pid", str(os.getpid())]
     try:
-        if os.name == "nt":
-            # visible console window: the user sees the download progress
-            subprocess.Popen(cmd, cwd=str(PROJECT_ROOT), creationflags=0x00000010, close_fds=True)  # CREATE_NEW_CONSOLE
-        else:
-            subprocess.Popen(cmd, cwd=str(PROJECT_ROOT), start_new_session=True, close_fds=True,
-                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.Popen(cmd, cwd=str(PROJECT_ROOT), **DETACHED_HIDDEN)      # no console window
         return True
     except Exception:
         return False

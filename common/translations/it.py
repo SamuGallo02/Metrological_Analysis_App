@@ -1,6 +1,9 @@
 VERSION = 2
 
 STRINGS = {
+    "Repairing files": "Riparazione dei file",
+    "Checking the files...": "Controllo dei file...",
+    "The repair did not succeed. Check your connection and free space, then restart the application.": "La riparazione non è riuscita. Controlla la connessione e lo spazio libero, poi riavvia l'applicazione.",
     "Change language": "Cambia lingua",
     "Damaged files": "File danneggiati",
     "Some installed libraries are damaged:": "Alcune librerie installate sono danneggiate:",
@@ -314,76 +317,96 @@ STRINGS = {
 MANUAL = """\
 # Manuale d'uso
 
-Analisi metrologica misura oggetti reali in foto e video, usando il rilevamento di oggetti YOLO e la geometria stereo. Questo manuale spiega ogni parte dell'applicazione.
+Analisi Metrologica è l'applicazione desktop del progetto Nautilus (Università di Padova) per misurare oggetti reali, come la fauna subacquea, in foto e video. Combina il rilevamento di oggetti YOLO con la geometria stereo per trasformare una coppia di immagini in lunghezze, larghezze e distanze reali. Questo manuale spiega ogni parte dell'applicazione.
 
 ## Per iniziare
 
-All'avvio dell'applicazione compare la finestra di accesso.
+All'avvio dell'applicazione compare la pagina di benvenuto.
 
-- **Accedi**: inserisci l'indirizzo del server, il tuo nome utente e la tua password.
-- **Registrati**: scegli la scheda *Registrati* per creare un account. I nuovi account sono di tipo *Utente*.
-- **Chiave di accesso** (facoltativa): se hai la chiave di amministratore, digitala nel campo *Chiave di accesso*. Se la chiave è corretta il tuo account diventa **amministratore permanente** del server. Dopo 5 chiavi errate la chiave viene bloccata per 5 minuti; puoi comunque accedere senza di essa.
+- **Registrati**: scegli la scheda *Registrati* e inserisci nome utente, email e password. La connessione al server Nautilus è automatica: non devi mai digitare un indirizzo. I nuovi account sono di tipo *Utente*.
+- **Accedi**: inserisci nome utente e password. Dopo 5 password errate l'account viene bloccato per 5 minuti.
+- **Chiave di accesso**: solo per gli amministratori. Premi *Ho una chiave di accesso* e digitala; se è corretta l'account diventa **amministratore permanente**. Dopo 5 chiavi errate la chiave viene bloccata per 5 minuti, ma puoi comunque accedere senza.
 - **Continua senza accedere**: usa analisi e addestramento offline, senza account. Le cartelle del server e il tuo profilo non sono disponibili.
+- **Lingua**: il pulsante della lingua in alto a destra nella pagina di benvenuto e nella barra dell'account cambia la lingua in qualsiasi momento.
 
-Dopo 5 password errate un account viene bloccato per 5 minuti. Se il server non è raggiungibile, puoi comunque accedere con un account già usato su questo computer: l'applicazione funziona in modalità offline e si riconnette quando premi *Riconnetti*.
+Se il server non è raggiungibile, puoi comunque accedere con un account già usato su questo computer: l'applicazione funziona offline e si riconnette quando premi *Riconnetti*.
+
+## I tuoi dati su questo computer
+
+Tutto ciò che l'applicazione salva si trova nella cartella del progetto *datasets/Dataset_Locale*, con una cartella per ogni tipo di dato.
+
+- **dataset_Foto** e **dataset_Foto_Stereo**: foto singole e coppie di foto sinistra/destra.
+- **dataset_Video** e **dataset_Video_Stereo**: video singoli e video stereo.
+- **dataset_Training**: dataset annotati usati per l'addestramento.
+- **models**: modelli YOLO (.pt); quelli scaricati dal server sono raggruppati per specie.
+- **results**: le misure esportate in CSV.
 
 ## Analisi
 
-Premi **Analisi** nella pagina iniziale. La schermata di analisi mostra in alto il pulsante **Demo webcam** (rilevamento YOLO dal vivo da una o due fotocamere, in una finestra separata) e sotto i quattro tipi di analisi:
+Premi **Analisi** nella pagina iniziale. In alto c'è il pulsante **Demo webcam**; sotto scegli una delle quattro analisi.
 
-1. **Analisi foto** – rilevamento e segmentazione su una singola foto.
-2. **Analisi foto stereo** – misure reali (lunghezza, larghezza, distanza) su coppie di foto sinistra/destra.
-3. **Analisi video** – rilevamento e tracciamento su un singolo video.
-4. **Analisi video stereo** – rilevamento, tracciamento e misure reali su un video stereo.
+1. **Analisi foto**: rilevamento e segmentazione su una singola foto.
+2. **Analisi foto stereo**: misure reali (lunghezza, larghezza, distanza) su coppie di foto sinistra/destra.
+3. **Analisi video**: rilevamento e tracciamento su un singolo video.
+4. **Analisi video stereo**: rilevamento, tracciamento e misure reali su un video stereo.
 
-Scegli il tipo che ti serve e segui la pagina che si apre: seleziona i file di input, controlla le impostazioni delle fotocamere, esegui il rilevamento e leggi o esporta le misure. Per l'analisi stereo entrambe le fotocamere devono essere calibrate e gli ingressi sinistro e destro devono mostrare la stessa scena.
+In ogni pagina i passaggi sono gli stessi: scegli la cartella di input, scegli il modello YOLO, scegli quali oggetti analizzare (o *Tutti gli oggetti*; i nomi che aggiungi devono corrispondere alle etichette del modello), premi *AVVIA ANALISI* e leggi i risultati. *ESPORTA CSV* salva le misure nella cartella *results* e *Mostra solo variazioni* nasconde le righe ripetute.
+
+L'analisi stereo richiede due cose in più. La cartella di input deve contenere le sottocartelle *rx* (camera destra) e *lx* (camera sinistra), come prodotte dai sensing rig di Nautilus: le foto sono nominate con l'istante di scatto e ogni cartella video contiene un solo file. Devi inoltre inserire la calibrazione delle camere, la *baseline* (distanza tra le due camere, in mm) e la *focale* (in pixel): valori sbagliati danno misure sbagliate.
+
+## Demo webcam
+
+La demo webcam mostra il rilevamento YOLO dal vivo in una finestra separata. Scegli la modalità (*Camera singola* o *Stereo dal vivo (2 camere)*), le camere, il modello e cosa riconoscere, poi premi *Avvia*. In modalità stereo le due camere devono essere dispositivi diversi e almeno un modello deve essere nella cartella *models*.
 
 ## Addestramento
 
-Premi **Addestramento** per addestrare un tuo modello YOLO.
+Premi **Addestramento** per addestrare un tuo modello YOLO su un dataset annotato (una cartella con un file *data.yaml*). Scegli il dataset e avvia l'addestramento locale: la console mostra l'avanzamento. Per lavori più pesanti la stessa pagina apre Google Colab.
 
-- La prima volta l'applicazione ti avvisa che bisogna installare alcune estensioni e chiede la tua conferma. Premi *Installa*: una barra di avanzamento mostra l'installazione e l'applicazione non viene chiusa.
-- Se il tuo computer ha una scheda grafica NVIDIA, viene scaricata una versione di PyTorch per GPU (diversi GB). Al termine del download l'applicazione si riavvia da sola per completare l'attivazione.
-- Mantieni il computer connesso a internet durante l'installazione. Se la interrompi, il download parziale viene ripreso la volta successiva.
-
-I modelli addestrati possono essere condivisi: vedi *Cartelle del server*.
+I componenti per l'addestramento non vengono mai installati da soli. La prima volta l'applicazione chiede conferma e mostra una barra di avanzamento. Con una scheda grafica NVIDIA viene scaricata una versione di PyTorch con GPU (alcuni GB) e l'applicazione si riavvia da sola per completare l'attivazione.
 
 ## Cartelle del server
 
-Quando sei online, la pagina **Cartelle del server** mostra le cartelle condivise.
+Quando sei online, **Cartelle del server** mostra le cartelle condivise dal computer del laboratorio.
 
-- **Foto**: puoi guardare, scaricare e aggiungere foto. Ti invitiamo a donare foto degli oggetti che misuri.
-- **Modelli YOLO**: puoi scaricare i modelli approvati e caricare i tuoi. I modelli caricati vengono prima collocati in un'area di quarantena e sono pubblicati solo dopo il controllo di un amministratore, perché un file di modello può contenere codice.
-- **Dataset**: insiemi di immagini ed etichette usati per l'addestramento.
+- **Foto**: guarda, scarica e aggiungi foto. Ti chiediamo di donare le foto degli oggetti che misuri.
+- **Modelli YOLO**: scarica i modelli approvati, raggruppati per nome scientifico (ad esempio *Pinna nobilis*). I modelli che carichi vanno in quarantena e vengono pubblicati solo dopo il controllo di un amministratore, perché un file modello può contenere codice.
+- **Dataset**: insiemi di immagini ed etichette per l'addestramento. I dataset che carichi vengono aggiunti al dataset del server.
 
-Gli utenti possono leggere, scaricare e aggiungere file, ma non possono modificare, rinominare o eliminare quelli esistenti: solo gli amministratori possono farlo. I file già esistenti non vengono mai sovrascritti. I download interrotti riprendono da dove si erano fermati.
+Gli utenti possono leggere, scaricare e aggiungere file, ma solo gli amministratori possono modificare, rinominare o eliminare quelli esistenti. I file esistenti non vengono mai sovrascritti e i download interrotti riprendono da dove si erano fermati.
 
 ## Il mio profilo
 
-Apri **Il mio profilo** dalla barra superiore.
+Apri **Il mio profilo** dalla barra in alto.
 
-- **Dati personali**: nome, email, organizzazione, telefono e una breve descrizione. Sono salvati sul server e una copia è conservata sul tuo computer. Qui puoi anche cambiare la password.
-- **La mia cartella sul server**: uno spazio privato che solo tu puoi vedere, dove puoi aggiungere, rinominare, spostare ed eliminare file. Una barra mostra quanta parte della tua quota hai usato.
-- **Cartelle su questo computer**: scegli le cartelle proposte per impostazione predefinita quando scarichi dal server o carichi sul server.
-- **Lingua**: vedi sotto.
+- **Dati personali**: nome, email, organizzazione, telefono e una breve descrizione, salvati sul server. Qui puoi anche cambiare la password.
+- **La mia cartella sul server**: uno spazio privato, come un drive personale, dove aggiungi, rinomini, sposti ed elimini file da qualsiasi tuo dispositivo. Una barra mostra la tua quota.
+- **Cartelle su questo computer**: scegli le cartelle predefinite per download e upload.
+- **Lingua**: scegli e scarica una lingua.
 
 ## Lingue
 
-L'inglese è installato con l'applicazione. Apri *Il mio profilo* → *Lingua* per scaricare italiano, spagnolo, tedesco, francese, cinese (mandarino) o giapponese. Ogni lingua viene scaricata una sola volta e poi funziona offline, e include questo manuale. La modifica viene applicata al prossimo avvio dell'applicazione. Puoi rimuovere una lingua in qualsiasi momento.
+L'inglese è installato con l'applicazione. Usa il pulsante della lingua, oppure *Il mio profilo* → *Lingua*, per scaricare italiano, spagnolo, tedesco, francese, cinese (mandarino) o giapponese. Ogni lingua si scarica una sola volta, funziona offline e include questo manuale. La modifica viene applicata al successivo avvio dell'applicazione.
 
 ## Per gli amministratori
 
-Gli amministratori accedono alla pagina **Gestione**, organizzata in tre schede.
+Gli amministratori aprono la pagina **Gestione**, che ha tre schede.
 
-- **Utenti**: crea utenti, cambia il loro tipo (*Utente* o *Server*), disabilita o elimina account, reimposta le password, imposta la quota della cartella personale e leggi l'attività recente. Deve sempre rimanere almeno un amministratore attivo.
-- **Database**: le cartelle del server, con controllo completo. I modelli in attesa in *_pending* possono essere approvati e pubblicati con un nuovo nome.
-- **Addestramento**: apre la pagina di addestramento. L'analisi metrologica resta disponibile nella riga inferiore.
+- **Utenti**: crea utenti, cambia il loro tipo (*Utente* o *Server*), disattiva o elimina account, reimposta le password, imposta le quote e leggi l'attività recente. Deve restare almeno un amministratore attivo.
+- **Database**: le cartelle del server con controllo completo. I modelli in attesa in *_pending* possono essere approvati e pubblicati nella cartella della loro specie.
+- **Addestramento**: apre la pagina di addestramento.
+
+Il server gira sul computer del laboratorio. Avvialo con *python -m server serve* dalla cartella del progetto (aggiungi *--host 0.0.0.0* per accettare connessioni dalla rete), fermalo con Ctrl+C e riavvialo dopo ogni aggiornamento del codice.
+
+## Manutenzione e riparazione
+
+A ogni avvio l'applicazione controlla rapidamente che le sue librerie siano integre. Se un file è danneggiato, ad esempio dopo un disco pieno o un download interrotto, chiede di ripararlo: vengono scaricati di nuovo solo i pacchetti danneggiati, compare una finestra di avanzamento e non appare nessuna finestra di console. Se è tutto a posto non viene reinstallato nulla.
 
 ## Risoluzione dei problemi
 
-- **Il server non è raggiungibile**: controlla l'indirizzo e la connessione, poi premi *Riconnetti*. Nel frattempo puoi continuare a lavorare offline.
-- **La chiave di accesso è bloccata**: attendi la fine del conto alla rovescia. Accedere senza la chiave è sempre possibile.
-- **La pagina di addestramento dice che mancano dei componenti**: premi *Installa* quando richiesto e mantieni il computer online fino alla fine.
-- **Non è possibile caricare un file**: il server accetta solo alcuni tipi di file in ciascuna cartella e i file già esistenti non vengono sovrascritti.
-- **Spazio insufficiente nella tua cartella**: elimina file da *La mia cartella sul server* oppure chiedi a un amministratore di aumentare la tua quota.
+- **Il server non è raggiungibile**: controlla la connessione e premi *Riconnetti*; nel frattempo puoi continuare a lavorare offline.
+- **La chiave di accesso è bloccata**: attendi la fine del conto alla rovescia; accedere senza chiave è sempre possibile.
+- **L'addestramento dice che mancano componenti**: premi *Installa* quando richiesto e resta online fino alla fine.
+- **Un file non può essere caricato**: ogni cartella del server accetta solo certi tipi di file e i file esistenti non vengono sovrascritti.
+- **Un modello viene rifiutato**: deve trovarsi in una cartella con il nome scientifico, ad esempio *Pinna nobilis*.
+- **Spazio insufficiente nella tua cartella**: elimina file o chiedi a un amministratore di aumentare la quota.
 """

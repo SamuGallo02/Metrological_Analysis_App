@@ -24,14 +24,13 @@ os.environ["SHIBOKEN_DISABLE_IMPORTHOOK"] = "1"
 
 
 def self_repair(deep: bool = False) -> None:
-    """Checks the files of the virtual environment and, if some are damaged, repairs them and restarts."""
+    """Checks the files of the virtual environment and, if some are damaged, repairs them (with a progress window)."""
     from pathlib import Path
 
-    from common.ambient.installer import integrity
-    from common.ambient.repair_dialog import ask_repair
+    from common.ambient.repair_dialog import repair_at_startup
 
-    if integrity.startup_check(Path(__file__).resolve().parent, ask_repair, deep):
-        sys.exit(0)
+    if repair_at_startup(Path(__file__).resolve().parent, deep) == "quit":
+        sys.exit(0)  # the repair continues in the background and reopens the app
 
 
 def bootstrap() -> None:
@@ -73,7 +72,6 @@ def bootstrap() -> None:
     }))
     if not session.resume():  # valid saved session, or server off with a previous session
         dialog = LoginDialog(session)  # login, registration, admin key or "continue without logging in"
-        dialog.showMaximized()
         if dialog.exec() != QDialog.DialogCode.Accepted:
             sys.exit(0)
 

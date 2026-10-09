@@ -17,13 +17,14 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import QProcess, Qt
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QApplication, QDialog, QHBoxLayout, QLabel, QMessageBox, QPlainTextEdit,
                                QProgressBar, QPushButton, QVBoxLayout, QWidget)
 
 from common.i18n import tr
+from common.ui.qt_utils import HiddenProcess
 
-from corpse.functions.training.params import INSTALL_COMPONENT, KILL_WAIT_MS, PROGRESS_PREFIX, WARN_PREFIX
+from corpse.functions.training.params import INSTALL_COMPONENT, PROGRESS_PREFIX, WARN_PREFIX
 
 
 def _python() -> str:
@@ -41,9 +42,8 @@ class TrainingSetupDialog(QDialog):
         self.setWindowTitle(tr("Components for training"))
         self.setMinimumWidth(480)
         self.heavy = bool(status["install_needed"])
-        self.proc: Optional[QProcess] = None
+        self.proc: Optional[HiddenProcess] = None
         self.ok = False
-        self._buf = ""
 
         lay = QVBoxLayout(self)
         if self.heavy:
@@ -99,34 +99,27 @@ class TrainingSetupDialog(QDialog):
             w.show()
         args = ["-m", "common.ambient.installer", "--os", detect_system().os_name, "--component", INSTALL_COMPONENT,
                 "--yes", "--progress"] + (["--prefetch"] if self.heavy else [])
-        self.proc = QProcess(self)
-        self.proc.setWorkingDirectory(str(PROJECT_ROOT))
-        self.proc.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
-        self.proc.readyReadStandardOutput.connect(self._read)
-        self.proc.finished.connect(self._finished)
-        self.proc.errorOccurred.connect(lambda _e: self._fail(tr("Could not start the installation.")))
-        self.proc.start(_python(), args)
+        self.proc = HiddenProcess(self)
+        self.proc.line.connect(self._read)
+        self.proc.done.connect(self._finished)
+        self.proc.failed.connect(lambda _e: self._fail(tr("Could not start the installation.")))
+        self.proc.start(_python(), args, PROJECT_ROOT)
 
-    def _read(self) -> None:
-        self._buf += bytes(self.proc.readAllStandardOutput()).decode("utf-8", "replace")
-        *lines, self._buf = self._buf.split("\n")
-        for ln in lines:
-            ln = ln.rstrip("\r")
-            if ln.startswith(PROGRESS_PREFIX):
-                parts = ln.split(" ", 2)
-                try:
-                    self.bar.setValue(int(float(parts[1])))
-                except (IndexError, ValueError):
-                    pass
-                if len(parts) > 2 and parts[2].strip():
-                    self.text.setText(parts[2].strip())
-            elif ln.startswith(WARN_PREFIX):
-                self.log.appendPlainText(tr("[WARNING] ") + ln[len(WARN_PREFIX):].strip())
-            elif ln:
-                self.log.appendPlainText(ln)
+    def _read(self, ln: str) -> None:
+        if ln.startswith(PROGRESS_PREFIX):
+            parts = ln.split(" ", 2)
+            try:
+                self.bar.setValue(int(float(parts[1])))
+            except (IndexError, ValueError):
+                pass
+            if len(parts) > 2 and parts[2].strip():
+                self.text.setText(parts[2].strip())
+        elif ln.startswith(WARN_PREFIX):
+            self.log.appendPlainText(tr("[WARNING] ") + ln[len(WARN_PREFIX):].strip())
+        elif ln:
+            self.log.appendPlainText(ln)
 
-    def _finished(self, code: int, _status) -> None:
-        self._read()
+    def _finished(self, code: int) -> None:
         if code != 0:
             return self._fail(tr("The installation did not succeed. Check your connection and free space "
                                  "(see Details) and try again."))
@@ -140,16 +133,15 @@ class TrainingSetupDialog(QDialog):
         self.btn_details.setChecked(True)
 
     def _cancel(self) -> None:
-        if self.proc and self.proc.state() != QProcess.ProcessState.NotRunning:
+        if self.proc and self.proc.running:
             if QMessageBox.question(self, tr("Cancel"), tr("Stop the installation? The partial download will be "
                                                           "resumed next time.")) != QMessageBox.StandardButton.Yes:
                 return
             self.proc.kill()
-            self.proc.waitForFinished(KILL_WAIT_MS)
         self.reject()
 
     def reject(self) -> None:
-        if self.proc and self.proc.state() != QProcess.ProcessState.NotRunning:
+        if self.proc and self.proc.running:
             return self._cancel()
         super().reject()
 

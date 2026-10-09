@@ -51,9 +51,12 @@ class TestIntegrity(unittest.TestCase):
         self.assertIsNone(integrity.torch_index("2.6.0"))
 
     def test_startup_check_ignores_other_environments(self):
-        asked = []
-        self.assertFalse(integrity.startup_check(self.tmp, lambda t: asked.append(t) or True))
-        self.assertEqual(asked, [])                                    # not the project venv: no check, no question
+        self.assertEqual(integrity.startup_check(), {})                # not the project venv: nothing is checked
+
+    def test_touches_qt(self):
+        d = integrity.Damage("PySide6-Essentials", "6.8", ["x"])
+        self.assertTrue(integrity.touches_qt({"pyside6-essentials": d}))
+        self.assertFalse(integrity.touches_qt({"torch": integrity.Damage("torch", "2", ["y"])}))
 
 
 if __name__ == "__main__":
