@@ -42,6 +42,7 @@ SOURCE_URL = os.environ.get(
     "AM_SOURCE_URL",
     "https://github.com/SamuGallo02/Metrological_Analysis_App/archive/refs/heads/main.zip",
 )
+INSTALLER_BUILD = "2026-10-10-b"             # shown in the log: tells which version of the installer is running
 # repository folders that are not installed on users' computers
 SERVER_ONLY_DIRS = {"server", "server_data", "tests", "docs", "site"}
 MIN_PY = (3, 10)
@@ -239,10 +240,11 @@ class Pipeline:
 
     # -- 1. code --------------------------------------------------------------
     def have_code(self) -> bool:
-        return (self.dest / "main.py").exists() and (self.dest / "common" / "ambient" / "installer" / "__init__.py").exists()
+        return (self.dest / "main.py").exists() and (self.dest / "common").is_dir()
 
     def download_code(self) -> None:
         self.emit(12, "Scarico il codice dell'applicativo...")
+        self.log(f"Installer build {INSTALLER_BUILD}")
         self.log(f"Sorgente: {SOURCE_URL}")
         tmp = Path(os.environ.get("TMPDIR") or os.environ.get("TEMP") or "/tmp") / "am_source.zip"
         self._download(SOURCE_URL, tmp, 12, 19, "Scarico il codice")
@@ -275,8 +277,9 @@ class Pipeline:
         except OSError:
             pass
         if not self.have_code():
-            raise RuntimeError("Il sorgente scaricato non contiene l'applicativo completo "
-                               "(manca main.py o la cartella common/ambient/installer/).")
+            raise RuntimeError(f"Il sorgente scaricato non contiene l'applicativo completo (manca main.py o la cartella "
+                               f"common/). Installer build {INSTALLER_BUILD}; file trovati in {self.dest}: "
+                               f"{sorted(p.name for p in self.dest.iterdir())[:12]}")
         self.emit(20, "Codice installato")
 
     # -- 2. components (the project's installer/ package) ----------------------

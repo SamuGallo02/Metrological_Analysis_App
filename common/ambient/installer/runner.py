@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from urllib.parse import unquote
 import math
 import os
 import queue
@@ -265,7 +266,7 @@ class Installer:
                 url = di.get("url", "")
                 if not url.startswith("https://") or not url.split("?")[0].endswith(".whl"):
                     return None            # sdist / local files / VCS: leave it to pip
-                items.append({"url": url, "name": url.split("?")[0].rsplit("/", 1)[-1],
+                items.append({"url": url, "name": unquote(url.split("?")[0].rsplit("/", 1)[-1]),
                               "sha256": di.get("archive_info", {}).get("hashes", {}).get("sha256")})
             if not items:
                 return None
