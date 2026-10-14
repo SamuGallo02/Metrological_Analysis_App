@@ -358,7 +358,28 @@ class Installer:
                 err = (r.stderr or "").strip()
                 say(f"[ERRORE] import {mod} fallito:\n{err[-1500:]}")
                 bad[mod] = err.splitlines()[-1] if err else "errore sconosciuto"
+        if not bad and not self.numpy_bridge_ok():
+            bad["numpy"] = "Numpy is not available (torch and numpy are not compatible)"
         return bad
+
+    def numpy_bridge_ok(self) -> bool:
+        """Importing torch and numpy can both succeed while torch.from_numpy() fails ("Numpy is not available"):
+        torch built for NumPy 1.x with NumPy 2.x installed (typical on Intel Macs, where torch stops at 2.2).
+        Tests the actual conversion the detector uses."""
+        code = "import numpy, torch; torch.from_numpy(numpy.zeros(2)).numpy()"
+        r = subprocess.run([str(self.vpy), "-c", code], capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", **_NOWIN)
+        if r.returncode != 0:
+            say(f"[ERRORE] Ponte torch/numpy non funzionante:\n{(r.stderr or '').strip()[-600:]}")
+        return r.returncode == 0
+
+    def fix_numpy_bridge(self) -> bool:
+        """Installs NumPy 1.x (with an OpenCV that still supports it) when torch cannot use the installed NumPy."""
+        if self.dry or self.numpy_bridge_ok():
+            return True
+        say("[..] torch non e' compatibile con questa NumPy: installo NumPy 1.x (e OpenCV compatibile) ...")
+        self.pip("install", "numpy<2", "opencv-python<4.12", check=False)
+        return self.numpy_bridge_ok()
 
     def purge_pip_cache(self) -> None:
         """Empties pip's http cache: it may contain GB-sized wheels that cause MemoryError and take up disk."""
@@ -627,7 +648,8 @@ class Installer:
             bad = self.failing_imports()
             if bad and any("numpy" in e.lower() for e in bad.values()):
                 say("[..] Incompatibilita' con NumPy: provo con una versione compatibile ...")
-                self.pip("install", "--force-reinstall", "--no-deps", "numpy<2.3", check=False)
+                if not self.fix_numpy_bridge():
+                    self.pip("install", "--force-reinstall", "--no-deps", "numpy<2.3", check=False)
                 bad = self.failing_imports()
             if bad:
                 raise RuntimeError("verifica finale fallita, moduli non importabili: "
