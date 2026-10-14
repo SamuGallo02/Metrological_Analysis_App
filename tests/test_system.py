@@ -184,7 +184,9 @@ class TestAdminKey(Base):
         for pkg in ("server", "common", "corpse"):
             for p in (root / pkg).rglob("*.py"):
                 self.assertNotIn("abcd", p.read_text(encoding="utf-8"), p)
-        self.assertEqual((root / "server" / "admin_key.txt").read_text().strip(), "abcd")   # only in the git-ignored file
+        key_file = root / "server" / "admin_key.txt"                  # git-ignored: absent on a fresh clone / in CI
+        if key_file.exists():
+            self.assertEqual(key_file.read_text().strip(), "abcd")
 
     def test_key_loading_and_hash(self):
         with self.subTest("env"):

@@ -11,7 +11,7 @@ Modelli di segmentazione (**YOLO**) e stereovisione (**Stereo SGBM**) calcolano 
 
 - **Visione artificiale**: segmentazione con YOLO, stereovisione con StereoSGBM, misura di profondità e dimensioni (mm/cm) da coppie di fotogrammi; training dei modelli su GPU (CUDA) dall'interfaccia.
 - **Applicazione desktop** in Python/PySide6 (circa 14.700 righe di codice Python in 114 file), con elaborazioni in thread dedicati e interfaccia in 7 lingue.
-- **Installazione e manutenzione**: installer multipiattaforma (Windows, macOS, Linux) che sceglie le librerie in base alla GPU, scarica in parallelo con ripresa e verifica SHA-256, e un sistema di **autoriparazione** dell'ambiente virtuale.
+- **Installazione e manutenzione**: installer multipiattaforma (Windows, macOS, Linux) che sceglie le librerie in base alla GPU, scarica in parallelo con ripresa e verifica SHA-256, e un sistema di **autoriparazione** dell'ambiente virtuale e dei file del codice, con **aggiornamenti** dalle release di GitHub.
 - **Server** per account e cartelle condivise, in sola libreria standard di Python: autenticazione con password PBKDF2, sessioni a scadenza, ruoli, quote, limite di richieste, backup e strumenti di gestione (vedi sotto).
 - **Qualità**: 84 test automatici (account, permessi, server, isolamento tra moduli, interfaccia, traduzioni) eseguiti a ogni push con GitHub Actions.
 
@@ -43,7 +43,7 @@ Gli extra per il training si installano dalla pagina *Training* dell'applicazion
 ```text
 main.py                 punto di ingresso
 common/                 parti condivise da tutte le sezioni
-  ambient/              installer (installer/), librerie richieste (requirements/) e script per gli installer (distribution/)
+  ambient/              installer (installer/), riparazione e aggiornamento del codice (updater/), librerie richieste (requirements/) e script per gli installer (distribution/)
   assets/ config/       icona e configurazione persistente (classi tracciate)
   errors/ paths/ security/ settings/   errori, percorsi, sicurezza e impostazioni
   translations/         pacchetti lingua (it, es, de, fr, zh, ja); l'inglese e' nel codice
@@ -93,6 +93,14 @@ Il registro ruota da solo e `GET /api/health` e `/api/stats` servono per i contr
 
 Messa online: `deploy/` contiene Dockerfile, docker-compose con HTTPS automatico (Caddy), servizi systemd con backup giornaliero e gli script Windows per il test in rete locale.
 Guida completa in `deploy/README.md` e `docs/SERVER.md`.
+
+## Riparazione e aggiornamenti (senza git)
+
+L'installer registra in `librery/.code_version.json` la versione installata e l'impronta (dimensione + SHA-256) di ogni file.
+- **Riparazione**: a ogni avvio `main.py` controlla (in pochi millisecondi) che i file esistano e abbiano la dimensione giusta; quelli mancanti o danneggiati vengono riscaricati **da soli**, alla stessa versione installata. "Verifica e ripara file" (pulsante *Aggiornamenti*) confronta anche gli SHA-256.
+- **Aggiornamento**: quando su GitHub esce una nuova *release* (o, se non ce ne sono, un nuovo commit su `main`) l'app propone di aggiornare, al massimo una volta al giorno. Si scaricano e scrivono solo i file cambiati; se cambiano le librerie richieste viene installato solo ciò che manca. Dal pulsante *Aggiornamenti* si sceglie la modalità: chiedi / automatico / mai.
+- Da terminale: `python -m common.ambient.updater status|check|update|repair [--deep]|mode ask|auto|off`.
+- Una cartella clonata con git (`.git`) non viene toccata: si aggiorna con `git pull`. Dati utente, modelli e `librery/` non vengono mai modificati.
 
 ## Rigenerare gli installer
 

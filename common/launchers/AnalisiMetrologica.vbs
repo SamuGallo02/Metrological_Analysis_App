@@ -41,9 +41,8 @@ If Not objFSO.FileExists(strMainPath) Then
     WScript.Quit 1
 End If
 
-' Installed = state written by the installer (or, for earlier installations, the old marker)
-blnInstalled = objFSO.FileExists(strVenvPythonw) And _
-               (objFSO.FileExists(strScriptDir & "\librery\.install_state.json") Or objFSO.FileExists(strScriptDir & "\librery\venv\.setup_complete"))
+' Installed = the environment exists (main.py repairs or updates the code files by itself)
+blnInstalled = objFSO.FileExists(strVenvPythonw)
 
 If Not blnInstalled Then
     intAnswer = MsgBox("L'applicativo non e' ancora installato su questo computer." & vbCrLf & vbCrLf & _

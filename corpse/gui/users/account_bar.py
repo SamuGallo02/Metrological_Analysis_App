@@ -32,13 +32,16 @@ class AccountBar(QFrame):
         self.btn_server = QPushButton(tr("Server address"))
         self.btn_server.setToolTip(tr("Change the server this app connects to."))
         self.btn_server.clicked.connect(self._change_server)
+        self.btn_updates = QPushButton(tr("Updates"))
+        self.btn_updates.setToolTip(tr("Check for a new version, update the app or repair its files."))
+        self.btn_updates.clicked.connect(self._open_updates)
         self.btn_retry = QPushButton(tr("Reconnect"))
         self.btn_retry.clicked.connect(self._retry)
         self.btn_out = QPushButton()
         self.btn_out.clicked.connect(self.logout_requested.emit)
         lay.addWidget(self.label, 1)
         lay.addWidget(LanguageButton())
-        for b in (self.btn_profile, self.btn_server, self.btn_retry, self.btn_out):
+        for b in (self.btn_profile, self.btn_server, self.btn_updates, self.btn_retry, self.btn_out):
             lay.addWidget(b)
         self.refresh()
 
@@ -51,6 +54,10 @@ class AccountBar(QFrame):
             self.label.setText(f"<b>{s.username}</b> &middot; {role_label(s.role)} &middot; {state}")
         self.btn_retry.setVisible(not s.online and not s.is_guest)
         self.btn_out.setText(tr("Sign in") if s.is_guest else tr("Sign out"))
+
+    def _open_updates(self) -> None:
+        from common.ambient.update_dialog import UpdateDialog
+        UpdateDialog(self).exec()
 
     def _retry(self) -> None:
         def done(ok: bool) -> None:

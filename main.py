@@ -33,9 +33,30 @@ def self_repair(deep: bool = False) -> None:
         sys.exit(0)  # the repair continues in the background and reopens the app
 
 
+def code_check() -> None:
+    """Verifies the application's own files (restoring only the missing/damaged ones from GitHub) and, if the user
+    chose automatic updates, installs a newer version. Stdlib only, so it works even if the venv is damaged."""
+    import subprocess
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent
+    try:
+        from common.ambient.installer.sysinfo import detect_os
+        from common.ambient.updater import startup
+    except ImportError as err:  # the updater itself is gone: only the installer ("update" option) can bring it back
+        print(f"[WARNING] Code check unavailable ({err}). Run the installer again to restore the files.")
+        return
+    outcome = startup.run(root, detect_os(), allow_update="--no-update" not in sys.argv)
+    if outcome == "updated":  # new code on disk: restart once, without checking again
+        from common.params import NO_WINDOW
+        subprocess.Popen([sys.executable, str(root / "main.py"), "--no-update"], cwd=str(root), **NO_WINDOW)
+        sys.exit(0)
+
+
 def bootstrap() -> None:
     """Preloads the scientific libraries and initializes the Qt application."""
     if "--no-check" not in sys.argv:
+        code_check()  # first: a missing source file would break everything below
         self_repair()  # before importing the libraries: a truncated DLL would crash the import
     try:
         import cv2
@@ -78,6 +99,10 @@ def bootstrap() -> None:
 
     window = AppWindow(session)
     window.showMaximized()  # Forced full-screen opening
+
+    if "--no-check" not in sys.argv and "--no-update" not in sys.argv:
+        from common.ambient.update_dialog import offer_update_later
+        offer_update_later(window, root)  # "ask" mode: at most once a day, never blocks the start
 
     sys.exit(app.exec())
 

@@ -22,9 +22,12 @@ Autore: Samuele Gallo
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import os
 import platform
 import queue
+import re
 import shutil
 import subprocess
 import sys
@@ -42,11 +45,18 @@ SOURCE_URL = os.environ.get(
     "AM_SOURCE_URL",
     "https://github.com/SamuGallo02/Metrological_Analysis_App/archive/refs/heads/main.zip",
 )
-INSTALLER_BUILD = "2026-10-10-b"             # shown in the log: tells which version of the installer is running
+SOURCE_REPO = "SamuGallo02/Metrological_Analysis_App"
+INSTALLER_BUILD = "2026-10-14-a"             # shown in the log: tells which version of the installer is running
 # repository folders that are not installed on users' computers
-SERVER_ONLY_DIRS = {"server", "server_data", "tests", "docs", "site"}
+# Must stay identical to common/ambient/updater/config.py (a test checks it): this file runs alone,
+# before the project exists, so it cannot import it.
+SERVER_ONLY_DIRS = {"server", "server_data", "tests", "docs", "site", "deploy", ".github"}
+LAUNCHER_DIR = "common/launchers"
+LAUNCHERS = {"windows": "AnalisiMetrologica.vbs", "macos": "AvviaAnalisiMetrologica.command",
+             "linux": "AvviaAnalisiMetrologica.sh"}
+VERSION_FILE = "librery/.code_version.json"
 MIN_PY = (3, 10)
-OS_LABELS = {"windows": "Windows", "macos": "macOS", "linux": "Linux"}
+OS_LABELS = {"windows": "Windows", "macos": "macOS", "linux": "Linux"}   # only used in messages
 NOWIN = {"creationflags": 0x08000000} if os.name == "nt" else {}  # no console on Windows
 
 
@@ -242,6 +252,23 @@ class Pipeline:
     def have_code(self) -> bool:
         return (self.dest / "main.py").exists() and (self.dest / "common").is_dir()
 
+    def _wanted(self, rel: str) -> bool:
+        if rel.split("/", 1)[0] in SERVER_ONLY_DIRS:
+            return False
+        if rel.startswith(LAUNCHER_DIR + "/"):
+            return rel.rsplit("/", 1)[-1] == LAUNCHERS.get(self.os_name)
+        return True
+
+    def _write_record(self, sha: str, files: dict) -> None:
+        """Remember what was installed, so that the app can later repair or update exactly these files."""
+        rec = {"repo": SOURCE_REPO, "sha": sha if re.fullmatch(r"[0-9a-f]{40}", sha) else "",
+               "label": sha[:7], "installed_at": int(time.time()), "os": self.os_name, "files": files}
+        path = self.dest / VERSION_FILE
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(rec, indent=1), encoding="utf-8")
+        os.replace(tmp, path)
+
     def download_code(self) -> None:
         self.emit(12, "Scarico il codice dell'applicativo...")
         self.log(f"Installer build {INSTALLER_BUILD}")
@@ -251,6 +278,7 @@ class Pipeline:
         self.emit(19, "Estraggo i file...")
         self.dest.mkdir(parents=True, exist_ok=True)
         base = os.path.realpath(str(self.dest))
+        files = {}
         with zipfile.ZipFile(tmp) as z:
             names = [n for n in z.namelist() if n and not n.startswith("__MACOSX")]
             tops = {n.split("/", 1)[0] for n in names}
@@ -259,19 +287,25 @@ class Pipeline:
                 name = info.filename
                 if name.startswith("__MACOSX") or not name.startswith(strip) or name == strip:
                     continue
-                if name[len(strip):].split("/", 1)[0] in SERVER_ONLY_DIRS:
-                    continue  # the server, the tests and the website are not needed by users
-                target = os.path.realpath(os.path.join(base, name[len(strip):]))
+                rel = name[len(strip):]
+                if info.is_dir() or not self._wanted(rel):
+                    continue  # server/tests/website and the launchers of other systems are not installed
+                target = os.path.realpath(os.path.join(base, rel))
                 if not target.startswith(base + os.sep):
                     continue  # protection against malicious paths in the zip
-                if info.is_dir():
-                    os.makedirs(target, exist_ok=True)
-                else:
-                    os.makedirs(os.path.dirname(target), exist_ok=True)
-                    with z.open(info) as src, open(target, "wb") as out:
-                        shutil.copyfileobj(src, out)
-                    if (info.external_attr >> 16) & 0o111:
-                        os.chmod(target, 0o755)
+                os.makedirs(os.path.dirname(target), exist_ok=True)
+                h = hashlib.sha256()
+                size = 0
+                with z.open(info) as src, open(target, "wb") as out:
+                    for chunk in iter(lambda: src.read(1 << 20), b""):
+                        out.write(chunk)
+                        h.update(chunk)
+                        size += len(chunk)
+                if (info.external_attr >> 16) & 0o111:
+                    os.chmod(target, 0o755)
+                files[rel] = {"size": size, "sha256": h.hexdigest()}
+            sha = (z.comment or b"").decode("ascii", "ignore").strip().lower()
+        self._write_record(sha, files)
         try:
             tmp.unlink()
         except OSError:
@@ -408,15 +442,6 @@ def run_gui(initial_dest: Optional[Path]) -> int:
 
     row = ttk.Frame(setup)
     row.pack(fill="x", pady=4)
-    ttk.Label(row, text="Sistema operativo:", width=20).pack(side="left")
-    os_var = tk.StringVar(value=OS_LABELS[detected])
-    os_box = ttk.Combobox(row, textvariable=os_var, values=list(OS_LABELS.values()), state="readonly", width=14)
-    os_box.pack(side="left")
-    os_warn = ttk.Label(setup, text="", foreground="#b00020", wraplength=500)
-    os_warn.pack(anchor="w")
-
-    row = ttk.Frame(setup)
-    row.pack(fill="x", pady=4)
     ttk.Label(row, text="Cartella di installazione:", width=20).pack(side="left")
     dest_var = tk.StringVar(value=str(initial_dest or default_dest()))
     ttk.Entry(row, textvariable=dest_var).pack(side="left", fill="x", expand=True)
@@ -454,19 +479,6 @@ def run_gui(initial_dest: Optional[Path]) -> int:
     install_btn.pack(side="right")
     ttk.Button(btns, text="Esci", command=root.destroy).pack(side="right", padx=8)
     setup.pack(fill="both", expand=True)
-
-    def check_os(*_):
-        chosen = next(k for k, v in OS_LABELS.items() if v == os_var.get())
-        if chosen != detected:
-            os_warn.config(text=f"Questo computer e' {OS_LABELS[detected]}: scegli {OS_LABELS[detected]}, "
-                                f"oppure esegui l'installer sul computer {OS_LABELS[chosen]}.")
-            install_btn.state(["disabled"])
-        else:
-            os_warn.config(text="")
-            install_btn.state(["!disabled"])
-
-    os_box.bind("<<ComboboxSelected>>", check_os)
-    check_os()
 
     # ---------- screen 2: progress ----------
     prog = ttk.Frame(outer)
