@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import http.client
 import json
+import re
 import os
 import socket
 import ssl
@@ -44,7 +45,9 @@ def normalize_url(url: str) -> str:
     if not url:
         raise ApiError("Server address missing.")
     if "://" not in url:
-        url = "https://" + url
+        host = url.split("/")[0].rsplit("@", 1)[-1].split(":")[0].lower()
+        local = host == "localhost" or host.endswith(".local") or bool(re.fullmatch(r"\d{1,3}(\.\d{1,3}){3}", host))
+        url = ("http://" if local else "https://") + url          # a typed IP address has no certificate: plain HTTP
     p = urlparse(url)
     if p.scheme not in ("http", "https") or not p.hostname:
         raise ApiError("Invalid server address.")

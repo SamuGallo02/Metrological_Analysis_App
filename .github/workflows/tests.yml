@@ -1,0 +1,21 @@
+name: tests
+on:
+  push:
+  pull_request:
+
+jobs:
+  server:                      # server and logic tests: standard library only, no GUI
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Server tests
+        run: python -m unittest tests.test_system tests.test_isolation tests.test_server_ops -v
+      - name: Docker image builds
+        if: matrix.python == '3.12'
+        run: docker build -f deploy/Dockerfile -t analisi-server .

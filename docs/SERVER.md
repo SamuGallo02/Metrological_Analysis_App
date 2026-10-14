@@ -8,7 +8,11 @@ python -m server serve --host 0.0.0.0 --port 8765
 python -m server serve --no-register                          # solo l'amministratore crea gli account
 python -m server serve --trust-proxy                          # dietro Caddy/nginx: IP reale da X-Forwarded-For
 python -m server hash-key                                     # stampa sha256:<hex> da mettere al posto della chiave
+python -m server serve --lan                                  # raggiungibile da altri dispositivi della rete (test)
+python -m server doctor | status | backup | users list        # gestione e manutenzione
 ```
+Test su altri dispositivi, accesso da Internet con tunnel HTTPS, Docker, systemd, backup automatico e tutti i comandi di
+gestione: vedi **`deploy/README.md`**.
 ## Dati: server e cartella locale coincidono
 Senza `--data` il server usa la cartella dei dati locali dell'app, `datasets/Dataset_Locale/`. Sul computer che ospita il
 server, quindi, le cartelle del server e quelle locali dell'amministratore sono le stesse:
@@ -96,5 +100,5 @@ utente dalla gestione utenti). Estensioni e dimensioni massime per area: `server
 - Disattivando un utente o cambiando la sua password le sue sessioni decadono; deve restare almeno un amministratore.
 - Percorsi normalizzati (niente `..`, nomi riservati, collegamenti simbolici ignorati); estensioni e contenuto immagini verificati.
 - Gli errori sono testi inglesi con chiave/parametri: l'app li traduce nella lingua dell'utente.
-- Limite noto: nessun limite generale di richieste per indirizzo (solo password e chiave): per un server pubblico usa la
-  limitazione del proxy (Caddy/nginx). I permessi sono applicati dal server; i pulsanti nascosti nell'app sono solo comodità.
+- Limite di richieste: 600 al minuto per indirizzo (`--rate-limit`); in più i blocchi su password e chiave. Per un server
+  pubblico aggiungi anche la limitazione del proxy (Caddy/nginx). I permessi sono applicati dal server; i pulsanti nascosti nell'app sono solo comodità.

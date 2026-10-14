@@ -10,6 +10,7 @@ LOGIN_LOCK_SECONDS = 300
 KEY_MAX_FAILS = 5                    # wrong admin keys before lockout (key use only)
 KEY_LOCK_SECONDS = 300
 
+RATE_LIMIT_PER_MIN = 600             # requests per minute per address (0 = unlimited); stops floods, not normal use
 MAX_JSON = 1 << 20
 DEFAULT_QUOTA_MB = 1024              # personal folder ("mine") of each user
 

@@ -18,9 +18,9 @@ from corpse.functions.users.api import OfflineError
 from corpse.functions.users.session import Session
 
 
-def server_address() -> str:
-    """Server to connect to: AM_SERVER_URL if set, else the address in the global parameters, else the last used."""
-    return os.environ.get("AM_SERVER_URL", "").strip() or DEFAULT_SERVER_URL
+def server_address(saved: str = "") -> str:
+    """Server to connect to: AM_SERVER_URL if set, else the last address used (also typed by hand), else the default."""
+    return os.environ.get("AM_SERVER_URL", "").strip() or saved.strip() or DEFAULT_SERVER_URL
 
 
 def _mmss(seconds: int) -> str:
@@ -93,9 +93,11 @@ class LoginDialog(QDialog):
         lay.addWidget(self.tabs)
 
         form = QFormLayout()
-        # The server address is not asked: it comes from the global parameters (or AM_SERVER_URL). The field is only a
-        # holder that is never shown.
-        self.url = QLineEdit(server_address())
+        # The server address comes from AM_SERVER_URL, the last one used or the default, and can be typed by hand
+        # (temporary measure while the final server address is not fixed).
+        self.url = QLineEdit(server_address(session.store.settings().get("server_url", "")))
+        self.url.setPlaceholderText("http://192.168.1.27:8765")
+        self.url.setToolTip(tr("Address of the server, for example http://192.168.1.27:8765 or https://name.example.org."))
         self.user = QLineEdit(session.store.settings().get("last_user", ""))
         self.email = QLineEdit()
         self.email.setPlaceholderText("name@example.com")
@@ -107,6 +109,7 @@ class LoginDialog(QDialog):
         self.key.setEchoMode(QLineEdit.EchoMode.Password)
         self.key.setPlaceholderText(tr("administrators only (optional)"))
         self.key.setToolTip(tr("With the access key you become a permanent administrator of the server, even remotely."))
+        form.addRow(tr("Server address:"), self.url)
         form.addRow(tr("Username:"), self.user)
         self.email_label = QLabel(tr("Email:"))
         form.addRow(self.email_label, self.email)

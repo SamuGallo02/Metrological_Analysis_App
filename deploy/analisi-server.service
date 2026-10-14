@@ -1,0 +1,21 @@
+# /etc/systemd/system/analisi-server.service    ->   systemctl enable --now analisi-server
+[Unit]
+Description=Server Analisi Metrologica
+After=network.target
+
+[Service]
+User=analisi
+WorkingDirectory=/opt/analisi
+# Long random key, or sha256:<hex> made with `python -m server hash-key`. Better in a file: EnvironmentFile=/etc/analisi.env
+Environment=AM_ADMIN_KEY=
+ExecStart=/usr/bin/python3 -m server --data /opt/analisi/data serve --host 127.0.0.1 --port 8765 --trust-proxy
+Restart=always
+RestartSec=3
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/analisi/data
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

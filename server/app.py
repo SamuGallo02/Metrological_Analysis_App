@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -19,7 +20,9 @@ from common.params import AREA_MINE, ROLE_SERVER, ROLE_USER
 
 from .config import ServerConfig, key_matches, load_admin_key
 from .db import Database
-from .params import API_VERSION, KEY_LOCK_SECONDS, KEY_MAX_FAILS, MAX_JSON
+from .ops import stats
+from .params import API_VERSION, KEY_LOCK_SECONDS, KEY_MAX_FAILS, MAX_JSON, RATE_LIMIT_PER_MIN
+from .ratelimit import RateLimiter
 from .storage import Storage
 from .throttle import Throttle
 
@@ -34,6 +37,9 @@ class Handler(BaseHTTPRequestHandler):
     store: Storage
     cfg: ServerConfig
     key_throttle: Throttle
+    limiter: RateLimiter
+    started: float
+    counter: list                      # [requests served]; a list so that it is shared and mutable
 
     # ---- utilities ----------------------------------------------------------
     def log_message(self, fmt, *args):
@@ -113,9 +119,15 @@ class Handler(BaseHTTPRequestHandler):
         q = {k: v[0] for k, v in parse_qs(url.query).items()}
         path, method = url.path.rstrip("/"), self.command
         try:
+            self.counter[0] += 1
             if path == "/api/health" and method in ("GET", "HEAD"):
                 return self._send(200, {"ok": True, "api": API_VERSION, "register": self.cfg.allow_register,
-                                        "key": bool(self.cfg.admin_key)})
+                                        "key": bool(self.cfg.admin_key), "uptime": int(time.time() - self.started)})
+            try:
+                self.limiter.hit(self._ip())
+            except AppError:
+                self._drain()
+                raise
             if path == "/api/login" and method == "POST":
                 return self._login(self._json())
             if path == "/api/register" and method == "POST":
@@ -147,7 +159,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, {"ok": True})
             if path.startswith("/api/files"):
                 return self._files(path, method, q, user, admin)
-            if path.startswith("/api/users") or path == "/api/events":
+            if path.startswith("/api/users") or path in ("/api/events", "/api/stats"):
                 if not admin:
                     self._drain()
                     raise AppError("Reserved to administrators.", 403)
@@ -190,6 +202,8 @@ class Handler(BaseHTTPRequestHandler):
 
     # ---- administration ---------------------------------------------------
     def _admin(self, path: str, method: str, q: Dict[str, str], me: Dict[str, Any]) -> None:
+        if path == "/api/stats" and method == "GET":
+            return self._send(200, stats.collect(self.db, self.cfg.data_dir, self.started, self.counter[0]))
         if path == "/api/events" and method == "GET":
             return self._send(200, {"events": self.db.events(int(q.get("limit", 200)))})
         if path == "/api/users" and method == "GET":
@@ -333,14 +347,18 @@ class _Server(ThreadingHTTPServer):
 
 
 def make_server(data_dir: Path, host: str = "127.0.0.1", port: int = 8765, allow_register: bool = True,
-                admin_key: Optional[str] = None, trust_proxy: bool = False) -> ThreadingHTTPServer:
-    """admin_key=None: the key is read from environment/file (see server.config); '' disables it."""
+                admin_key: Optional[str] = None, trust_proxy: bool = False,
+                rate_limit: Optional[int] = None) -> ThreadingHTTPServer:
+    """admin_key=None: the key is read from environment/file (see server.config); '' disables it.
+    rate_limit: requests per minute per address (None = RATE_LIMIT_PER_MIN, 0 = unlimited)."""
     data_dir = Path(data_dir)
     cfg = ServerConfig(data_dir, allow_register, load_admin_key(data_dir) if admin_key is None else admin_key,
                        trust_proxy)
     # one subclass per server: several servers in the same process (tests) do not share state
     handler = type("BoundHandler", (Handler,), {
-        "key_throttle": Throttle(KEY_MAX_FAILS, KEY_LOCK_SECONDS), "db": Database(data_dir / "server.db"),
+        "key_throttle": Throttle(KEY_MAX_FAILS, KEY_LOCK_SECONDS),
+        "limiter": RateLimiter(RATE_LIMIT_PER_MIN if rate_limit is None else rate_limit),
+        "started": time.time(), "counter": [0], "db": Database(data_dir / "server.db"),
         "store": Storage(data_dir), "cfg": cfg})
     httpd = _Server((host, port), handler)
     httpd.handler = handler

@@ -1,0 +1,8 @@
+# Replace the name with your domain (DNS pointing at this machine). Caddy gets and renews the certificate by itself.
+# For a quick local test without a domain use:  localhost  (self-signed certificate).
+server.example.org {
+    request_body {
+        max_size 4GB
+    }
+    reverse_proxy server:8765
+}

@@ -16,6 +16,7 @@ from tests.util import KEY, TestServer, png_bytes
 from corpse.functions.users.session import Session
 from corpse.functions.users.store import LocalStore
 from corpse.gui import users as ui
+from corpse.gui.users.tree_view import ServerTreeDialog
 
 
 def pump(cond, secs=8):
@@ -105,6 +106,70 @@ class GuiTest(unittest.TestCase):
         self.assertTrue(pump(lambda: mine.status.text().endswith("items")))
         self.assertTrue(mine.btn_delete.isVisibleTo(mine) and mine.btn_rename.isVisibleTo(mine))
         self.assertTrue(pump(lambda: mine.quota.isVisibleTo(mine) and mine.quota.maximum() == 1024))
+
+    def test_folder_tree_opens_levels_on_demand(self):
+        s = self.sess("tr1"); d = self.login_dialog(s, "tree1", register=True); pump(lambda: d.result() == 1)
+        png = self.tmp / "t.png"; png.write_bytes(png_bytes())
+        s.client.upload("photos", "uno/due/t.png", png)
+        s.client.upload("photos", "uno/altro.png", png)
+        dlg = ServerTreeDialog(s, ("photos", "datasets"))
+        self.assertEqual(dlg.tree.topLevelItemCount(), 2)
+        top = dlg.tree.topLevelItem(0)
+        top.setExpanded(True)                                           # first level
+        names = lambda it: [it.child(i).text(0) for i in range(it.childCount())]      # the server is shared by the tests
+        self.assertTrue(pump(lambda: "uno" in names(top)))
+        uno = top.child(names(top).index("uno"))
+        self.assertEqual(uno.child(0).text(0), "Loading...")           # not requested yet: only the arrow
+        uno.setExpanded(True)                                           # second level, folders first
+        self.assertTrue(pump(lambda: uno.childCount() == 2 and uno.child(0).text(0) == "due"))
+        uno.child(0).setExpanded(True)                                  # third level
+        self.assertTrue(pump(lambda: uno.child(0).childCount() == 1 and uno.child(0).child(0).text(0) == "t.png"))
+        empty = dlg.tree.topLevelItem(1)
+        empty.setExpanded(True)
+        self.assertTrue(pump(lambda: empty.childCount() >= 1 and empty.child(0).text(0) != "Loading..."))
+        got = []
+        dlg.folder_chosen.connect(lambda a, p: got.append((a, p)))
+        dlg.tree.setCurrentItem(uno.child(0).child(0))                  # a file: its folder is chosen
+        dlg._choose()
+        self.assertEqual(got, [("photos", "uno/due")])
+
+    def test_browser_tree_button_jumps_to_folder(self):
+        s = self.sess("tr2"); d = self.login_dialog(s, "tree2", register=True); pump(lambda: d.result() == 1)
+        png = self.tmp / "u.png"; png.write_bytes(png_bytes())
+        s.client.upload("photos", "alfa/beta/u.png", png)
+        br = ui.ServerBrowserWidget(s, ("photos", "datasets"))
+        self.assertTrue(pump(lambda: br.status.text().endswith("items")))
+        br._goto("photos", "alfa/beta")
+        self.assertTrue(pump(lambda: br.tree.topLevelItemCount() == 1 and "u.png" in br.tree.topLevelItem(0).text(0)))
+        self.assertEqual(br.path, "alfa/beta")
+
+    def test_server_address_typed_by_hand(self):
+        from unittest import mock
+        from PySide6.QtWidgets import QInputDialog
+        from corpse.functions.users.api import normalize_url
+        from corpse.gui.users.login import server_address
+        self.assertEqual(normalize_url("192.168.1.27:8765"), "http://192.168.1.27:8765")     # bare IP: plain HTTP
+        self.assertEqual(normalize_url("localhost:8765"), "http://localhost:8765")
+        self.assertEqual(normalize_url("server.example.org"), "https://server.example.org")
+        self.assertEqual(server_address("http://10.0.0.5:8765"), "http://10.0.0.5:8765") if not os.environ.get("AM_SERVER_URL") else None
+        s = self.sess("sv1")
+        s.store.update_settings(server_url="http://10.0.0.5:8765")
+        dlg = ui.LoginDialog(s)                                         # the saved address is proposed and editable
+        self.assertEqual(dlg.url.text(), os.environ.get("AM_SERVER_URL") or "http://10.0.0.5:8765")
+        self.assertTrue(dlg.url.isVisibleTo(dlg) or not dlg.isVisible())
+
+        s2 = self.sess("sv2"); d = self.login_dialog(s2, "srv1", register=True); pump(lambda: d.result() == 1)
+        bar = ui.AccountBar(s2)
+        out = []
+        bar.logout_requested.connect(lambda: out.append(1))
+        with mock.patch.object(QInputDialog, "getText", return_value=(self.url + "/", True)):
+            bar._change_server()                                        # same server: nothing happens
+        self.assertEqual(out, [])
+        other = self.srv.url.replace("127.0.0.1", "localhost")
+        with mock.patch.object(QInputDialog, "getText", return_value=(other, True)):
+            bar._change_server()
+        self.assertTrue(pump(lambda: out == [1]))
+        self.assertEqual(s2.store.settings()["server_url"], other)
 
     def test_models_ask_for_the_scientific_name(self):
         from unittest import mock

@@ -20,6 +20,7 @@ from common.ui.qt_utils import run_async
 from corpse.functions.users.session import Session
 from .labels import area_label
 from .transfer import TransferDialog
+from .tree_view import ServerTreeDialog
 
 
 class ServerBrowserWidget(QWidget):
@@ -58,6 +59,7 @@ class ServerBrowserWidget(QWidget):
         row = QHBoxLayout()
         self.btn_up = self._btn(tr("Up"), self._up, row)
         self.btn_refresh = self._btn(tr("Refresh"), self.refresh, row)
+        self.btn_tree = self._btn(tr("Folder tree"), self._show_tree, row)
         self.btn_dl = self._btn(tr("Download"), self._download, row)
         self.btn_up_files = self._btn(tr("Upload files..."), self._upload_files, row)
         self.btn_up_dir = self._btn(tr("Upload folder..."), self._upload_dir, row)
@@ -160,6 +162,21 @@ class ServerBrowserWidget(QWidget):
         e = item.data(0, Qt.ItemDataRole.UserRole)
         if e["type"] == "dir":
             self.path = self._rel(e["name"])
+            self.refresh()
+
+    def _show_tree(self) -> None:
+        """Explorer-like tree of the areas; "Show in the list" jumps to the chosen folder."""
+        dlg = ServerTreeDialog(self.session, self.areas, self)
+        dlg.folder_chosen.connect(self._goto)
+        dlg.exec()
+
+    def _goto(self, area: str, path: str) -> None:
+        if area in self.areas:
+            self.tabs.blockSignals(True)
+            self.tabs.setCurrentIndex(self.areas.index(area))
+            self.tabs.blockSignals(False)
+            self.area, self.path = area, path
+            self._apply_role()
             self.refresh()
 
     def _up(self) -> None:

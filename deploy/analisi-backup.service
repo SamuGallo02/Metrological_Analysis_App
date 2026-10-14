@@ -1,0 +1,8 @@
+[Unit]
+Description=Daily backup of the Analisi server
+
+[Service]
+Type=oneshot
+User=analisi
+WorkingDirectory=/opt/analisi
+ExecStart=/usr/bin/python3 -m server --data /opt/analisi/data backup --keep 14

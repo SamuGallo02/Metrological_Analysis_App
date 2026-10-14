@@ -1,9 +1,19 @@
 # Analisi Stereo-Fotogrammetrica Metrologica (Computer Vision e YOLO)
 
+[![tests](https://github.com/SamuGallo02/Metrological_Analysis_App/actions/workflows/tests.yml/badge.svg)](https://github.com/SamuGallo02/Metrological_Analysis_App/actions/workflows/tests.yml)
+
 **[⬇ Scarica l'installer (Windows · macOS · Linux)](https://samugallo02.github.io/Nautilus_Website/)**
 
 Progetto di tesi: pipeline software per la stima metrologica e tridimensionale di oggetti a partire da coppie di fotogrammi stereo.
 Modelli di segmentazione (**YOLO**) e stereovisione (**Stereo SGBM**) calcolano la disparità locale, la profondità mediana (Z) e le dimensioni di ingombro (L × W × H) in mm e cm dell'oggetto scelto. L'interfaccia è in **PySide6**, con le elaborazioni in thread dedicati (`QThread`).
+
+## In sintesi
+
+- **Visione artificiale**: segmentazione con YOLO, stereovisione con StereoSGBM, misura di profondità e dimensioni (mm/cm) da coppie di fotogrammi; training dei modelli su GPU (CUDA) dall'interfaccia.
+- **Applicazione desktop** in Python/PySide6 (circa 14.700 righe di codice Python in 114 file), con elaborazioni in thread dedicati e interfaccia in 7 lingue.
+- **Installazione e manutenzione**: installer multipiattaforma (Windows, macOS, Linux) che sceglie le librerie in base alla GPU, scarica in parallelo con ripresa e verifica SHA-256, e un sistema di **autoriparazione** dell'ambiente virtuale.
+- **Server** per account e cartelle condivise, in sola libreria standard di Python: autenticazione con password PBKDF2, sessioni a scadenza, ruoli, quote, limite di richieste, backup e strumenti di gestione (vedi sotto).
+- **Qualità**: 84 test automatici (account, permessi, server, isolamento tra moduli, interfaccia, traduzioni) eseguiti a ogni push con GitHub Actions.
 
 ## Requisiti
 
@@ -71,8 +81,18 @@ Non sono nel repository (vedi `.gitignore`): ambienti virtuali, pesi dei modelli
 
 - Al primo avvio si accede con un account, si usa l'app come ospite (offline) o si crea un account. Con la chiave di accesso corretta l'account diventa amministratore in modo permanente; dopo 5 tentativi errati la chiave è bloccata per 5 minuti (il server resta attivo).
 - La chiave non sta nel codice: si imposta sul server con `AM_ADMIN_KEY` oppure `server/admin_key.txt` (ignorato da git) o con l'hash `python -m server hash-key`. Dettagli in `docs/SERVER.md`.
-- La lingua base è l'inglese; le altre (italiano, spagnolo, tedesco, francese, cinese, giapponese) si scaricano dal Profilo. I pacchetti si generano con `python -m tools.build_language_packs --out site/locales` e si pubblicano nel sito.
+- La lingua base è l'inglese; le altre (italiano, spagnolo, tedesco, francese, cinese, giapponese) si scaricano dal Profilo. I pacchetti si generano con `python -m tools.build_language_packs --out <cartella-del-sito>/locales` e si pubblicano nel sito.
 - Dal Profilo si modificano i propri dati e si gestiscono le cartelle.
+
+## Server e manutenzione
+
+Il server (`server/`) usa solo la libreria standard di Python e si avvia con `python -m server serve` (`--lan` per renderlo raggiungibile da altri dispositivi della rete).
+Strumenti di gestione: `doctor` (controllo di configurazione, database, disco, chiave), `status` (utenti, attività, spazio), `backup` / `restore`
+(copia coerente a server acceso, con rotazione), `users` (reset password, blocco/sblocco account), `lan` (indirizzi da usare sugli altri dispositivi).
+Il registro ruota da solo e `GET /api/health` e `/api/stats` servono per i controlli di stato.
+
+Messa online: `deploy/` contiene Dockerfile, docker-compose con HTTPS automatico (Caddy), servizi systemd con backup giornaliero e gli script Windows per il test in rete locale.
+Guida completa in `deploy/README.md` e `docs/SERVER.md`.
 
 ## Rigenerare gli installer
 
