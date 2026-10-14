@@ -12,6 +12,7 @@ Autore: Samuele Gallo
 from __future__ import annotations
 
 import sys
+import time
 from typing import List
 
 import cv2
@@ -22,10 +23,14 @@ def _capture_backend() -> int:
     one for correctly opening both the built-in camera and external USB ones
     at the requested resolution (the default backend has caused, on some
     machines, a successful open but with black frames)."""
-    return cv2.CAP_DSHOW if sys.platform.startswith("win") else cv2.CAP_ANY
+    if sys.platform.startswith("win"):
+        return cv2.CAP_DSHOW
+    if sys.platform == "darwin":
+        return cv2.CAP_AVFOUNDATION  # explicit: the generic backend may pick a different, less reliable one
+    return cv2.CAP_ANY
 
 
-def open_camera(index: int, width: int = 1280, height: int = 720, warmup_frames: int = 5):
+def open_camera(index: int, width: int = 1280, height: int = 720, warmup_frames: int = 5, timeout: float = 0.0):
     """
     Opens the camera at the requested index, sets the desired resolution and
     discards the first `warmup_frames` frames: many webcams return
@@ -41,9 +46,20 @@ def open_camera(index: int, width: int = 1280, height: int = 720, warmup_frames:
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
 
-    ok = False
-    for _ in range(warmup_frames):
+    # macOS: the first reads fail while the camera starts or while the "allow camera access" prompt is on screen,
+    # so keep trying for a few seconds instead of giving up at the first failed read.
+    wait = timeout or (10.0 if sys.platform == "darwin" else 0.0)
+    deadline = time.time() + wait
+    good, ok = 0, False
+    while good < warmup_frames:
         ok, _ = cap.read()
+        if ok:
+            good += 1
+        elif time.time() >= deadline:
+            break
+        else:
+            time.sleep(0.1)
+    ok = good > 0
 
     if not ok:
         cap.release()
@@ -57,7 +73,7 @@ def list_available_cameras(max_index: int = 6) -> List[int]:
     returns the indices of those that respond with a valid frame."""
     found: List[int] = []
     for idx in range(max_index):
-        cap = open_camera(idx, warmup_frames=1)  # only 1 frame: here we only need to know whether it responds
+        cap = open_camera(idx, warmup_frames=1, timeout=1.5)  # only 1 frame: here we only need to know whether it responds
         if cap is not None:
             found.append(idx)
             cap.release()

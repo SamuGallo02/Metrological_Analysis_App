@@ -351,6 +351,8 @@ STRINGS = {
     'Verifying files...': 'Verifica dei file in corso...',
     'You have the latest version.': "Hai l'ultima versione.",
     'unknown': 'sconosciuta',
+    'Webcam demo': 'Demo webcam',
+    'The webcam demo closed with an error. On macOS, allow camera access to the program that started the app (for example Terminal) in System Settings > Privacy & Security > Camera, then try again.\n\n{details}': "La demo della webcam si è chiusa con un errore. Su macOS consenti l'accesso alla fotocamera al programma che ha avviato l'app (ad esempio Terminale) in Impostazioni di Sistema > Privacy e sicurezza > Fotocamera, poi riprova.\n\n{details}",
 }
 
 MANUAL = """\

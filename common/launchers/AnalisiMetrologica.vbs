@@ -45,10 +45,15 @@ End If
 blnInstalled = objFSO.FileExists(strVenvPythonw)
 
 If Not blnInstalled Then
-    intAnswer = MsgBox("L'applicativo non e' ancora installato su questo computer." & vbCrLf & vbCrLf & _
-                       "Aprire la pagina da cui scaricare l'installer?", 36, "Installazione necessaria")
-    If intAnswer = 6 Then objShell.Run "https://samugallo02.github.io/Nautilus_Website/"
-    WScript.Quit 0
+    ' Environment missing: run the usual installer (visible window) to install only what is needed
+    intAnswer = MsgBox("L'ambiente dell'applicativo manca su questo computer." & vbCrLf & vbCrLf & _
+                       "Installare ora solo il necessario? (puo' richiedere alcuni minuti)", 36, "Installazione necessaria")
+    If intAnswer <> 6 Then WScript.Quit 0
+    objShell.Run "cmd /c ""(py -3 -m common.ambient.installer --os windows --component core --yes) || (python -m common.ambient.installer --os windows --component core --yes)""", 1, True
+    If Not objFSO.FileExists(strVenvPythonw) Then
+        If MsgBox("Installazione non riuscita. Aprire la pagina da cui scaricare l'installer?", 36, "Installazione necessaria") = 6 Then objShell.Run "https://samugallo02.github.io/Nautilus_Website/"
+        WScript.Quit 1
+    End If
 End If
 
 objShell.Run """" & strVenvPythonw & """ """ & strMainPath & """", 0, False

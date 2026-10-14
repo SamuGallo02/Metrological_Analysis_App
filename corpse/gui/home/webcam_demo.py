@@ -198,6 +198,7 @@ class WebcamDemoButton(QPushButton):
         super().__init__(tr("🎥 Webcam demo"), parent)
         self.setToolTip(tr("Starts live YOLO detection from the webcam in a separate window."))
         self._process = None
+        self._log_path = None
         self._watchdog: QTimer | None = None
         self.clicked.connect(self._launch)
 
@@ -232,7 +233,11 @@ class WebcamDemoButton(QPushButton):
             else:
                 args += ["--camera", str(dialog.selected_camera)]
             try:
-                self._process = subprocess.Popen(args, cwd=str(PROJECT_ROOT), **NO_WINDOW)
+                self._log_path = PROJECT_ROOT / "librery" / "webcam_demo.log"
+                self._log_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(self._log_path, "w", encoding="utf-8") as log:  # keeps the demo's messages for diagnosis
+                    self._process = subprocess.Popen(args, cwd=str(PROJECT_ROOT), stdout=log,
+                                                     stderr=subprocess.STDOUT, **NO_WINDOW)
             except Exception as exc:
                 QMessageBox.critical(self, tr("Error starting the demo"), tr("Could not start the demo:\n{error}", error=exc))
                 return
@@ -256,3 +261,17 @@ class WebcamDemoButton(QPushButton):
                 self._watchdog.stop()
                 self._watchdog = None
             self.setEnabled(True)
+            if self._process is not None and self._process.returncode not in (0, None):
+                self._report_failure()
+
+    def _report_failure(self) -> None:
+        """The demo ended with an error (typically: no camera permission on macOS): show why instead of
+        letting the window vanish silently."""
+        try:
+            lines = [ln for ln in self._log_path.read_text(encoding="utf-8", errors="replace").splitlines() if ln.strip()]
+        except (OSError, AttributeError):
+            lines = []
+        QMessageBox.warning(self, tr("Webcam demo"),
+                            tr("The webcam demo closed with an error. On macOS, allow camera access to the program "
+                               "that started the app (for example Terminal) in System Settings > Privacy & Security "
+                               "> Camera, then try again.\n\n{details}", details="\n".join(lines[-6:])))

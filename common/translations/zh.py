@@ -351,6 +351,8 @@ STRINGS = {
     'Verifying files...': '正在验证文件...',
     'You have the latest version.': '您已是最新版本。',
     'unknown': '未知',
+    'Webcam demo': '摄像头演示',
+    'The webcam demo closed with an error. On macOS, allow camera access to the program that started the app (for example Terminal) in System Settings > Privacy & Security > Camera, then try again.\n\n{details}': '摄像头演示因错误而关闭。在 macOS 上，请在“系统设置 > 隐私与安全性 > 相机”中允许启动本应用的程序（例如“终端”）访问相机，然后重试。\n\n{details}',
 }
 
 MANUAL = """\
