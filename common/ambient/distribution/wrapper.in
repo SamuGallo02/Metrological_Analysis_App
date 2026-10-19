@@ -61,8 +61,20 @@ try {
     # Extracts the installation window (embedded at the bottom of this file) and launches it without a console
     $k  = $t.LastIndexOf('##PYSRC_' + 'BEGIN')
     $nl = $t.IndexOf("`n", $k)
-    $gui = Join-Path $env:TEMP 'am_installer_gui.py'
-    [IO.File]::WriteAllText($gui, $t.Substring($nl + 1), (New-Object Text.UTF8Encoding $false))
+    # A fixed name fails with "access denied" when a previous installer window is still open (file in use) or an
+    # antivirus is scanning it: use a unique name and, if the folder refuses, try the next one.
+    $code = $t.Substring($nl + 1)
+    $gui = $null
+    foreach ($dir in @($env:TEMP, $env:LOCALAPPDATA, [Environment]::GetFolderPath('UserProfile'))) {
+        if (-not $dir) { continue }
+        $cand = Join-Path $dir ('am_installer_gui_' + [Guid]::NewGuid().ToString('N').Substring(0, 8) + '.py')
+        try {
+            [IO.File]::WriteAllText($cand, $code, (New-Object Text.UTF8Encoding $false))
+            $gui = $cand
+            break
+        } catch { }
+    }
+    if (-not $gui) { throw "Non riesco a scrivere i file temporanei (cartella TEMP bloccata da un antivirus o da permessi?)." }
     $pyw = Join-Path (Split-Path $py) 'pythonw.exe'
     Start-Process -FilePath $pyw -ArgumentList ('"' + $gui + '"')
     exit 0

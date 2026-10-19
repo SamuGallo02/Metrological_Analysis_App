@@ -46,7 +46,7 @@ SOURCE_URL = os.environ.get(
     "https://github.com/SamuGallo02/Metrological_Analysis_App/archive/refs/heads/main.zip",
 )
 SOURCE_REPO = "SamuGallo02/Metrological_Analysis_App"
-INSTALLER_BUILD = "2026-10-14-a"             # shown in the log: tells which version of the installer is running
+INSTALLER_BUILD = "2026-10-18-a"             # shown in the log: tells which version of the installer is running
 # repository folders that are not installed on users' computers
 # Must stay identical to common/ambient/updater/config.py (a test checks it): this file runs alone,
 # before the project exists, so it cannot import it.
