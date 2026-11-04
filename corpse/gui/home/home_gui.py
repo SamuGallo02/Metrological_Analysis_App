@@ -36,7 +36,7 @@ from corpse.gui.home.webcam_demo import WebcamDemoButton
 from corpse.gui.training import TrainingPage
 from corpse.gui.training.setup_dialog import ensure_training_ready
 from corpse.functions.users.session import Session
-from corpse.gui.users import AccountBar, AdminHome, ProfilePage, ServerBrowserWidget
+from corpse.gui.users import AccountBar, AdminHome, ProfilePage, ServerFoldersWidget
 
 ANALYSIS_COLOR, TRAINING_COLOR, SERVER_COLOR = "#1565c0", "#d84315", "#2e7d32"
 
@@ -143,7 +143,7 @@ class AppWindow(QMainWindow):
         self.foto_singola_page = PhotoAnalysisPage(on_home=self._go_home)
         self.video_singolo_page = VideoAnalysisPage(on_home=self._go_home)
         self.video_stereo_page = VideoStereoAnalysisPage(on_home=self._go_home)
-        self.training_page = TrainingPage(on_home=self._go_home)
+        self.training_page = TrainingPage(on_home=self._go_home, session=session)
         self.analysis_targets: Dict[str, QWidget] = {
             "photo": self.foto_singola_page, "photo_stereo": self.stereo_page,
             "video": self.video_singolo_page, "video_stereo": self.video_stereo_page,
@@ -200,7 +200,7 @@ class AppWindow(QMainWindow):
         self._show_dynamic("profile", ProfilePage(self.session))
 
     def _open_server(self) -> None:
-        self._show_dynamic("server", ServerBrowserWidget(self.session))
+        self._show_dynamic("server", ServerFoldersWidget(self.session))
 
     def _sign_out(self) -> None:
         """Log out (or, without an account, go to login): closes the session and restarts the app on the login screen."""

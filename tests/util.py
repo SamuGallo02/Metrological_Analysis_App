@@ -2,6 +2,7 @@
 import struct, tempfile, threading, zlib
 from pathlib import Path
 
+from common.errors import AppError
 from common.params import ROLE_SERVER
 from server.app import make_server
 from server.db import Database
@@ -30,3 +31,50 @@ class TestServer:
 
     def close(self):
         self.httpd.shutdown(); self.httpd.server_close(); self.tmp.cleanup()
+
+def upload_as_user(store, rel, username="francy", area="species", data=b"x"):
+    """Simula l'upload di un utente normale: il file finisce davvero in quarantena."""
+    dest, eff = store.check_new_file(area, rel, False, username, 10)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(data)
+    return dest, eff
+
+class FakeServerClient:
+    """Finge il server: l'albero è un dizionario (cartella = dizionario, file = bytes)."""
+    def __init__(self, tree):
+        self.tree, self.downloaded = tree, []
+
+    def _node(self, rel):
+        node = self.tree
+        for part in filter(None, rel.split("/")):
+            node = node[part]
+        return node
+
+    def list(self, area, rel=""):
+        return [{"name": n, "type": "dir" if isinstance(v, dict) else "file",
+                 "size": 0 if isinstance(v, dict) else len(v)} for n, v in self._node(rel).items()]
+
+    def download(self, area, rel, dest, progress=None, cancel=None):
+        try:
+            data = self._node(rel)
+        except KeyError:
+            raise AppError("File not found.", 404) from None
+        dest = Path(dest)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(data)
+        self.downloaded.append(rel)
+        if progress:
+            progress(len(data), len(data))
+        return dest
+    
+def pump(cond, secs=8):
+    """Fa girare Qt finché la condizione è vera (o scade il tempo): per le finestre che lavorano in background."""
+    import time
+    from PySide6.QtWidgets import QApplication
+    app = QApplication.instance()
+    t = time.time()
+    while time.time() - t < secs and not cond():
+        app.processEvents()
+        time.sleep(0.02)
+    app.processEvents()
+    return cond()

@@ -9,12 +9,13 @@ from PySide6.QtWidgets import (QAbstractItemView, QDialog, QDialogButtonBox, QFo
 
 from common.format import fmt_time
 from common.i18n import tr, tr_error
-from common.params import ROLE_SERVER, ROLE_USER
+from common.params import AREA_SPECIES, AREAS_SHARED, ROLE_SERVER, ROLE_USER, SUBMISSION_PENDING
 from common.ui.qt_utils import run_async
 
 from corpse.functions.users.session import Session
 from .browser import ServerBrowserWidget
-from .labels import role_label
+from .labels import role_label, status_label
+from .preview_dialog import PreviewDialog
 
 
 class NewUserDialog(QDialog):
@@ -172,6 +173,143 @@ class UserAdminWidget(QWidget):
             run_async(self, lambda: self.session.client.delete_user(u["id"]), lambda _x: self.refresh(), self._fail)
 
 
+class SubmissionsWidget(QWidget):
+    """What the users have sent, of one kind (photos, datasets or models): approve (it is published) or reject (it is deleted)."""
+
+    def __init__(self, session: Session, kind: str = "photos", parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self.session = session
+        self.kind = kind
+        self.items: List[Dict[str, Any]] = []
+        self.title, subject, count = {
+            "photos": (tr("Photo review"), tr("Species"), tr("Photos")),
+            "dataset": (tr("Dataset review"), tr("Dataset"), tr("Images")),
+            "model": (tr("Model review"), tr("Species"), ""),
+        }[kind]
+        lay = QVBoxLayout(self)
+        lay.addWidget(QLabel(f"<h3>{self.title}</h3>"))
+        self.table = _table([tr("User"), subject, count, tr("Sent"), tr("Status")])
+        self.table.setColumnHidden(2, kind == "model")           # a model is a single file: no count
+        lay.addWidget(self.table, 1)
+        self.btn_preview, self.btn_approve, self.btn_reject, self.btn_refresh = (QPushButton(t) for t in (
+            tr("Preview"), tr("Approve"), tr("Reject"), tr("Refresh")))
+        row = QHBoxLayout()
+        for button, slot in ((self.btn_preview, self._preview), (self.btn_approve, self._approve),
+                             (self.btn_reject, self._reject), (self.btn_refresh, self.refresh)):
+            button.clicked.connect(slot)
+            row.addWidget(button)
+        row.addStretch(1)
+        lay.addLayout(row)
+        self.table.itemSelectionChanged.connect(self._update_buttons)
+        self.status = QLabel("")
+        lay.addWidget(self.status)
+        self.refresh()
+
+    def _current(self) -> Optional[Dict[str, Any]]:
+        r = self.table.currentRow()
+        return self.items[r] if 0 <= r < len(self.items) else None
+    
+    def _update_buttons(self) -> None:
+        """Approve and Reject only make sense for a submission still waiting: for a decided one they disappear."""
+        s = self._current()
+        waiting = s is None or s["status"] == SUBMISSION_PENDING
+        self.btn_approve.setVisible(waiting)
+        self.btn_reject.setVisible(waiting)
+
+    def _fail(self, e: Exception) -> None:
+        QMessageBox.warning(self, tr("Error"), tr_error(e))
+
+    def refresh(self) -> None:
+        if not self.session.online:
+            self._fill([])
+            return
+        self.status.setText(tr("Loading..."))
+
+        def done(items: List[Dict[str, Any]]) -> None:
+            self._fill(items)
+            self.status.setText(tr("{n} submissions", n=len(items)))
+
+        run_async(self, lambda: self.session.client.species_submissions(kind=self.kind), done,
+                  lambda e: self.status.setText(tr("Error: {msg}", msg=tr_error(e))))
+
+    def _fill(self, items: List[Dict[str, Any]]) -> None:
+        self.items = items
+        self.table.setRowCount(len(items))
+        for i, s in enumerate(items):
+            vals = [s["username"], s["species"], str(s["photos"]), fmt_time(s["created"]), status_label(s["status"])]
+            for j, v in enumerate(vals):
+                self.table.setItem(i, j, QTableWidgetItem(v))
+        self._update_buttons()
+
+    def _pending(self) -> Optional[Dict[str, Any]]:
+        """The selected submission, if the administrator can and should review it; otherwise explains why not."""
+        if not self.session.can("species.review"):
+            QMessageBox.information(self, self.title,
+                                    tr("This operation is available only online as an administrator."))
+            return None
+        s = self._current()
+        if s is None or s["status"] != SUBMISSION_PENDING:
+            QMessageBox.information(self, self.title, tr("Select a submission waiting for review."))
+            return None
+        return s
+
+    def _confirm(self, text: str) -> bool:
+        return QMessageBox.question(self, self.title, text) == QMessageBox.StandardButton.Yes
+
+    def _question(self, s: Dict[str, Any], approve: bool) -> str:
+        n, name, user = s["photos"], s["species"], s["username"]
+        if self.kind == "dataset":
+            if approve:
+                return tr("Approve the dataset {name} ({n} images) sent by {user}?", name=name, n=n, user=user)
+            return tr("Reject and permanently delete the dataset {name} ({n} images) sent by {user}?", name=name, n=n, user=user)
+        if self.kind == "model":
+            if approve:
+                return tr("Approve the model of {species} sent by {user}?", species=name, user=user)
+            return tr("Reject and permanently delete the model of {species} sent by {user}?", species=name, user=user)
+        if approve:
+            return tr("Approve the {n} photos of {species} sent by {user}?", n=n, species=name, user=user)
+        return tr("Reject and permanently delete the {n} photos of {species} sent by {user}?", n=n, species=name, user=user)
+
+    def _run(self, call: Callable[[], Any]) -> None:
+        run_async(self, call, lambda _x: self.refresh(), self._fail)
+
+    def _approve(self) -> None:
+        s = self._pending()
+        if s and self._confirm(self._question(s, True)):
+            self._run(lambda: self.session.client.approve_submission(s["id"]))
+
+    def _preview(self) -> None:
+        s = self._current()
+        if s is None:
+            QMessageBox.information(self, self.title, tr("Select a submission waiting for review."))
+            return
+        PreviewDialog(self.session.client, self.kind, s, self).exec()
+
+    def _reject(self) -> None:
+        s = self._pending()
+        if s and self._confirm(self._question(s, False)):
+            self._run(lambda: self.session.client.reject_submission(s["id"]))
+
+class ReviewWidget(QWidget):
+    """What the users have sent and is waiting for approval: photos, datasets and models, one tab each."""
+
+    def __init__(self, session: Session, parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self.photos = SubmissionsWidget(session, "photos")
+        self.datasets = SubmissionsWidget(session, "dataset")
+        self.models = SubmissionsWidget(session, "model")
+        self.tabs = QTabWidget()
+        self.tabs.addTab(self.photos, tr("Photos"))
+        self.tabs.addTab(self.datasets, tr("Datasets"))
+        self.tabs.addTab(self.models, tr("YOLO models"))
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.addWidget(self.tabs)
+
+    def refresh(self) -> None:
+        for w in (self.photos, self.datasets, self.models):
+            w.refresh()
+
 class AdminHome(QWidget):
     """Administrator's main panel: Users, Database, Training in the foreground; metrological analysis
     is a secondary row with a single button."""
@@ -189,9 +327,8 @@ class AdminHome(QWidget):
         lay.addWidget(self.banner)
         self.tabs = QTabWidget()
         self.users = UserAdminWidget(session)
-        self.db = ServerBrowserWidget(session)
-        self.tabs.addTab(self.users, tr("Users"))
-        self.tabs.addTab(self.db, tr("Database"))
+        self.db = ServerBrowserWidget(session, (AREA_SPECIES, "datasets", "models"))
+        self.review = ReviewWidget(session)
         train = QWidget()
         tl = QVBoxLayout(train)
         tl.addWidget(QLabel(f"<h3>{tr('Training')}</h3>"))
@@ -201,8 +338,12 @@ class AdminHome(QWidget):
         b.clicked.connect(on_training)
         tl.addWidget(b)
         tl.addStretch(1)
-        self.tabs.addTab(train, tr("Training"))
-        self.tabs.currentChanged.connect(lambda i: (self.users.refresh, self.db.refresh)[i]() if i < 2 else None)
+        self.server_tabs = (self.tabs.addTab(self.users, tr("Users")),
+                            self.tabs.addTab(self.db, tr("Database")),
+                            self.tabs.addTab(self.review, tr("Review")))
+        self.local_tab = self.tabs.addTab(train, tr("Training"))
+        refreshers = (self.users.refresh, self.db.refresh, self.review.refresh)
+        self.tabs.currentChanged.connect(lambda i: refreshers[i]() if i < len(refreshers) else None)
         lay.addWidget(self.tabs, 1)
 
         sec = QFrame()
@@ -220,10 +361,10 @@ class AdminHome(QWidget):
         """Offline: only the local work (training, analysis) is offered; the server tabs are disabled."""
         online = self.session.online
         self.banner.setVisible(not online)
-        for i in (0, 1):
+        for i in self.server_tabs:
             self.tabs.setTabEnabled(i, online)
         if not online:
-            self.tabs.setCurrentIndex(2)
+            self.tabs.setCurrentIndex(self.local_tab)
 
     def apply_state(self) -> None:
         """Called after a reconnect: the server tabs come back and are reloaded."""
@@ -231,3 +372,4 @@ class AdminHome(QWidget):
         if self.session.online:
             self.users.refresh()
             self.db.refresh()
+            self.review.refresh()

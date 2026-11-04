@@ -1,6 +1,7 @@
 """Browse the server folders. Common areas: everyone reads and uploads, only the 'server' role edits or
 deletes. Personal area ('mine'): the owner can do everything, within the quota."""
 from __future__ import annotations
+import re
 
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
@@ -8,27 +9,34 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QAbstractItemView, QDialog, QFileDialog, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
                                QMessageBox, QProgressBar, QPushButton, QTabBar, QTreeWidget, QTreeWidgetItem,
-                               QVBoxLayout, QWidget)
+                               QVBoxLayout, QWidget, QTabWidget)
 
 from common.format import fmt_size, fmt_time
 from common.i18n import tr, tr_error
-import re
 
-from common.params import AREA_MINE, AREAS_SHARED, SPECIES_EXAMPLE, SPECIES_RE
+from common.params import AREA_MINE, AREAS_SHARED, SPECIES_EXAMPLE, SPECIES_RE, AREA_SPECIES
 from common.ui.qt_utils import run_async
+from common.remote_tree import walk_remote
+from common.model_metadata import fetch_remote_metadata
 
 from corpse.functions.users.session import Session
-from .labels import area_label
+from .labels import PENDING_DIR, area_label, folder_label, path_label
 from .transfer import TransferDialog
 from .tree_view import ServerTreeDialog
+from .model_info import model_info_lines
+from .uploads import UploadsWidget
+from .catalog import CatalogWidget
 
 
 class ServerBrowserWidget(QWidget):
-    def __init__(self, session: Session, areas: Sequence[str] = AREAS_SHARED, parent: Optional[QWidget] = None):
+    def __init__(self, session: Session, areas: Sequence[str] = AREAS_SHARED, parent: Optional[QWidget] = None,
+                 download_only: bool = False):
         super().__init__(parent)
         self.session = session
+        self.download_only = download_only            # only browse and download: no upload, no changes
         self.areas = tuple(areas)
         self.area, self.path = self.areas[0], ""
+        self._info_token = 0                          # numero dell'ultima richiesta dei dettagli: scarta le risposte in ritardo
         lay = QVBoxLayout(self)
 
         self.tabs = QTabBar()
@@ -55,6 +63,13 @@ class ServerBrowserWidget(QWidget):
         self.tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.tree.itemDoubleClicked.connect(self._open)
         lay.addWidget(self.tree, 1)
+
+        self.info = QLabel()                          # dettagli del modello selezionato (solo nella scheda dei modelli)
+        self.info.setTextFormat(Qt.TextFormat.PlainText)
+        self.info.setWordWrap(True)
+        self.info.hide()
+        lay.addWidget(self.info)
+        self.tree.itemSelectionChanged.connect(self._show_info)
 
         row = QHBoxLayout()
         self.btn_up = self._btn(tr("Up"), self._up, row)
@@ -85,22 +100,29 @@ class ServerBrowserWidget(QWidget):
         return (self.area == AREA_MINE and self.session.can("mine.manage")) or self.session.can("files.modify")
 
     def _apply_role(self) -> None:
-        self.btn_rename.setVisible(self._can_modify())
-        self.btn_delete.setVisible(self._can_modify())
-        self.btn_approve.setVisible(self.session.can("models.approve") and self.area == "models")
+        editing = not self.download_only
+        self.btn_up_files.setVisible(editing)
+        self.btn_up_dir.setVisible(editing)
+        self.btn_mkdir.setVisible(editing)
+        self.btn_rename.setVisible(editing and self._can_modify())
+        self.btn_delete.setVisible(editing and self._can_modify())
+        self.btn_approve.setVisible(editing and self.session.can("models.approve") and self.area == "models")
         self.btn_mkdir.setEnabled(self.session.online)
         self._update_note()
 
     def _update_note(self) -> None:
         if not self.session.online:
             text = f"<i>{tr('You are offline: the server folders are not available.')}</i>"
+        elif self.download_only:
+            text = tr("You can browse and download what the other users have shared.")
         elif self.area == AREA_MINE:
             text = tr("Your personal folder on the server: only you can see it. You can add, "
                       "rename, move and delete.")
         elif self.session.is_admin:
             text = tr("As an administrator you can modify and delete.")
             if self.area == "models":
-                text += " " + tr("Models in <b>_pending</b> are waiting for approval.")
+                text += " " + tr("Models in the <b>{folder}</b> folder are waiting for approval.",
+                                folder=folder_label(PENDING_DIR))
         elif self.area == "models":
             text = tr("You can download approved models and upload new ones: an administrator checks them before "
                       "publishing. Models are grouped by the scientific name of the species (Genus species).")
@@ -115,6 +137,27 @@ class ServerBrowserWidget(QWidget):
 
     def _selected(self) -> List[Dict[str, Any]]:
         return [it.data(0, Qt.ItemDataRole.UserRole) for it in self.tree.selectedItems()]
+
+    def _show_info(self) -> None:
+        """Dettagli del modello selezionato: i metadati (.json) accanto al file, nella scheda dei modelli."""
+        self._info_token += 1
+        token, area = self._info_token, self.area
+        sel = self._selected()
+        is_model = (len(sel) == 1 and sel[0]["type"] == "file"
+                    and sel[0]["name"].lower().endswith((".pt", ".onnx")))
+        if area != "models" or not is_model:
+            self.info.hide()
+            return
+        rel = self._rel(sel[0]["name"])
+        self.info.setText(tr("Loading..."))
+        self.info.show()
+
+        def done(meta: Optional[Dict[str, Any]]) -> None:
+            if token == self._info_token:                      # nel frattempo la selezione è cambiata: si scarta
+                self.info.setText("\n".join(model_info_lines(meta)))
+
+        run_async(self, lambda: fetch_remote_metadata(self.session.client, area, rel), done,
+                  lambda _e: done(None))
 
     def _rel(self, name: str) -> str:
         return f"{self.path}/{name}" if self.path else name
@@ -134,7 +177,7 @@ class ServerBrowserWidget(QWidget):
 
     # ---- list ------------------------------------------------------------
     def refresh(self) -> None:
-        self.crumb.setText(f"<b>{area_label(self.area)}</b> / {self.path.replace('/', ' / ')}")
+        self.crumb.setText(f"<b>{area_label(self.area)}</b> / {path_label(self.path)}")
         self.tree.clear()
         if not self.session.online:
             self.status.setText(tr("Offline."))
@@ -146,9 +189,12 @@ class ServerBrowserWidget(QWidget):
         def done(entries: List[Dict[str, Any]]) -> None:
             if (area, path) != (self.area, self.path):
                 return
+            if not path:                       # the folder of the waiting items is not shown: they are reviewed in Review
+                entries = [e for e in entries if not (e["type"] == "dir" and e["name"] == PENDING_DIR)]
             for e in entries:
                 is_dir = e["type"] == "dir"
-                it = QTreeWidgetItem([(tr("[folder] ") if is_dir else "") + e["name"],
+                shown = folder_label(e["name"]) if is_dir else e["name"]
+                it = QTreeWidgetItem([(tr("[folder] ") if is_dir else "") + shown,
                                       tr("Folder") if is_dir else tr("File"),
                                       "" if is_dir else fmt_size(e["size"]), fmt_time(e["mtime"])])
                 it.setData(0, Qt.ItemDataRole.UserRole, e)
@@ -183,14 +229,6 @@ class ServerBrowserWidget(QWidget):
         self.path = self.path.rsplit("/", 1)[0] if "/" in self.path else ""
         self.refresh()
 
-    def _walk_remote(self, rel: str, out: List[Tuple[str, int]]) -> None:
-        for e in self.session.client.list(self.area, rel):
-            child = f"{rel}/{e['name']}"
-            if e["type"] == "dir":
-                self._walk_remote(child, out)
-            else:
-                out.append((child, e["size"]))
-
     def _start_dir(self) -> str:
         folders = self.session.local_folders()
         return folders.get(self.area) or str(Path.home())
@@ -213,7 +251,7 @@ class ServerBrowserWidget(QWidget):
             for e in sel:
                 rel = self._rel(e["name"])
                 if e["type"] == "dir":
-                    self._walk_remote(rel, items)
+                    items.extend(walk_remote(self.session.client, self.area, rel))
                 else:
                     items.append((rel, e["size"]))
             return items
@@ -332,8 +370,9 @@ class ServerBrowserWidget(QWidget):
 
     def _approve(self) -> None:
         sel = [e for e in self._selected() if e["type"] == "file"]
-        if self.area != "models" or not self.path.startswith("_pending") or len(sel) != 1:
-            return QMessageBox.information(self, tr("Approve"), tr("Open models/_pending/<user> and select a model."))
+        if self.area != "models" or not self.path.startswith(PENDING_DIR) or len(sel) != 1:
+            return QMessageBox.information(self, tr("Approve"), tr("Open the {folder} folder, then the user's folder, and select a model.",
+                                            folder=folder_label(PENDING_DIR)))
         rel = self._rel(sel[0]["name"])
         parts = rel.split("/")                                  # _pending/<user>/<species>/<file>
         default = "/".join(parts[2:]) if len(parts) > 2 else sel[0]["name"]
@@ -345,10 +384,15 @@ class ServerBrowserWidget(QWidget):
                       lambda _r: self.refresh(), self._warn)
 
 
-class ServerBrowserDialog(QDialog):
+class ServerFoldersWidget(QWidget):
     def __init__(self, session: Session, parent: Optional[QWidget] = None):
         super().__init__(parent)
-        self.setWindowTitle(tr("Server folders"))
-        self.resize(820, 560)
         lay = QVBoxLayout(self)
-        lay.addWidget(ServerBrowserWidget(session, parent=self))
+        self.photos = CatalogWidget(session, "photos")
+        self.models = CatalogWidget(session, "model")
+        self.uploads = UploadsWidget(session)                                 # filled in the next blocks
+        self.tabs = QTabWidget()
+        self.tabs.addTab(self.photos, tr("Photos"))
+        self.tabs.addTab(self.models, tr("YOLO models"))
+        self.tabs.addTab(self.uploads, tr("Uploads"))
+        lay.addWidget(self.tabs)

@@ -21,10 +21,11 @@ from common.params import AREA_MINE, ROLE_SERVER, ROLE_USER
 from .config import ServerConfig, key_matches, load_admin_key
 from .db import Database
 from .ops import stats
-from .params import API_VERSION, KEY_LOCK_SECONDS, KEY_MAX_FAILS, MAX_JSON, RATE_LIMIT_PER_MIN
+from .params import API_VERSION, KEY_LOCK_SECONDS, KEY_MAX_FAILS, MAX_JSON, RATE_LIMIT_PER_MIN, KIND_DATASET, KIND_MODEL, KIND_PHOTOS
 from .ratelimit import RateLimiter
-from .storage import Storage
+from .storage import Storage, QUARANTINE_AREAS
 from .throttle import Throttle
+from .submissions import approve_submission, reject_submission, submit_species, catalog, submit_dataset, submit_model
 
 log = logging.getLogger("server")
 CHUNK = 1 << 20
@@ -157,6 +158,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.db.authenticate(user["username"], str(d.get("old", "")))      # check the old password
                 self.db.update_user(user["id"], password=str(d.get("new", "")))
                 return self._send(200, {"ok": True})
+            if path.startswith(("/api/species", "/api/datasets", "/api/models", "/api/catalog")):
+                return self._species(path, method, q, user, admin)
             if path.startswith("/api/files"):
                 return self._files(path, method, q, user, admin)
             if path.startswith("/api/users") or path in ("/api/events", "/api/stats"):
@@ -267,6 +270,45 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, {"path": dst})
         self._drain()
         raise AppError("Resource not found.", 404)
+    
+    def _species(self, path: str, method: str, q: Dict[str, str], user: Dict[str, Any], admin: bool) -> None:
+        name = user["username"]
+        if path == "/api/species/submit" and method == "POST":
+            species = str(self._json().get("species", ""))
+            result = submit_species(self.store, self.db, name, species)
+            self.db.log(name, "species.submit", "species", result["path"])
+            return self._send(201, result)
+        if path == "/api/datasets/submit" and method == "POST":
+            result = submit_dataset(self.store, self.db, name, str(self._json().get("name", "")), admin = admin)
+            self.db.log(name, "dataset.submit", "datasets", result["path"])
+            return self._send(201, result)
+        if path == "/api/models/submit" and method == "POST":
+            d = self._json()
+            result = submit_model(self.store, self.db, name, str(d.get("species", "")), str(d.get("file", "")), admin = admin)
+            self.db.log(name, "model.submit", "models", result["path"])
+            return self._send(201, result)
+        if path == "/api/catalog" and method == "GET":
+            self._drain()
+            kind = q.get("kind", "")
+            if kind not in (KIND_PHOTOS, KIND_MODEL, KIND_DATASET):
+                raise AppError("Resource not found.", 404)
+            return self._send(200, {"items": catalog(self.db, kind, self.store)})
+        if path == "/api/species/submissions" and method == "GET":
+            rows = self.db.list_submissions(username=None if admin else name, status=q.get("status") or None,
+                                            kind=q.get("kind") or None)
+            return self._send(200, {"submissions": rows})
+        m = re.fullmatch(r"/api/species/submissions/(\d+)/(approve|reject)", path)
+        if m and method == "POST":
+            self._drain()
+            if not admin:
+                raise AppError("Reserved to administrators.", 403)
+            action = m.group(2)
+            review = approve_submission if action == "approve" else reject_submission
+            result = review(self.store, self.db, int(m.group(1)), name)
+            self.db.log(name, f"species.{action}", "species", m.group(1))
+            return self._send(200, result)
+        self._drain()
+        raise AppError("Resource not found.", 404)
 
     def _download(self, area: str, rel: str, admin: bool, owner: str) -> None:
         path, size = self.store.open_file(area, rel, admin, owner)
@@ -335,7 +377,7 @@ class Handler(BaseHTTPRequestHandler):
             if tmp.exists():
                 tmp.unlink()
         self.db.log(owner, "upload", area, eff, size)
-        self._send(201, {"path": eff, "pending": area == "models" and eff.startswith("_pending/")})
+        self._send(201, {"path": eff, "pending": area in QUARANTINE_AREAS and eff.startswith("_pending/")})
 
 
 class _Server(ThreadingHTTPServer):

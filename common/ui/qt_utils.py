@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Callable, List, Optional, Union
 
 from PySide6.QtCore import QObject, QThread, Signal
-from PySide6.QtWidgets import QMessageBox, QWidget
+from PySide6.QtWidgets import QMessageBox, QWidget, QHeaderView, QTreeWidget
 
 from ..i18n import tr
 from ..params import NO_WINDOW
@@ -79,3 +79,10 @@ class HiddenProcess(QObject):
     def kill(self) -> None:
         if self.running:
             self._proc.kill()
+
+def fit_columns(tree: QTreeWidget) -> None:
+    """Le colonne si dividono tutta la larghezza e l'intestazione è un po' più alta."""
+    header = tree.header()
+    header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+    header.setMinimumHeight(32)
+    header.setStyleSheet("QHeaderView::section { padding: 6px; }")

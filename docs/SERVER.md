@@ -13,6 +13,7 @@ python -m server doctor | status | backup | users list        # gestione e manut
 ```
 Test su altri dispositivi, accesso da Internet con tunnel HTTPS, Docker, systemd, backup automatico e tutti i comandi di
 gestione: vedi **`deploy/README.md`**.
+
 ## Dati: server e cartella locale coincidono
 Senza `--data` il server usa la cartella dei dati locali dell'app, `datasets/Dataset_Locale/`. Sul computer che ospita il
 server, quindi, le cartelle del server e quelle locali dell'amministratore sono le stesse:
@@ -22,12 +23,15 @@ server, quindi, le cartelle del server e quelle locali dell'amministratore sono 
 | `photos` | `dataset_Foto_Stereo/` |
 | `models` | `models/` (una sottocartella per specie, con il nome scientifico: `Pinna nobilis/modello.pt`) |
 | `datasets` | `dataset_Training/` |
+| `species` (foto delle specie, base per le annotazioni) | `dataset_Specie/` |
 | `mine` (cartella personale di ogni utente, come un "drive") | `users/<utente>/` |
 
 Il database (utenti, sessioni, registro) è `server.db` nella stessa cartella.
 
 - **Modelli**: chi li carica indica il nome scientifico (Genere specie); finiscono in `models/_pending/<utente>/<Genere specie>/`
   (quarantena) finché un amministratore non li approva, e vengono pubblicati in `models/<Genere specie>/`.
+- **Foto delle specie**: vedi la sezione *Foto delle specie* più sotto. Le foto caricate dagli utenti restano in quarantena
+  (`dataset_Specie/_pending/<utente>/`) finché un amministratore non le approva.
 - **Dataset**: le cartelle caricate dagli utenti vengono inserite nei dataset del server; i file già presenti non si sovrascrivono.
 - **Backup**: copia `datasets/Dataset_Locale` a server fermo, oppure solo `server.db` con `sqlite3 server.db ".backup copia.db"`.
 - Per usare un'altra cartella: `python -m server --data PERCORSO serve`.
@@ -85,6 +89,8 @@ WantedBy=multi-user.target
 | Leggere/scaricare foto, modelli, dataset | sì | sì |
 | Inserire file e cartelle | sì, **senza sovrascrivere** | sì |
 | Caricare modelli YOLO | in `models/_pending/<utente>/` (quarantena) | direttamente |
+| Caricare foto di una specie | in `dataset_Specie/_pending/<utente>/` (quarantena), poi "Invia per revisione" | direttamente |
+| Approvare o rifiutare le foto inviate | no | sì |
 | Rinominare, spostare, eliminare, approvare | no | sì |
 | **Cartella personale** (`mine`) | solo la propria: legge, scrive, sovrascrive, sposta, elimina, entro la quota | solo la propria |
 | Utenti, quota, registro attività | no | sì |
@@ -93,6 +99,9 @@ Quarantena: un `.pt` è un archivio pickle e può eseguire codice quando viene c
 non sono scaricabili dagli altri finché un amministratore non li approva. Nella cartella personale i modelli sono privati,
 quindi senza quarantena. Quota predefinita 1024 MB per utente (`DEFAULT_QUOTA_MB` in `server/params.py`, modificabile per
 utente dalla gestione utenti). Estensioni e dimensioni massime per area: `server/params.py`.
+
+- Gli utenti non creano cartelle a mano in quest'area: la struttura nasce dal percorso del file che caricano
+  (`Pinna nobilis/lx/img1.jpg`).
 
 ## Sicurezza in breve
 - Password PBKDF2-SHA256 (240.000 iterazioni); token casuali salvati solo come hash, scadenza 30 giorni.

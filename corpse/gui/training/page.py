@@ -2,7 +2,7 @@
 Training page: interface for training a new YOLO model.
 Training logic in training/worker.py, hardware detection in
 training/hardware.py, constants and paths in training/config.py - only the
-interface lives here. Contract with the app: TrainingPage(on_home).
+interface lives here. Contract with the app: TrainingPage(on_home, session=None).
 
 Shared dependencies (read-only, never to be modified to work on
 training): build_top_bar, HardwareAccelerationWidget, centered_content.
@@ -15,7 +15,7 @@ from __future__ import annotations
 import shutil
 import webbrowser
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from PySide6.QtWidgets import (
     QComboBox,
@@ -29,17 +29,24 @@ from PySide6.QtWidgets import (
     QTextEdit,
     QVBoxLayout,
     QWidget,
+    QInputDialog,
 )
 
+from common.i18n import tr, tr_error
+from common.params import SPECIES_EXAMPLE
 from common.ui.widgets import build_top_bar
-from corpse.gui.training.components import HardwareAccelerationWidget
+from common.ui.qt_utils import run_async
 from common.ui.layout import centered_content
+from corpse.gui.training.server_dialog import ServerDatasetDialog
+from corpse.gui.training.components import HardwareAccelerationWidget
+from common.model_metadata import build_metadata, classes_from_data_yaml, count_images, read_metadata, write_metadata
+from corpse.functions.training.hardware import check_internet_connection, get_hardware_info
+from corpse.functions.training.worker import TrainingWorker
+from corpse.functions.training.publish import publish_model
 from corpse.functions.training.config import (
     BASE_MODEL_OPTIONS, COLAB_URL, DEFAULT_BATCH, DEFAULT_EPOCHS, DEFAULT_IMGSZ,
     MODELS_DIR, TDATASET_DIR,
 )
-from corpse.functions.training.hardware import check_internet_connection, get_hardware_info
-from corpse.functions.training.worker import TrainingWorker
 
 
 class TrainingPage(QWidget):
@@ -49,10 +56,15 @@ class TrainingPage(QWidget):
     reachable from the home, with a button to go back.
     """
 
-    def __init__(self, on_home, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, on_home, parent: Optional[QWidget] = None, session: Optional[Any] = None) -> None:
         super().__init__(parent)
         self.on_home = on_home
+        self.session = session                          # account e server: arriva dalla home, questa sezione non importa gli utenti
         self.worker: Optional[TrainingWorker] = None
+        self._server_datasets: set = set()            # dataset scaricati dal server in questa sessione
+        self._run_context: Optional[dict] = None      # cosa si sta allenando: serve ai metadati
+        self.last_model: Optional[Path] = None        # l'ultimo modello allenato: si può pubblicare
+        self._publishing = False
 
         TDATASET_DIR.mkdir(exist_ok=True, parents=True)
         MODELS_DIR.mkdir(exist_ok=True, parents=True)
@@ -63,6 +75,47 @@ class TrainingPage(QWidget):
         self._build_ui()
         self._populate_tdatasets()
         self._check_model_download_status()
+
+    def server_available(self) -> bool:
+        """True se c'è un account (non ospite) collegato al server in questo momento."""
+        s = self.session
+        return s is not None and bool(s.online) and not s.is_guest
+    
+    def _trained_by(self) -> str:
+        s = self.session
+        return "" if s is None or s.is_guest else s.username
+    
+    def _update_server_button(self) -> None:
+        self.btn_server.setHidden(self.session is None)
+        self.btn_publish.setHidden(self.session is None)
+        ok = self.server_available()
+        hint = "" if ok else tr("Sign in and connect to the server to use this.")
+        self.btn_server.setEnabled(ok)
+        self.btn_server.setToolTip(hint)
+        self.btn_publish.setEnabled(ok and self.last_model is not None and not self._publishing)
+        self.btn_publish.setToolTip(hint)
+
+    def showEvent(self, event) -> None:
+        self._update_server_button()          # la connessione può cambiare mentre la pagina è chiusa
+        super().showEvent(event)
+
+    def _open_server_datasets(self) -> None:
+        if not self.server_available():
+            return
+        dialog = ServerDatasetDialog(self.session.client, TDATASET_DIR, self)
+        dialog.downloaded.connect(self._on_server_dataset_downloaded)
+        dialog.exec()
+
+    def _on_server_dataset_downloaded(self, name: str) -> None:
+        self._server_datasets.add(name)
+        self._populate_tdatasets()
+        self._select_tdataset(name)
+
+    def _select_tdataset(self, name: str) -> None:
+        for i in range(self.combo_tdatasets.count()):
+            if self.combo_tdatasets.itemText(i).startswith(f"{name} ("):
+                self.combo_tdatasets.setCurrentIndex(i)
+                return
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
@@ -110,6 +163,11 @@ class TrainingPage(QWidget):
 
         tdataset_layout.addWidget(self.combo_tdatasets, stretch=1)
         tdataset_layout.addWidget(btn_add_tdataset)
+        self.btn_server = QPushButton(tr("Download from the server..."))
+        self.btn_server.clicked.connect(self._open_server_datasets)
+        tdataset_layout.addWidget(self.btn_server)
+        for button in (btn_add_tdataset, self.btn_server):
+            button.setMinimumHeight(30)                  # a bit taller than the text, otherwise it gets cut
         form_layout.addRow("Dataset (training):", tdataset_layout)
 
         self.lbl_yaml_path = QLabel("Nessun data.yaml trovato")
@@ -155,6 +213,11 @@ class TrainingPage(QWidget):
         self.btn_start.clicked.connect(self._start_training)
         content.addWidget(self.btn_start)
 
+        self.btn_publish = QPushButton(tr("Publish on the server..."))
+        self.btn_publish.clicked.connect(self._publish)
+        content.addWidget(self.btn_publish)
+        self._update_server_button()
+
         layout.addLayout(centered_content(content, max_width=900), stretch=1)
 
     def _populate_tdatasets(self) -> None:
@@ -198,10 +261,7 @@ class TrainingPage(QWidget):
         source_path = Path(source_dir)
         if source_path.parent.resolve() == TDATASET_DIR.resolve():
             self._populate_tdatasets()
-            for i in range(self.combo_tdatasets.count()):
-                if source_path.name in self.combo_tdatasets.itemText(i):
-                    self.combo_tdatasets.setCurrentIndex(i)
-                    break
+            self._select_tdataset(source_path.name)
             return
 
         dest_path = TDATASET_DIR / source_path.name
@@ -223,10 +283,7 @@ class TrainingPage(QWidget):
             shutil.copytree(source_path, dest_path)
             QMessageBox.information(self, "Importazione Completata", f"Dataset '{source_path.name}' importato con successo.")
             self._populate_tdatasets()
-            for i in range(self.combo_tdatasets.count()):
-                if source_path.name in self.combo_tdatasets.itemText(i):
-                    self.combo_tdatasets.setCurrentIndex(i)
-                    break
+            self._select_tdataset(source_path.name)
         except Exception as e:
             QMessageBox.critical(self, "Errore di Copia", f"Impossibile importare il dataset:\n{e}")
 
@@ -250,6 +307,15 @@ class TrainingPage(QWidget):
         model_name = self.combo_base_model.currentText()
         model_path = str(MODELS_DIR / model_name) if (MODELS_DIR / model_name).is_file() else model_name
 
+        dataset = Path(yaml_path).parent.name
+        self._run_context = dict(
+            base_model=model_name, dataset_name=dataset,
+            dataset_source="server" if dataset in self._server_datasets else "local",
+            classes=classes_from_data_yaml(Path(yaml_path)),
+            dataset_images=count_images(Path(yaml_path).parent),
+            epochs=self.spin_epochs.value(), imgsz=self.spin_imgsz.value(), batch=self.spin_batch.value(),
+            device=self.device_code, trained_by=self._trained_by())
+
         self.btn_start.setEnabled(False)
         self.txt_console.append(">>> Inizializzazione del processo di training...")
 
@@ -270,7 +336,51 @@ class TrainingPage(QWidget):
         self.btn_start.setEnabled(True)
         self.txt_console.append(f"\n>>> TRAINING COMPLETATO CON SUCCESSO!\n>>> Salvato in: {output_path}")
         self._check_model_download_status()
+        self.last_model = Path(output_path)
+        self._update_server_button()
+        self._write_metadata(output_path)
         QMessageBox.information(self, "Training Completato", f"Modello salvato in:\n{output_path}")
+
+    def _write_metadata(self, model_path: str) -> None:
+        """Scrive <modello>.json accanto al modello. Un errore qui non deve rovinare un training già finito."""
+        if not self._run_context:
+            return
+        try:
+            meta = build_metadata(metrics=getattr(self.worker, "metrics", None), **self._run_context)
+            written = write_metadata(Path(model_path), meta)
+            self.txt_console.append(f">>> Metadati salvati in: {written}")
+        except OSError as e:
+            self.txt_console.append(f">>> Metadati non salvati: {e}")
+
+    def _publish(self) -> None:
+        if not self.server_available() or self.last_model is None:
+            return
+        proposal = (read_metadata(self.last_model) or {}).get("species") or ""
+        species, ok = QInputDialog.getText(
+            self, tr("Scientific name"),
+            tr("Scientific name of the species (Genus species), for example {example}:", example=SPECIES_EXAMPLE),
+            text=proposal)
+        if not ok:
+            return
+        self._publishing = True
+        self._update_server_button()
+        self.txt_console.append(">>> Pubblicazione del modello sul server...")
+        model, client = self.last_model, self.session.client
+        run_async(self, lambda: publish_model(client, model, species), self._on_published, self._on_publish_failed)
+
+    def _on_published(self, result: dict) -> None:
+        self._publishing = False
+        self._update_server_button()
+        self.txt_console.append(f">>> Modello pubblicato: {result['remote']}")
+        text = (tr("Uploaded models are waiting for approval by an administrator.") if result["pending"]
+                else tr("Model published."))
+        QMessageBox.information(self, tr("Transfer"), text)
+
+    def _on_publish_failed(self, error: Exception) -> None:
+        self._publishing = False
+        self._update_server_button()
+        QMessageBox.warning(self, tr("Error"), tr_error(error))
+
 
     def _on_training_error(self, err_msg: str) -> None:
         self.btn_start.setEnabled(True)

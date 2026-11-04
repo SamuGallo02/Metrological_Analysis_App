@@ -43,9 +43,9 @@ APP_TITLE = "Analisi Metrologica - Installazione"
 APP_NAME = "Analisi Metrologica"
 SOURCE_URL = os.environ.get(
     "AM_SOURCE_URL",
-    "https://github.com/SamuGallo02/Metrological_Analysis_App/archive/refs/heads/main.zip",
+    "https://github.com/nautilus-unipd/Metrological_Analysis_App/archive/refs/heads/main.zip",
 )
-SOURCE_REPO = "SamuGallo02/Metrological_Analysis_App"
+SOURCE_REPO = "nautilus-unipd/Metrological_Analysis_App"
 INSTALLER_BUILD = "2026-10-18-a"             # shown in the log: tells which version of the installer is running
 # repository folders that are not installed on users' computers
 # Must stay identical to common/ambient/updater/config.py (a test checks it): this file runs alone,

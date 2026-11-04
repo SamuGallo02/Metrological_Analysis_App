@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 from typing import Optional
 
-REPO = "SamuGallo02/Metrological_Analysis_App"
+REPO = "nautilus-unipd/Metrological_Analysis_App"
 BRANCH = "main"
 DEFAULT_MODE = "ask"                       # "ask" (propose), "auto" (install at startup) or "off"
 MODES = ("ask", "auto", "off")

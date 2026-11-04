@@ -299,23 +299,29 @@ class TestFiles(Base):
         self.user("zed").upload("mine", "n.txt", self.f("n.txt", b"y"))
         self.assertTrue((self.data / LOCAL_FOLDER_NAMES["users"] / "zed" / "n.txt").is_file())
 
-    def test_user_dataset_is_merged_into_the_server_dataset(self):
-        """A dataset folder uploaded by a user is added to the server datasets; existing files are never overwritten."""
+    def test_user_dataset_waits_in_quarantine_and_is_not_merged(self):
+        """A dataset uploaded by a user waits in quarantine: the server datasets are not touched, and the user
+        can neither list nor read them."""
         a, u = self.admin(), self.user("dsu")
         a.upload("datasets", "coralli/a.png", self.f("a.png", png_bytes()))
-        u.upload("datasets", "coralli/b.txt", self.f("b.txt", b"label"))                 # same folder: files are added
-        self.assertEqual(sorted(e["name"] for e in a.list("datasets", "coralli")), ["a.png", "b.txt"])
+        r = u.upload("datasets", "coralli/b.txt", self.f("b.txt", b"label"))
+        self.assertTrue(r["pending"])
+        self.assertEqual([e["name"] for e in a.list("datasets", "coralli")], ["a.png"])                # untouched
+        self.assertEqual([e["name"] for e in a.list("datasets", "_pending/dsu/coralli")], ["b.txt"])  # waiting
         with self.assertRaises(ApiError) as e: u.upload("datasets", "coralli/b.txt", self.f("b.txt", b"other"))
-        self.assertEqual(e.exception.status, 409)
+        self.assertEqual(e.exception.status, 409)                                                       # never overwritten
+        self.assertIn("coralli", [e["name"] for e in u.list("datasets", "")])          # the approved ones are readable...
+        with self.assertRaises(ApiError) as e: u.list("datasets", "_pending/dsu/coralli")
+        self.assertEqual(e.exception.status, 403)                                       # ...the ones waiting are not
 
     def test_mkdir_rules(self):
         u, a = self.user("dir"), self.admin()
-        self.assertEqual(u.mkdir("datasets", "nuovo"), "nuovo")
         with self.assertRaises(ApiError) as e: u.mkdir("datasets", "nuovo")
-        self.assertEqual(e.exception.status, 409)
+        self.assertEqual(e.exception.status, 403)
         with self.assertRaises(ApiError) as e: u.mkdir("models", "cartella")
         self.assertEqual(e.exception.status, 403)
         a.mkdir("models", "famiglie")
+        self.assertEqual(a.mkdir("datasets", "nuovo"), "nuovo")
 
     def test_download_resume_and_cancel(self):
         a = self.admin(); data = os.urandom(3_000_000)
@@ -451,6 +457,171 @@ class TestSession(Base):
         for p in store.dir.iterdir():
             if p.is_file(): self.assertNotIn("password123", p.read_text())
 
+class TestSpeciesReview(Base):
+
+    def test_submit_and_approve(self):
+        u, other, a = self.user("bio"), self.user("bio2"), self.admin()
+        for name in ("a", "b"):
+            u.upload("species", f"Pinna nobilis/{name}.png", self.f(f"{name}.png", png_bytes()))
+        sub = u.submit_species("Pinna nobilis")
+        self.assertEqual((sub["species"], sub["photos"]), ("Pinna nobilis", 2))
+        self.assertEqual([s["id"] for s in u.species_submissions()], [sub["id"]])        # l'utente vede le sue
+        self.assertEqual(other.species_submissions(), [])                                # non quelle degli altri
+        self.assertIn(sub["id"], [s["id"] for s in a.species_submissions("pending")])    # l'admin le vede tutte
+        with self.assertRaises(ApiError) as e:
+            u.approve_submission(sub["id"])
+        self.assertEqual(e.exception.status, 403)                                        # approva solo l'admin
+        res = a.approve_submission(sub["id"])
+        self.assertEqual(res["photos"], 2)
+        self.assertEqual(u.species_submissions()[0]["status"], "approved")
+        self.assertIn(res["folder"], [x["name"] for x in other.list("species", "Pinna nobilis")])   # il dataset è di tutti
+        with self.assertRaises(ApiError) as e:
+            a.approve_submission(sub["id"])
+        self.assertEqual(e.exception.status, 409)                                        # non si approva due volte
+
+    def test_reject_keeps_the_record_but_not_the_photos(self):
+        u, a = self.user("bio3"), self.admin()
+        u.upload("species", "Epinephelus marginatus/a.png", self.f("r.png", png_bytes()))
+        sub = u.submit_species("Epinephelus marginatus")
+        a.reject_submission(sub["id"])
+        self.assertEqual(u.species_submissions()[0]["status"], "rejected")
+        self.assertNotIn("Epinephelus marginatus", [x["name"] for x in u.list("species")])
+
+
+class TestDatasetAndModelReview(Base):
+
+    def upload_dataset(self, u, name, labels=True):
+        u.upload("datasets", f"{name}/data.yaml", self.f("data.yaml", b"names: [x]"))
+        u.upload("datasets", f"{name}/images/a.png", self.f("a.png", png_bytes()))
+        if labels:
+            u.upload("datasets", f"{name}/labels/a.txt", self.f("a.txt", b"0 0.5 0.5 0.2 0.2"))
+
+    def upload_model(self, u, species, name):
+        u.upload("models", f"{species}/{name}.pt", self.f(f"{name}.pt", b"PK" * 30))
+        u.upload("models", f"{species}/{name}.json", self.f(f"{name}.json", b"{}"))
+
+    def test_dataset_submit_review_and_approve(self):
+        u, a = self.user("dsr"), self.admin()
+        self.upload_dataset(u, "coralli_r")
+        sub = u.submit_dataset("coralli_r")
+        self.assertEqual((sub["kind"], sub["images"]), ("dataset", 1))
+        self.assertIn(sub["id"], [s["id"] for s in a.species_submissions("pending", kind="dataset")])
+        self.assertNotIn(sub["id"], [s["id"] for s in a.species_submissions("pending", kind="model")])
+        with self.assertRaises(ApiError) as e:
+            u.approve_submission(sub["id"])
+        self.assertEqual(e.exception.status, 403)                                   # approva solo l'admin
+        a.approve_submission(sub["id"])
+        self.assertIn("coralli_r", [x["name"] for x in a.list("datasets")])
+        self.assertTrue(any(x["name"].startswith("coralli_r_dsr_") for x in a.list("datasets", "coralli_r")))
+        row = [s for s in a.species_submissions(kind="dataset") if s["id"] == sub["id"]][0]
+        self.assertEqual(row["status"], "approved")
+        self.assertTrue(row["reviewed_by"])
+
+    def test_users_can_read_an_approved_dataset_but_not_a_pending_one(self):
+        a, owner, other = self.admin(), self.user("dsv1"), self.user("dsv2")
+        self.upload_dataset(owner, "coralli_v")
+        done = a.approve_submission(owner.submit_dataset("coralli_v")["id"])
+        self.assertIn(done["name"].split("/")[0], [e["name"] for e in other.list("datasets", "")])
+        self.assertIn("data.yaml", [e["name"] for e in other.list("datasets", done["name"])])
+        self.upload_dataset(owner, "coralli_w")
+        owner.submit_dataset("coralli_w")                                                 # waits for review
+        with self.assertRaises(ApiError) as e:
+            other.list("datasets", "_pending/dsv1/coralli_w")
+        self.assertEqual(e.exception.status, 403)
+
+    def test_a_dataset_without_labels_is_refused(self):
+        u = self.user("dsr2")
+        self.upload_dataset(u, "senza_label", labels=False)
+        with self.assertRaises(ApiError) as e:
+            u.submit_dataset("senza_label")
+        self.assertEqual(e.exception.status, 422)
+
+    def test_model_submit_and_approve_moves_the_metadata_too(self):
+        u, a = self.user("mdr"), self.admin()
+        self.upload_model(u, "Pinna nobilis", "mdr")
+        sub = u.submit_model("Pinna nobilis", "mdr.pt")
+        self.assertEqual(sub["kind"], "model")
+        a.approve_submission(sub["id"])
+        names = [x["name"] for x in a.list("models", "Pinna nobilis")]
+        self.assertIn("mdr.pt", names)
+        self.assertIn("mdr.json", names)
+
+    def test_the_catalog_shows_approved_items_to_everyone_with_the_date_only(self):
+        u, other, a = self.user("cat1"), self.user("cat2"), self.admin()
+        self.upload_model(u, "Sparus aurata", "cat")
+        sub = u.submit_model("Sparus aurata", "cat.pt")
+        self.assertEqual([i for i in other.catalog("model") if i["uploader"] == "cat1"], [])   # not approved yet
+        a.approve_submission(sub["id"])
+        (item,) = [i for i in other.catalog("model") if i["uploader"] == "cat1"]
+        self.assertEqual((item["species"], item["path"]), ("Sparus aurata", "Sparus aurata/cat.pt"))
+        self.assertTrue(item["approved_by"])
+        self.assertRegex(item["date"], r"^\d{4}-\d{2}-\d{2}$")                      # the date, never the time
+        self.assertNotIn("created", item)
+
+    def test_the_catalog_is_in_alphabetical_order_of_species(self):
+        u, a = self.user("cat3"), self.admin()
+        for species, name in (("Zeus faber", "z"), ("Apogon imberbis", "ap")):
+            self.upload_model(u, species, name)
+            a.approve_submission(u.submit_model(species, f"{name}.pt")["id"])
+        species = [i["species"] for i in u.catalog("model")]
+        self.assertEqual(species, sorted(species, key=str.lower))
+
+    def test_the_dataset_catalog_is_open_to_every_account(self):
+        u, a = self.user("cat4"), self.admin()
+        self.assertIsInstance(u.catalog("dataset"), list)
+        self.assertIsInstance(a.catalog("dataset"), list)
+
+    def test_an_unknown_kind_of_catalog_is_not_found(self):
+        u = self.user("cat5")
+        with self.assertRaises(ApiError) as e:
+            u.catalog("whatever")
+        self.assertEqual(e.exception.status, 404)
+
+    def test_what_an_admin_publishes_needs_no_approval_but_is_in_the_catalog(self):
+        a, other = self.admin(), self.user("cat6")
+        self.upload_model(a, "Sparus aurata", "adm")
+        res = a.submit_model("Sparus aurata", "adm.pt")
+        self.assertFalse(res["pending"])
+        self.assertIn("Sparus aurata/adm.pt", [i["path"] for i in other.catalog("model")])
+
+    def test_the_dataset_catalog_is_open_to_users_and_lists_the_species(self):
+        a, owner, other = self.admin(), self.user("dsc1"), self.user("dsc2")
+        owner.upload("datasets", "multi/data.yaml",
+                     self.f("data.yaml", b"names:\n  0: Pinna nobilis\n  1: Sparus aurata\n"))
+        owner.upload("datasets", "multi/images/a.png", self.f("a.png", png_bytes()))
+        owner.upload("datasets", "multi/labels/a.txt", self.f("a.txt", b"0 0.5 0.5 0.2 0.2"))
+        a.approve_submission(owner.submit_dataset("multi")["id"])
+        item = [i for i in other.catalog("dataset") if i["path"].startswith("multi/multi_dsc1_")][0]
+        self.assertEqual(item["classes"], ["Pinna nobilis", "Sparus aurata"])
+        self.assertEqual(item["uploader"], "dsc1")
+
+    def put_dataset(self, u, name, yaml):
+        u.upload("datasets", f"{name}/data.yaml", self.f("data.yaml", yaml))
+        u.upload("datasets", f"{name}/images/a.png", self.f("a.png", png_bytes()))
+        u.upload("datasets", f"{name}/labels/a.txt", self.f("a.txt", b"0 0.5 0.5 0.2 0.2"))
+
+    def test_an_approved_dataset_is_named_after_its_species_user_and_date(self):
+        a, u = self.admin(), self.user("dsn1")
+        self.put_dataset(u, "minirename", b"names:\n  0: Pinna nobilis\n")
+        done = a.approve_submission(u.submit_dataset("minirename")["id"])
+        self.assertRegex(done["name"], r"^Pinna nobilis/Pinna nobilis_dsn1_\d{4}-\d{2}-\d{2}$")
+        self.assertIn("Pinna nobilis", [e["name"] for e in a.list("datasets", "")])             # a folder for the species...
+        self.assertIn(done["name"].split("/")[1], [e["name"] for e in a.list("datasets", "Pinna nobilis")])   # ...with the dataset inside
+        self.assertNotIn("minirename", [e["name"] for e in a.list("datasets", "")])
+
+    def test_two_datasets_of_the_same_day_do_not_clash(self):
+        a, u = self.admin(), self.user("dsn2")
+        names = []
+        for n in ("dup1", "dup2"):
+            self.put_dataset(u, n, b"names:\n  0: Sparus aurata\n")
+            names.append(a.approve_submission(u.submit_dataset(n)["id"])["name"])
+        self.assertEqual(names[1], names[0] + "_2")
+
+    def test_a_dataset_with_several_species_keeps_its_own_name(self):
+        a, u = self.admin(), self.user("dsn3")
+        self.put_dataset(u, "multid", b"names:\n  0: Pinna nobilis\n  1: Sparus aurata\n")
+        done = a.approve_submission(u.submit_dataset("multid")["id"])
+        self.assertRegex(done["name"], r"^multid/multid_dsn3_\d{4}-\d{2}-\d{2}$")
 
 if __name__ == "__main__":
     unittest.main(verbosity=1)

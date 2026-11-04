@@ -29,6 +29,7 @@ LOCAL_FOLDER_NAMES = {                                  # area -> folder name in
     "video": "dataset_Video", "video_stereo": "dataset_Video_Stereo",
     "training": "dataset_Training", "models": "models", "results": "results", "runs": "runs",
     "users": "users",                                   # personal folders of the accounts (server area "mine")
+    "species": "dataset_Specie",
 }
 VENV_PARENT = "librery"                                 # container of the virtual environments
 
@@ -47,7 +48,8 @@ ROLES = (ROLE_USER, ROLE_SERVER)
 
 AREAS_SHARED = ("photos", "models", "datasets")    # common folders: everyone reads and adds, the admin edits
 AREA_MINE = "mine"                                  # personal folder on the server: the owner can do everything
-AREAS = AREAS_SHARED + (AREA_MINE,)
+AREA_SPECIES = "species"                            # photos of one species, with review (see server/species_tree.py)
+AREAS = AREAS_SHARED + (AREA_SPECIES, AREA_MINE)
 
 # user profile fields -> maximum length (used by server and client)
 PROFILE_FIELDS = {"full_name": 80, "email": 120, "organization": 120, "phone": 40, "bio": 500}
@@ -60,3 +62,9 @@ DETACHED_HIDDEN = ({"creationflags": 0x00000008 | 0x00000200, "close_fds": True}
 # lines the installer writes to stdout for the windows that show its progress: "@@PROGRESS <percent> <text>", "@@WARN <text>"
 PROGRESS_PREFIX = "@@PROGRESS"
 WARN_PREFIX = "@@WARN"
+
+# review of the species photos sent by users
+SUBMISSION_PENDING = "pending"
+SUBMISSION_APPROVED = "approved"
+SUBMISSION_REJECTED = "rejected"
+SUBMISSION_STATUSES = (SUBMISSION_PENDING, SUBMISSION_APPROVED, SUBMISSION_REJECTED)

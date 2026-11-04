@@ -76,11 +76,12 @@ English is installed with the application. Use the language button, or *My profi
 
 ## For administrators
 
-Administrators open on the **Management** page, which has three tabs.
+Administrators open on the **Management** page, which has four tabs.
 
 - **Users**: create users, change their type (*User* or *Server*), disable or delete accounts, reset passwords, set quotas and read the recent activity. At least one active administrator must remain.
-- **Database**: the server folders with full control. Models waiting in *_pending* can be approved and published in their species folder.
-- **Training**: opens the training page.
+- **Database**: the server folders with full control. Models waiting in the *Awaiting approval* folder can be approved and published in their species folder; selecting a model shows its details (species, training, metrics).
+- **Photo review**: the photo submissions sent by users. Approve to publish the photos in their species folder, or reject.
+- **Training**: opens the training page, where you can also download datasets from the server and publish the trained model.
 
 The server runs on the laboratory computer. Start it with *python -m server serve* from the project folder (add *--host 0.0.0.0* to accept connections from the network), stop it with Ctrl+C, and restart it after every update of the code.
 

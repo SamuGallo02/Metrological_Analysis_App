@@ -13,8 +13,9 @@ PERMISSIONS = {
     "training.run": (ROLE_USER, ROLE_SERVER),
     "analysis.run": (ROLE_USER, ROLE_SERVER),
     "mine.manage": (ROLE_USER, ROLE_SERVER),          # personal folder on the server
+    "species.review": (ROLE_SERVER,),
 }
-SERVER_SIDE_PREFIXES = ("files.", "models.", "users.", "mine.")
+SERVER_SIDE_PREFIXES = ("files.", "models.", "users.", "mine.", "species.")
 
 # local folders the user can choose from the profile: key -> (English label)
 LOCAL_FOLDERS = ("photos", "models", "datasets", "results")

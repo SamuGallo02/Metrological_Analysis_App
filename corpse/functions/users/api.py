@@ -162,6 +162,30 @@ class ApiClient:
 
     def events(self, limit: int = 200) -> List[Dict[str, Any]]:
         return self._request("GET", "/api/events", {"limit": str(limit)})["events"]
+    
+     # ---- species photos ----------------------------------------------------
+    def submit_species(self, species: str) -> Dict[str, Any]:
+        return self._request("POST", "/api/species/submit", body={"species": species})
+
+    def species_submissions(self, status: Optional[str] = None, kind: Optional[str] = None) -> List[Dict[str, Any]]:
+        params = {k: v for k, v in (("status", status), ("kind", kind)) if v}
+        return self._request("GET", "/api/species/submissions", params or None)["submissions"]
+
+    def approve_submission(self, sid: int) -> Dict[str, Any]:
+        return self._request("POST", f"/api/species/submissions/{sid}/approve")
+
+    def reject_submission(self, sid: int) -> Dict[str, Any]:
+        return self._request("POST", f"/api/species/submissions/{sid}/reject")
+    
+    def submit_dataset(self, name: str) -> Dict[str, Any]:
+        return self._request("POST", "/api/datasets/submit", body={"name": name})
+
+    def submit_model(self, species: str, file: str) -> Dict[str, Any]:
+        return self._request("POST", "/api/models/submit", body={"species": species, "file": file})
+
+    def catalog(self, kind: str) -> List[Dict[str, Any]]:
+        """The approved photos ("photos") or models ("model") with who uploaded, who approved and the date."""
+        return self._request("GET", "/api/catalog", {"kind": kind})["items"]
 
     # ---- files --------------------------------------------------------------
     def list(self, area: str, path: str = "") -> List[Dict[str, Any]]:

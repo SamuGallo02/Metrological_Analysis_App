@@ -12,7 +12,8 @@ from common.params import ROLE_SERVER, ROLE_USER, ROLES
 from common.security import (hash_password, new_token, token_digest, validate_password, validate_username,
                              verify_password)
 
-from .params import DEFAULT_QUOTA_MB, LOGIN_LOCK_SECONDS, LOGIN_MAX_FAILS, PROFILE_FIELDS, TOKEN_TTL
+from .params import (DEFAULT_QUOTA_MB, LOGIN_LOCK_SECONDS, LOGIN_MAX_FAILS, PROFILE_FIELDS,
+                     SUBMISSION_APPROVED, SUBMISSION_PENDING, SUBMISSION_REJECTED, TOKEN_TTL, KIND_PHOTOS, KIND_DATASET, KIND_MODEL)
 
 _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _COLUMNS = {"full_name": "TEXT NOT NULL DEFAULT ''", "email": "TEXT NOT NULL DEFAULT ''",
@@ -38,11 +39,21 @@ class Database:
             CREATE TABLE IF NOT EXISTS events(
               id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL NOT NULL, username TEXT NOT NULL,
               action TEXT NOT NULL, area TEXT, path TEXT, size INTEGER);
+            CREATE TABLE IF NOT EXISTS submissions(
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              username TEXT NOT NULL, species TEXT NOT NULL, path TEXT NOT NULL,
+              status TEXT NOT NULL, photos INTEGER NOT NULL DEFAULT 0,
+              created REAL NOT NULL, reviewed_by TEXT, reviewed REAL);
+            CREATE UNIQUE INDEX IF NOT EXISTS one_pending_per_folder
+              ON submissions(path) WHERE status='pending';
             """)
             have = {r[1] for r in c.execute("PRAGMA table_info(users)")}
             for col, decl in _COLUMNS.items():
                 if col not in have:                          # database created by a previous version
                     c.execute(f"ALTER TABLE users ADD COLUMN {col} {decl}")
+            have = {r[1] for r in c.execute("PRAGMA table_info(submissions)")}
+            if "kind" not in have:                           # database created by a previous version
+                c.execute(f"ALTER TABLE submissions ADD COLUMN kind TEXT NOT NULL DEFAULT '{KIND_PHOTOS}'")
 
     def _c(self) -> sqlite3.Connection:
         con = sqlite3.connect(str(self.path), timeout=15)
@@ -195,6 +206,58 @@ class Database:
     def events(self, limit: int = 200) -> List[Dict[str, Any]]:
         with self._c() as c:
             return [dict(r) for r in c.execute("SELECT * FROM events ORDER BY id DESC LIMIT ?", (limit,))]
+        
+    # ---- submissions: folders uploaded by users, waiting for review --------
+    def add_submission(self, username: str, species: str, path: str, photos: int = 0,
+                       kind: str = KIND_PHOTOS) -> int:
+        try:
+            with self._c() as c:
+                return c.execute("INSERT INTO submissions(username,species,path,status,photos,created,kind) "
+                                 "VALUES(?,?,?,?,?,?,?)",
+                                 (username, species, path, SUBMISSION_PENDING, photos, time.time(),
+                                  kind)).lastrowid
+        except sqlite3.IntegrityError:
+            raise AppError("You already have a pending submission for this species.", 409) from None
+
+    def list_submissions(self, username: Optional[str] = None, status: Optional[str] = None,
+                         kind: Optional[str] = None) -> List[Dict[str, Any]]:
+        where, args = [], []
+        if username is not None:
+            where.append("username=?")
+            args.append(username)
+        if status is not None:
+            where.append("status=?")
+            args.append(status)
+        if kind is not None:
+            where.append("kind=?")
+            args.append(kind)
+        query = "SELECT * FROM submissions"        
+        if where:
+            query += " WHERE " + " AND ".join(where)
+        with self._c() as c:
+            return [dict(r) for r in c.execute(query + " ORDER BY id DESC", args)]
+        
+    def get_submission(self, sid: int) -> Dict[str, Any]:
+        with self._c() as c:
+            row = c.execute("SELECT * FROM submissions WHERE id=?", (sid,)).fetchone()
+        if row is None:
+            raise AppError("Submission not found.", 404)
+        return dict(row)
+    
+    def review_submission(self, sid: int, status: str, reviewer: str,
+                          path: Optional[str] = None, photos: Optional[int] = None) -> Dict[str, Any]:
+        if status not in (SUBMISSION_APPROVED, SUBMISSION_REJECTED):
+            raise AppError("Invalid review status.")
+        with self._c() as c:
+            row = c.execute("SELECT * FROM submissions WHERE id=?", (sid,)).fetchone()
+            if row is None:
+                raise AppError("Submission not found.", 404)
+            if row["status"] != SUBMISSION_PENDING:
+                raise AppError("This submission has already been reviewed.", 409)
+            c.execute("UPDATE submissions SET status=?, reviewed_by=?, reviewed=?, "
+                      "path=COALESCE(?, path), photos=COALESCE(?, photos) WHERE id=?",
+                      (status, reviewer, time.time(), path, photos, sid))
+            return dict(c.execute("SELECT * FROM submissions WHERE id=?", (sid,)).fetchone())
 
 
 class _Ctx:
