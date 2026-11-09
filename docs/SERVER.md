@@ -23,6 +23,7 @@ c'entrano). Senza `--data` la cartella dati è `datasets/server_data/`, separata
 | `store/library/photos/<Specie>/` | foto approvate (con le etichette `.txt`) |
 | `store/library/stereo/<Specie>/<lx\|rx>/` | coppie stereo approvate |
 | `store/library/videos/<Specie>/` | video approvati (con le etichette `.txt`) |
+| `store/library/stereo_videos/<Specie>/<lx\|rx>/` | coppie di video stereo approvate |
 | `store/library/models/<Specie>/` | modelli YOLO approvati (+ `.json`) |
 | `store/library/datasets/` | dataset di addestramento |
 | `store/pending/<area>/<utente>/` | caricamenti in attesa di approvazione (quarantena unica) |

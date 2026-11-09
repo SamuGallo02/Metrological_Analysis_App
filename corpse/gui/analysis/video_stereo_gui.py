@@ -71,6 +71,7 @@ class VideoStereoAnalysisWorker(QThread):
             tracker = ObjectTracker()
             recorder = LabelRecorder(model_class_names(analyzer))
             label_lines: List[str] = []                              # `frame cls ...` for the left video
+            right_lines: List[str] = []                              # the same for the right video
             seen_classes: Set[str] = set()
 
             target_labels_lower = None
@@ -108,6 +109,11 @@ class VideoStereoAnalysisWorker(QThread):
 
                 label_lines.extend(recorder.lines_for(result.detections, left_frame.shape[1], left_frame.shape[0],
                                                       frame_idx))
+                if target_labels_lower is not None:
+                    result.right_detections = [d for d in result.right_detections
+                                               if d.label.strip().lower() in target_labels_lower]
+                right_lines.extend(recorder.lines_for(result.right_detections, right_frame.shape[1],
+                                                      right_frame.shape[0], frame_idx))
                 result.overlay_image = render_overlay(result.left_image, result.detections)
                 writer.write(result.overlay_image)
 
@@ -116,6 +122,8 @@ class VideoStereoAnalysisWorker(QThread):
                     self.progress.emit(frame_idx, total_frames)
 
             save_media_labels(self.left_video, label_lines, recorder.classes)
+            if self.stereo_config.detect_right:
+                save_media_labels(self.right_video, right_lines, recorder.classes)
             self.finished_all.emit()
 
         except Exception as exc:

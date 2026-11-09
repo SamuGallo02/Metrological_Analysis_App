@@ -1,46 +1,12 @@
-"""YOLO label files for the photo viewer: where to look for them and how to read them (no Qt, no network)."""
+"""YOLO label files for the photo viewer: where to look for them (no Qt, no network). Reading and writing the
+lines is in `common.label_shapes`."""
 from __future__ import annotations
 
-import math
-from dataclasses import dataclass
 from pathlib import PurePosixPath
-from typing import List, Optional, Tuple
+from typing import List
 
+from common.label_shapes import Shape, class_label, format_labels, parse_labels  # noqa: F401  (re-exported)
 from common.model_metadata import classes_from_yaml_text
-
-
-@dataclass(frozen=True)
-class Shape:
-    """One labelled object. Coordinates are normalised (0..1): a box has 2 points (corners), a polygon 3 or more."""
-    cls: int
-    points: Tuple[Tuple[float, float], ...]
-
-    @property
-    def is_box(self) -> bool:
-        return len(self.points) == 2
-
-
-def parse_labels(text: str) -> List[Shape]:
-    """Reads a YOLO .txt file: `cls cx cy w h` (box, an optional trailing confidence is ignored) or
-    `cls x1 y1 x2 y2 ...` (segmentation polygon). Malformed lines are skipped."""
-    shapes: List[Shape] = []
-    for line in text.splitlines():
-        parts = line.split()
-        if len(parts) < 5:
-            continue
-        try:
-            cls = int(float(parts[0]))
-            nums = [float(v) for v in parts[1:]]
-        except ValueError:
-            continue
-        if cls < 0 or not all(math.isfinite(v) for v in nums):
-            continue
-        if len(nums) in (4, 5):                              # box (the 5th number would be a confidence)
-            cx, cy, w, h = nums[:4]
-            shapes.append(Shape(cls, ((cx - w / 2, cy - h / 2), (cx + w / 2, cy + h / 2))))
-        elif len(nums) >= 6 and len(nums) % 2 == 0:
-            shapes.append(Shape(cls, tuple((nums[i], nums[i + 1]) for i in range(0, len(nums), 2))))
-    return shapes
 
 
 def label_candidates(image_rel: str) -> List[str]:
@@ -78,6 +44,3 @@ def class_names(file_name: str, text: str) -> List[str]:
         return classes_from_yaml_text(text)
     return [line.strip() for line in text.splitlines() if line.strip()]
 
-
-def class_label(names: Optional[List[str]], cls: int) -> str:
-    return names[cls] if names and 0 <= cls < len(names) else str(cls)

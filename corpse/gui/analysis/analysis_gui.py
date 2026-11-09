@@ -76,6 +76,10 @@ class StereoAnalysisWorker(QThread):
                 left = result.left_image                       # the detection runs on the left camera: its photo gets the labels
                 save_media_labels(pair.left_path, recorder.lines_for(result.detections, left.shape[1], left.shape[0]),
                                   recorder.classes)
+                if self.stereo_config.detect_right:                                   # the right photo gets its labels too
+                    right = result.right_image
+                    save_media_labels(pair.right_path, recorder.lines_for(result.right_detections, right.shape[1],
+                                                                          right.shape[0]), recorder.classes)
                 result.overlay_image = render_overlay(result.left_image, result.detections)
 
                 self.pair_done.emit(result, tracker.total_count)

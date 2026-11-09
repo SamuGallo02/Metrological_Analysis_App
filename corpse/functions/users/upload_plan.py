@@ -1,11 +1,11 @@
-"""What an upload of photos, stereo photos or videos sends (no Qt): the files with the names they get on the server."""
+"""What an upload of photos, videos or stereo photos/videos sends (no Qt): the files with the names they get on the server."""
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from common.label_store import sidecars
-from common.params import AREA_PHOTOS, AREA_STEREO, AREA_VIDEOS, IMAGE_SUFFIXES, STEREO_SIDES, VIDEO_SUFFIXES
+from common.params import AREA_PHOTOS, AREA_STEREO, AREA_STEREO_VIDEOS, AREA_VIDEOS, IMAGE_SUFFIXES, STEREO_SIDES, VIDEO_SUFFIXES
 
 Pairs = List[Tuple[Path, str]]
 
@@ -43,17 +43,23 @@ def plan_media(files: Sequence[Path], species: str) -> Dict[str, Pairs]:
     return plan
 
 
-def plan_stereo(root: Path, species: str) -> Pairs:
-    """A folder holding an `lx` and an `rx` subfolder -> files for <species>/<lx|rx>/<name>. Only photos are sent."""
-    root, pairs, classes_sent = Path(root), [], set()
+def plan_stereo(root: Path, species: str) -> Tuple[str, Pairs]:
+    """A folder holding an `lx` and an `rx` subfolder -> (area, files for <species>/<lx|rx>/<name>): stereo photos or
+    stereo videos, according to what the folders hold. A folder with both is refused (ValueError); with neither,
+    the list is empty."""
+    root, pairs, classes_sent, areas = Path(root), [], set(), set()
     for side in STEREO_SIDES:
         folder = root / side
         if not folder.is_dir():
             continue
         for p in sorted(folder.iterdir()):
-            if p.is_file() and not p.name.startswith(".") and kind_of(p) == AREA_PHOTOS:
+            area = kind_of(p) if p.is_file() and not p.name.startswith(".") else None
+            if area is not None:
+                areas.add(area)
                 pairs.extend(_with_labels(p, f"{species}/{side}", classes_sent))
-    return pairs
+    if len(areas) > 1:
+        raise ValueError("photos and videos mixed")
+    return (AREA_STEREO_VIDEOS if areas == {AREA_VIDEOS} else AREA_STEREO), pairs
 
 
 def has_stereo_folders(root: Path) -> bool:

@@ -18,12 +18,14 @@ from typing import Callable, Dict
 from PySide6.QtCore import QProcess, Qt
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
-    QApplication, QFrame, QGridLayout, QHBoxLayout, QLabel, QMainWindow, QPushButton, QStackedWidget,
+    QApplication, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QMainWindow, QPushButton, QStackedWidget,
     QVBoxLayout, QWidget,
 )
 
 from corpse.gui.home.hub import AnalysisHub
 from common.format import darker
+from common.params import IMAGE_SUFFIXES, VIDEO_SUFFIXES
+from common.ui.label_editor import edit_local_labels
 from common.i18n import tr
 from corpse.gui.analysis.analysis_gui import StereoAnalysisPage
 from common.ui.widgets import set_manual_opener
@@ -153,6 +155,7 @@ class AppWindow(QMainWindow):
 
         # Analysis screen: the 4 analyses and, at the top, the webcam demo
         self.analysis_hub = AnalysisHub(on_home=self._go_home, demo=WebcamDemoButton())
+        self.analysis_hub.labels_requested.connect(self._edit_labels)
         self.analysis_hub.requested.connect(lambda aid: self.stack.setCurrentWidget(self.analysis_targets[aid]))
 
         # home based on the account type
@@ -198,6 +201,13 @@ class AppWindow(QMainWindow):
         self._dynamic[key] = holder
         self.stack.addWidget(holder)
         self.stack.setCurrentWidget(holder)
+
+    def _edit_labels(self) -> None:
+        """Picks a photo or video of this computer and opens the label editor on it."""
+        patterns = " ".join(f"*{e}" for e in sorted(IMAGE_SUFFIXES + VIDEO_SUFFIXES))
+        f, _ = QFileDialog.getOpenFileName(self, tr("Choose a photo or video"), "", f"{tr('Photos')} ({patterns})")
+        if f:
+            edit_local_labels(self, Path(f))
 
     def _open_settings(self) -> None:
         dialog = SettingsDialog(self.session, self)

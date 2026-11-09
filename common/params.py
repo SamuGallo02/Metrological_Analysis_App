@@ -49,16 +49,21 @@ ROLES = (ROLE_USER, ROLE_SERVER)
 # Server areas. Each approved item lives in `store/library/<area>/` and each upload waits in `store/pending/<area>/`
 # until an administrator approves it. The folders are organised by kind, whatever the app shows.
 AREA_PHOTOS, AREA_STEREO, AREA_VIDEOS = "photos", "stereo", "videos"
-AREAS_MEDIA = (AREA_PHOTOS, AREA_STEREO, AREA_VIDEOS)         # one folder per species, then one per approved upload
+AREA_STEREO_VIDEOS = "stereo_videos"
+AREAS_MEDIA = (AREA_PHOTOS, AREA_STEREO, AREA_VIDEOS, AREA_STEREO_VIDEOS)         # one folder per species, then one per approved upload
 AREAS_SHARED = AREAS_MEDIA + ("models", "datasets")           # common folders: everyone reads and adds, the admin edits
 AREA_MINE = "mine"                                            # personal folder on the server: the owner can do everything
 AREAS = AREAS_SHARED + (AREA_MINE,)
 
 # what a submission is about -> the area that holds it once approved
 KIND_PHOTOS, KIND_STEREO, KIND_VIDEO, KIND_DATASET, KIND_MODEL = "photos", "stereo", "video", "dataset", "model"
+KIND_STEREO_VIDEO = "stereo_video"
 KIND_AREA = {KIND_PHOTOS: AREA_PHOTOS, KIND_STEREO: AREA_STEREO, KIND_VIDEO: AREA_VIDEOS,
+             KIND_STEREO_VIDEO: AREA_STEREO_VIDEOS,
              KIND_MODEL: "models", KIND_DATASET: "datasets"}
-KINDS_MEDIA = (KIND_PHOTOS, KIND_STEREO, KIND_VIDEO)
+KINDS_MEDIA = (KIND_PHOTOS, KIND_STEREO, KIND_VIDEO, KIND_STEREO_VIDEO)
+KINDS_STEREO = (KIND_STEREO, KIND_STEREO_VIDEO)           # <Species>/<lx|rx>/<file>
+KINDS_VIDEO = (KIND_VIDEO, KIND_STEREO_VIDEO)             # the media are videos, not photos
 
 IMAGE_SUFFIXES = (".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp")
 VIDEO_SUFFIXES = (".mp4", ".avi", ".mov", ".mkv", ".webm")

@@ -14,4 +14,5 @@ class LabelsTest(unittest.TestCase):
         self.assertEqual(path_label(""), "")
 
     def test_every_media_area_has_a_label(self):
-        self.assertEqual([area_label(a) for a in ("photos", "stereo", "videos")], ["Photos", "Stereo photos", "Videos"])
+        self.assertEqual([area_label(a) for a in ("photos", "stereo", "videos", "stereo_videos")],
+                         ["Photos", "Stereo photos", "Videos", "Stereo videos"])

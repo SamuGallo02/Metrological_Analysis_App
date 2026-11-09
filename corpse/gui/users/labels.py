@@ -9,7 +9,7 @@ def role_label(role: str) -> str:
 
 
 def area_label(area: str) -> str:
-    return {"photos": tr("Photos"), "stereo": tr("Stereo photos"), "videos": tr("Videos"),
+    return {"photos": tr("Photos"), "stereo": tr("Stereo photos"), "videos": tr("Videos"), "stereo_videos": tr("Stereo videos"),
             "models": tr("YOLO models"), "datasets": tr("Datasets"), AREA_MINE: tr("My folder")}.get(area, area)
 
 

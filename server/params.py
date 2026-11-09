@@ -1,7 +1,7 @@
 """Server parameters (limits, times, extensions). A single place to edit."""
 from common.paths import LOCAL_DIR
 from common.params import (AREAS_MEDIA, IMAGE_SUFFIXES, KIND_AREA, KIND_DATASET, KIND_MODEL, KIND_PHOTOS,  # noqa: F401
-                           KIND_STEREO, KIND_VIDEO, KINDS_MEDIA, LABEL_SUFFIX, PROFILE_FIELDS, SPECIES_EXAMPLE,
+                           KIND_STEREO, KIND_STEREO_VIDEO, KIND_VIDEO, KINDS_MEDIA, KINDS_STEREO, KINDS_VIDEO, LABEL_SUFFIX, PROFILE_FIELDS, SPECIES_EXAMPLE,
                            SPECIES_RE, STEREO_SIDES, VIDEO_SUFFIXES,
                             SUBMISSION_APPROVED, SUBMISSION_PENDING, SUBMISSION_REJECTED, SUBMISSION_STATUSES)  # noqa: F401  (defined in common: also used by the client)
 
@@ -24,14 +24,15 @@ EXTENSIONS = {
     "photos": _IMAGES | {LABEL_SUFFIX},                  # a label file (.txt) goes with its photo
     "stereo": _IMAGES | {LABEL_SUFFIX},
     "videos": _VIDEOS | {LABEL_SUFFIX},
+    "stereo_videos": _VIDEOS | {LABEL_SUFFIX},
     "models": {".pt", ".onnx", ".json"},
     "datasets": _IMAGES | {".txt", ".yaml", ".yml", ".json", ".csv", ".zip"},
 }
 EXTENSIONS["mine"] = EXTENSIONS["datasets"] | EXTENSIONS["models"] | _VIDEOS | {".pdf", ".md", ".xlsx", ".docx"}
-MAX_BYTES = {"photos": 64 << 20, "stereo": 64 << 20, "videos": 4 << 30, "models": 2 << 30, "datasets": 4 << 30,
+MAX_BYTES = {"photos": 64 << 20, "stereo": 64 << 20, "videos": 4 << 30, "stereo_videos": 4 << 30, "models": 2 << 30, "datasets": 4 << 30,
              "mine": 4 << 30}
 MAX_BYTES_EXT = {("models", ".json"): 1 << 20,            # model metadata is small: 1 MB
-                 ("photos", ".txt"): 1 << 20, ("stereo", ".txt"): 1 << 20, ("videos", ".txt"): 64 << 20}
+                 ("photos", ".txt"): 1 << 20, ("stereo", ".txt"): 1 << 20, ("videos", ".txt"): 64 << 20, ("stereo_videos", ".txt"): 64 << 20}
 
 # Layout of the data folder (nothing here depends on how the app shows the files):
 #   store/library/<area>/...        approved items, one folder per kind
@@ -53,4 +54,5 @@ SPECIES_VIDEO_EXT = _VIDEOS
 SPECIES_MONO_EXAMPLE = f"{SPECIES_EXAMPLE}/image.jpg"
 SPECIES_STEREO_EXAMPLE = f"{SPECIES_EXAMPLE}/{STEREO_SIDES[0]}/image.jpg"
 SPECIES_VIDEO_EXAMPLE = f"{SPECIES_EXAMPLE}/video.mp4"
+SPECIES_STEREO_VIDEO_EXAMPLE = f"{SPECIES_EXAMPLE}/{STEREO_SIDES[0]}/video.mp4"
 DATASET_EXAMPLE = "my_dataset/images/img_01.jpg"

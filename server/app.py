@@ -159,7 +159,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.db.authenticate(user["username"], str(d.get("old", "")))      # check the old password
                 self.db.update_user(user["id"], password=str(d.get("new", "")))
                 return self._send(200, {"ok": True})
-            if path.startswith(("/api/species", "/api/datasets", "/api/models", "/api/catalog")):
+            if path.startswith(("/api/species", "/api/datasets", "/api/models", "/api/catalog", "/api/labels")):
                 return self._species(path, method, q, user, admin)
             if path.startswith("/api/files"):
                 return self._files(path, method, q, user, admin)
@@ -280,6 +280,15 @@ class Handler(BaseHTTPRequestHandler):
             result = submit_species(self.store, self.db, name, str(d.get("species", "")), kind, admin=admin)
             self.db.log(name, "species.submit", KIND_AREA[kind], result["path"])
             return self._send(201, result)
+        if path == "/api/labels" and method == "POST":                  # an administrator corrects the labels of a photo
+            if not admin:
+                self._drain()
+                raise AppError("Reserved to administrators.", 403)
+            d = self._json()
+            saved = self.store.save_labels(str(d.get("area", "")), str(d.get("path", "")), str(d.get("labels", "")),
+                                           d.get("classes") if isinstance(d.get("classes"), str) else None)
+            self.db.log(name, "labels.edit", str(d.get("area", "")), saved)
+            return self._send(200, {"path": saved})
         if path == "/api/datasets/submit" and method == "POST":
             result = submit_dataset(self.store, self.db, name, str(self._json().get("name", "")), admin = admin)
             self.db.log(name, "dataset.submit", "datasets", result["path"])

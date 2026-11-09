@@ -185,6 +185,7 @@ class SubmissionsWidget(QWidget):
             "photos": (tr("Photo review"), tr("Species"), tr("Photos")),
             "stereo": (tr("Stereo photo review"), tr("Species"), tr("Photos")),
             "video": (tr("Video review"), tr("Species"), tr("Videos")),
+            "stereo_video": (tr("Stereo video review"), tr("Species"), tr("Videos")),
             "dataset": (tr("Dataset review"), tr("Dataset"), tr("Images")),
             "model": (tr("Model review"), tr("Species"), ""),
         }[kind]
@@ -268,7 +269,7 @@ class SubmissionsWidget(QWidget):
             if approve:
                 return tr("Approve the model of {species} sent by {user}?", species=name, user=user)
             return tr("Reject and permanently delete the model of {species} sent by {user}?", species=name, user=user)
-        if self.kind == "video":
+        if self.kind in ("video", "stereo_video"):
             if approve:
                 return tr("Approve the {n} videos of {species} sent by {user}?", n=n, species=name, user=user)
             return tr("Reject and permanently delete the {n} videos of {species} sent by {user}?", n=n, species=name, user=user)
@@ -304,12 +305,14 @@ class ReviewWidget(QWidget):
         self.photos = SubmissionsWidget(session, "photos")
         self.stereo = SubmissionsWidget(session, "stereo")
         self.videos = SubmissionsWidget(session, "video")
+        self.stereo_videos = SubmissionsWidget(session, "stereo_video")
         self.datasets = SubmissionsWidget(session, "dataset")
         self.models = SubmissionsWidget(session, "model")
         self.tabs = QTabWidget()
         self.tabs.addTab(self.photos, tr("Photos"))
         self.tabs.addTab(self.stereo, tr("Stereo photos"))
         self.tabs.addTab(self.videos, tr("Videos"))
+        self.tabs.addTab(self.stereo_videos, tr("Stereo videos"))
         self.tabs.addTab(self.datasets, tr("Datasets"))
         self.tabs.addTab(self.models, tr("YOLO models"))
         lay = QVBoxLayout(self)
@@ -317,7 +320,7 @@ class ReviewWidget(QWidget):
         lay.addWidget(self.tabs)
 
     def refresh(self) -> None:
-        for w in (self.photos, self.stereo, self.videos, self.datasets, self.models):
+        for w in (self.photos, self.stereo, self.videos, self.stereo_videos, self.datasets, self.models):
             w.refresh()
 
 class AdminHome(QWidget):

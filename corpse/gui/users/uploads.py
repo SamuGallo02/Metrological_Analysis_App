@@ -7,7 +7,7 @@ from typing import Any, Callable, List, Optional, Tuple
 from PySide6.QtWidgets import QFileDialog, QInputDialog, QLabel, QMessageBox, QPushButton, QVBoxLayout, QWidget
 
 from common.i18n import tr, tr_error
-from common.params import AREA_STEREO, AREA_VIDEOS, IMAGE_SUFFIXES, SPECIES_EXAMPLE, SPECIES_RE, VIDEO_SUFFIXES
+from common.params import AREA_STEREO, AREA_STEREO_VIDEOS, AREA_VIDEOS, IMAGE_SUFFIXES, SPECIES_EXAMPLE, SPECIES_RE, VIDEO_SUFFIXES
 from common.ui.qt_utils import run_async
 from corpse.functions.users.session import Session
 from corpse.functions.users.upload_plan import has_stereo_folders, plan_media, plan_stereo
@@ -30,7 +30,7 @@ class UploadsWidget(QWidget):
         hint.setWordWrap(True)
         lay.addWidget(hint)
         self.btn_photos = self._big(tr("Upload photos or videos of a species"), self._photos, lay)
-        self.btn_stereo = self._big(tr("Upload stereo photos"), self._stereo, lay)
+        self.btn_stereo = self._big(tr("Upload stereo photos or videos"), self._stereo, lay)
         self.btn_dataset = self._big(tr("Upload a dataset"), self._dataset, lay)
         self.btn_model = self._big(tr("Upload a YOLO model"), self._model, lay)
         self.status = QLabel("")
@@ -97,7 +97,7 @@ class UploadsWidget(QWidget):
             self._send(area, pairs, species, lambda k=kind: self.session.client.submit_species(species, k))
 
     def _stereo(self) -> None:
-        """A folder with an `lx` and an `rx` subfolder holding photos of the same names."""
+        """A folder with an `lx` and an `rx` subfolder holding photos (or videos) of the same names."""
         d = QFileDialog.getExistingDirectory(self, tr("Choose the folder with the lx and rx subfolders"))
         if not d:
             return
@@ -108,8 +108,16 @@ class UploadsWidget(QWidget):
         species = root.name if _is_species(root.name) else self._ask_species()
         if not species:
             return
-        self._send(AREA_STEREO, plan_stereo(root, species), species,
-                   lambda: self.session.client.submit_species(species, "stereo"))
+        try:
+            area, pairs = plan_stereo(root, species)
+        except ValueError:
+            QMessageBox.warning(self, tr("Error"), tr("A stereo folder holds either photos or videos, not both."))
+            return
+        if not pairs:
+            QMessageBox.warning(self, tr("Error"), tr("No photos or videos among the chosen files."))
+            return
+        kind = "stereo_video" if area == AREA_STEREO_VIDEOS else "stereo"
+        self._send(area, pairs, species, lambda: self.session.client.submit_species(species, kind))
 
     def _dataset(self) -> None:
         d = QFileDialog.getExistingDirectory(self, tr("Choose the folder to upload"))

@@ -159,6 +159,14 @@ class TestMoveNumbered(unittest.TestCase):
         self.assertEqual((self.dst / "lx/IMG_0001.jpg").read_bytes(), b"lx-a")
         self.assertEqual((self.dst / "rx/IMG_0002.jpg").read_bytes(), b"rx-b")
 
+    def test_stereo_videos_keep_their_pairs(self):
+        for side in ("lx", "rx"):
+            self.put(f"{side}/b.mp4", side.encode())
+            self.put(f"{side}/a.mp4", side.encode())
+        self.assertEqual(move_numbered(self.src, self.dst, "stereo_video"), 4)
+        self.assertEqual(self.names("lx"), ["VID_0001.mp4", "VID_0002.mp4"])
+        self.assertEqual(self.names("rx"), ["VID_0001.mp4", "VID_0002.mp4"])
+
     def test_videos_are_numbered_vid(self):
         self.put("b.mp4", b"B")
         self.put("a.MOV", b"A")

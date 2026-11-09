@@ -97,3 +97,27 @@ def sidecars(media: PathLike, base: Optional[Path] = None) -> Tuple[Optional[Pat
 
 def class_list(text: str) -> List[str]:
     return [line.strip() for line in text.splitlines() if line.strip()]
+
+
+def read_labels(media: PathLike, base: Optional[Path] = None) -> Tuple[str, List[str], bool]:
+    """What the editor starts from: (label text, class names, whether the label file sits next to the media).
+    Both are empty for a media file without labels."""
+    media = Path(media)
+    label, classes = sidecars(media, base)
+    text = label.read_text(encoding="utf-8", errors="replace") if label else ""
+    names = class_list(classes.read_text(encoding="utf-8", errors="replace")) if classes else []
+    return text, names, label is not None and label == media.with_suffix(".txt")
+
+
+def write_labels(media: PathLike, text: str, classes: Sequence[str], beside: bool, base: Optional[Path] = None) -> Path:
+    """Saves edited labels where they came from: next to the media when that is where they were (they would win over
+    anything saved elsewhere), otherwise in the label store."""
+    media = Path(media)
+    if beside:
+        _write(media.with_suffix(".txt"), text)
+        _write(media.parent / CLASSES_NAME, "".join(c + "\n" for c in classes))
+        return media.with_suffix(".txt")
+    label, names = label_paths(media, base)
+    _write(label, text)
+    _write(names, "".join(c + "\n" for c in classes))
+    return label

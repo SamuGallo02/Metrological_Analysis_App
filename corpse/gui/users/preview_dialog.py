@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (QDialog, QDialogButtonBox, QLabel, QListView, QLi
 
 from common.i18n import tr, tr_error
 from common.model_metadata import fetch_remote_metadata
-from common.params import KIND_AREA, KIND_VIDEO, VIDEO_SUFFIXES
+from common.params import KIND_AREA, KINDS_VIDEO, VIDEO_SUFFIXES
 from common.remote_tree import walk_remote
 from common.ui.qt_utils import run_async
 from corpse.functions.users.preview import list_preview
@@ -38,7 +38,7 @@ class PreviewDialog(QDialog):
         self.thumbs.setResizeMode(QListView.ResizeMode.Adjust)
         self.thumbs.setMovement(QListView.Movement.Static)
         self.thumbs.setIconSize(QSize(THUMB, THUMB))
-        self.thumbs.setHidden(kind in ("model", KIND_VIDEO))     # models and videos have no thumbnails
+        self.thumbs.setHidden(kind == "model" or kind in KINDS_VIDEO)     # models and videos have no thumbnails
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         buttons.rejected.connect(self.reject)
         lay.addWidget(self.info)
@@ -46,7 +46,7 @@ class PreviewDialog(QDialog):
         lay.addWidget(buttons)
         if kind == "model":
             run_async(self, self._load_model, self._show_model, self._failed)
-        elif kind == KIND_VIDEO:
+        elif kind in KINDS_VIDEO:
             run_async(self, self._load_videos, self._show_videos, self._failed)
         else:
             run_async(self, self._load_images, self._show_images, self._failed)

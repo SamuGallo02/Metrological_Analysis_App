@@ -9,16 +9,21 @@ from typing import Dict, List, Set, Tuple
 
 from common.errors import AppError
 
-from .params import (KIND_PHOTOS, KIND_STEREO, KIND_VIDEO, LABEL_SUFFIX, SPECIES_EXAMPLE, SPECIES_IMAGE_EXT,
-                     SPECIES_MONO_EXAMPLE, SPECIES_RE, SPECIES_STEREO_EXAMPLE, SPECIES_VIDEO_EXAMPLE,
-                     SPECIES_VIDEO_EXT, STEREO_SIDES)
+from .params import (KIND_PHOTOS, KIND_STEREO, KIND_STEREO_VIDEO, KIND_VIDEO, KINDS_STEREO, KINDS_VIDEO, LABEL_SUFFIX,
+                     SPECIES_EXAMPLE, SPECIES_IMAGE_EXT, SPECIES_MONO_EXAMPLE, SPECIES_RE, SPECIES_STEREO_EXAMPLE,
+                     SPECIES_STEREO_VIDEO_EXAMPLE, SPECIES_VIDEO_EXAMPLE, SPECIES_VIDEO_EXT, STEREO_SIDES)
 
-PREFIX = {KIND_PHOTOS: "IMG", KIND_STEREO: "IMG", KIND_VIDEO: "VID"}
+PREFIX = {KIND_PHOTOS: "IMG", KIND_STEREO: "IMG", KIND_VIDEO: "VID", KIND_STEREO_VIDEO: "VID"}
+
+
+def _example(kind: str) -> str:
+    return {KIND_STEREO: SPECIES_STEREO_EXAMPLE, KIND_STEREO_VIDEO: SPECIES_STEREO_VIDEO_EXAMPLE,
+            KIND_VIDEO: SPECIES_VIDEO_EXAMPLE}.get(kind, SPECIES_MONO_EXAMPLE)
 CLASSES_FILE = "classes.txt"             # the class names the label numbers refer to: one per line, in the media folder
 
 
 def media_suffixes(kind: str) -> Set[str]:
-    return set(SPECIES_VIDEO_EXT if kind == KIND_VIDEO else SPECIES_IMAGE_EXT)
+    return set(SPECIES_VIDEO_EXT if kind in KINDS_VIDEO else SPECIES_IMAGE_EXT)
 
 
 def label_name(media: str) -> str:
@@ -32,14 +37,12 @@ def check_media_file(kind: str, rel: str) -> Tuple[str, ...]:
     if not parts or not re.fullmatch(SPECIES_RE, parts[0]):
         raise AppError("The first folder must be named after the scientific name (Genus species), "
                        "for example {example}.", 422, example=SPECIES_EXAMPLE)
-    if kind == KIND_STEREO:
+    if kind in KINDS_STEREO:
         ok = len(parts) == 3 and parts[1] in STEREO_SIDES              # <Species>/<lx|rx>/<file>
-        example = SPECIES_STEREO_EXAMPLE
     else:
         ok = len(parts) == 2                                           # <Species>/<file>
-        example = SPECIES_VIDEO_EXAMPLE if kind == KIND_VIDEO else SPECIES_MONO_EXAMPLE
     if not ok:
-        raise AppError("Wrong folder structure: use for example {example}.", 422, example=example)
+        raise AppError("Wrong folder structure: use for example {example}.", 422, example=_example(kind))
     ext = PurePosixPath(parts[-1]).suffix.lower()
     if ext != LABEL_SUFFIX and ext not in media_suffixes(kind):
         raise AppError("Extension {ext} is not allowed in this area.", 415, ext=ext or "(none)")
@@ -76,22 +79,21 @@ def validate_media_dir(folder: Path, kind: str) -> List[AppError]:
     has_sides = any((folder / s).is_dir() for s in STEREO_SIDES)
     loose = _media_names(folder, kind)
 
-    if kind == KIND_STEREO:
+    if kind in KINDS_STEREO:
         if loose:
             problems.append(AppError("Wrong folder structure: use for example {example}.", 422,
-                                     example=SPECIES_STEREO_EXAMPLE))
+                                     example=_example(kind)))
         if not has_sides or not all(sides.values()):
             problems.append(AppError("The stereo folder '{folder}' needs both an rx and an lx subfolder "
-                                     "containing photos.", 422, folder=folder.name))
+                                     "containing photos or videos.", 422, folder=folder.name))
         elif sides["lx"] != sides["rx"]:
-            problems.append(AppError("The lx and rx folders must contain photos with the same names.", 422))
+            problems.append(AppError("The lx and rx folders must contain photos or videos with the same names.", 422))
         groups = [folder / s for s in STEREO_SIDES]
     else:
-        example = SPECIES_VIDEO_EXAMPLE if kind == KIND_VIDEO else SPECIES_MONO_EXAMPLE
         if has_sides:
-            problems.append(AppError("Wrong folder structure: use for example {example}.", 422, example=example))
+            problems.append(AppError("Wrong folder structure: use for example {example}.", 422, example=_example(kind)))
         if not loose:
-            problems.append(AppError("No photos found in '{folder}'.", 422, folder=folder.name))
+            problems.append(AppError("No photos or videos found in '{folder}'.", 422, folder=folder.name))
         groups = [folder]
     for group in groups:                                               # a label must describe a media of its folder
         media_stems = {Path(n).stem for n in _media_names(group, kind)}
@@ -108,7 +110,7 @@ def move_numbered(src: Path, dst: Path, kind: str) -> int:
     held twice. In a stereo upload the same name gets the same number in lx and rx, so the pairs stay together.
     Needs a folder that already passed `validate_media_dir`. On an error the files already moved go back.
     Returns how many media files were moved."""
-    sides = [s for s in STEREO_SIDES if (src / s).is_dir()] if kind == KIND_STEREO else []
+    sides = [s for s in STEREO_SIDES if (src / s).is_dir()] if kind in KINDS_STEREO else []
     sources = [src / s for s in sides] or [src]
     targets = [dst / s for s in sides] or [dst]
     names = sorted(_media_names(sources[0], kind))

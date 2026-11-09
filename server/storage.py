@@ -21,14 +21,14 @@ from typing import Any, Dict, List, Optional, Tuple
 from datetime import date
 
 from common.errors import AppError
-from common.params import AREA_MINE, AREAS, AREAS_MEDIA, KIND_AREA
+from common.params import AREA_MINE, AREA_PHOTOS, AREA_STEREO, AREAS, AREAS_MEDIA, KIND_AREA
 
 KIND_OF_AREA = {area: kind for kind, area in KIND_AREA.items()}
 from common.model_metadata import classes_from_data_yaml
 
 from .params import (EXTENSIONS, LIBRARY_DIR, MAX_BYTES, MAX_BYTES_EXT, MINE_DIR, PENDING, PENDING_DIR_NAME, SPECIES_EXAMPLE,
-                     SPECIES_RE, STORE_DIR, TMP, DATASET_EXAMPLE)
-from .media_tree import check_media_file, count_media, move_numbered, validate_media_dir
+                     SPECIES_RE, STORE_DIR, TMP, DATASET_EXAMPLE, LABEL_SUFFIX, SPECIES_IMAGE_EXT)
+from .media_tree import CLASSES_FILE, check_media_file, count_media, move_numbered, validate_media_dir
 from .dataset_tree import count_dataset_images, validate_dataset_dir
 
 _MAGIC = {".jpg": (b"\xff\xd8\xff",), ".jpeg": (b"\xff\xd8\xff",), ".png": (b"\x89PNG\r\n\x1a\n",),
@@ -154,6 +154,32 @@ class Storage:
         if path != base.resolve() and base.resolve() not in path.parents:
             raise AppError("Invalid path.")
         return path, rel
+
+    # ---- labels of approved photos ----------------------------------------
+    def save_labels(self, area: str, media_rel: str, text: str, classes: Optional[str] = None) -> str:
+        """Replaces the label file (and, if given, the class names) of an APPROVED photo of the library. Returns the
+        path of the label file. Only photos can be edited here (a video would have to be downloaded whole)."""
+        if area not in (AREA_PHOTOS, AREA_STEREO):
+            raise AppError("Only the labels of photos can be edited on the server.", 422)
+        rel = clean_rel(media_rel)
+        if is_quarantine(area, rel):
+            raise AppError("Approve the upload before editing its labels.", 409)
+        media, _ = self.resolve(area, rel, True)
+        if not media.is_file() or media.suffix.lower() not in SPECIES_IMAGE_EXT:
+            raise AppError("Resource not found.", 404)
+        if len(text.encode("utf-8")) > MAX_BYTES_EXT[(area, LABEL_SUFFIX)] or \
+                (classes is not None and len(classes.encode("utf-8")) > 1 << 16):
+            raise AppError("File too large.", 413)
+        self._write_text(media.with_suffix(LABEL_SUFFIX), text)
+        if classes is not None:
+            self._write_text(media.parent / CLASSES_FILE, classes)
+        return str(PurePosixPath(rel).with_suffix(LABEL_SUFFIX))
+
+    @staticmethod
+    def _write_text(path: Path, text: str) -> None:
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text(text, encoding="utf-8", newline="\n")
+        _replace(tmp, path)
 
     # ---- quota -------------------------------------------------------------
     def usage(self, owner: str) -> int:

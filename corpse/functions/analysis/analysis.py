@@ -93,6 +93,8 @@ class StereoConfig:
     """Geometric parameters of the stereo-photogrammetric system."""
     baseline_mm: float = 60.0
     focal_length_px: float = 1400.0
+    detect_right: bool = True      # also detect on the right camera: its labels are saved, and a subject seen by both
+                                   # cameras gets a depth even where the dense stereo matching fails
 
 
 @dataclass
@@ -109,6 +111,8 @@ class ObjectDetection:
     depth_mm: Optional[float] = None
     contact_distance_mm: Optional[float] = None  # real distance (stereo triangulation) to the subject's contact point/base
     track_id: Optional[str] = None  # e.g. "P-1"
+    right_bbox: Optional[Tuple[int, int, int, int]] = None   # the same subject seen by the right camera (if matched)
+    object_disparity_px: Optional[float] = None              # horizontal shift between the two views of the subject
 
 
 @dataclass
@@ -118,7 +122,36 @@ class PairResult:
     right_image: np.ndarray
     left_image: Optional[np.ndarray] = None
     detections: List[ObjectDetection] = field(default_factory=list)
+    right_detections: List[ObjectDetection] = field(default_factory=list)   # what the right camera sees (for its labels)
     overlay_image: Optional[np.ndarray] = None
+
+
+def match_stereo_detections(left: List[ObjectDetection], right: List[ObjectDetection]) -> List[Tuple[int, int]]:
+    """Pairs each subject of the left view with the same subject in the right view: same class, a positive
+    disparity (a subject is further left in the right image), about the same height on the image (the cameras are on
+    the same horizontal line) and about the same size. Each subject is used once; the best fits are chosen first.
+    Returns [(index in left, index in right)]."""
+    def centre(box):
+        return (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
+
+    candidates = []
+    for i, a in enumerate(left):
+        (ax, ay), aw, ah = centre(a.bbox_xyxy), a.bbox_xyxy[2] - a.bbox_xyxy[0], a.bbox_xyxy[3] - a.bbox_xyxy[1]
+        for j, b in enumerate(right):
+            if a.label.strip().lower() != b.label.strip().lower():
+                continue
+            (bx, by), bw, bh = centre(b.bbox_xyxy), b.bbox_xyxy[2] - b.bbox_xyxy[0], b.bbox_xyxy[3] - b.bbox_xyxy[1]
+            if ax - bx <= 0 or abs(ay - by) > max(0.5 * ah, 10) or not (0.5 <= (bw + 1) / (aw + 1) <= 2.0) \
+                    or not (0.5 <= (bh + 1) / (ah + 1) <= 2.0):
+                continue
+            candidates.append((abs(ay - by) + abs(bw - aw) + abs(bh - ah), i, j))
+    pairs, used_l, used_r = [], set(), set()
+    for _cost, i, j in sorted(candidates):
+        if i not in used_l and j not in used_r:
+            pairs.append((i, j))
+            used_l.add(i)
+            used_r.add(j)
+    return sorted(pairs)
 
 
 class ObjectAnalyzer:
@@ -239,7 +272,7 @@ class ObjectAnalyzer:
         read from disk) and by the stereo-video analysis (frames read from two
         synchronized VideoCapture objects) — so the measurement logic is just ONE,
         shared by both paths instead of being duplicated.
-        Runs detection on the LEFT CAMERA (lx).
+        Measures on the LEFT CAMERA (lx); the right camera (rx) is also searched for the same subjects.
         """
         result = PairResult(timestamp=timestamp, right_image=right_img, left_image=left_img)
 
@@ -251,9 +284,19 @@ class ObjectAnalyzer:
         predictions = self.model.predict(left_img, device=self.device, verbose=False)[0]
         target_label_lower = target_label.strip().lower() if target_label else None
 
-        for detection in _extract_raw_detections(predictions, timestamp):
-            if target_label_lower is not None and detection.label.strip().lower() != target_label_lower:
-                continue
+        def wanted(det: ObjectDetection) -> bool:
+            return target_label_lower is None or det.label.strip().lower() == target_label_lower
+
+        left_dets = [d for d in _extract_raw_detections(predictions, timestamp) if wanted(d)]
+        if self.stereo_config.detect_right:
+            right_dets = [d for d in self._detect_other_view(right_img, timestamp) if wanted(d)]
+            result.right_detections = right_dets
+            for i, j in match_stereo_detections(left_dets, right_dets):
+                a, b = left_dets[i], right_dets[j]
+                a.right_bbox = b.bbox_xyxy
+                a.object_disparity_px = (a.bbox_xyxy[0] + a.bbox_xyxy[2]) / 2 - (b.bbox_xyxy[0] + b.bbox_xyxy[2]) / 2
+
+        for detection in left_dets:
 
             bbox = detection.bbox_xyxy
             _, (major_px, minor_px), _ = detection.ellipse
@@ -261,6 +304,10 @@ class ObjectAnalyzer:
             depth_mm = self._depth_from_disparity(
                 disparity_map, (bbox[0] + bbox[2]) // 2, (bbox[1] + bbox[3]) // 2
             )
+            if depth_mm is None and detection.object_disparity_px:
+                # The dense matching found nothing here, but both cameras see the subject: triangulate on it.
+                depth_mm = (self.stereo_config.baseline_mm * self.stereo_config.focal_length_px
+                            / detection.object_disparity_px) if self.stereo_config.baseline_mm > 0 else None
             scale = self._get_scale_factor(depth_mm)
             detection.length_mm = major_px * scale if scale is not None else None
             detection.width_mm = minor_px * scale if scale is not None else None
@@ -279,6 +326,10 @@ class ObjectAnalyzer:
             result.detections.append(detection)
 
         return result
+
+    def _detect_other_view(self, image: np.ndarray, timestamp: str) -> List[ObjectDetection]:
+        predictions = self.model.predict(image, device=self.device, verbose=False)[0]
+        return _extract_raw_detections(predictions, timestamp)
 
     def detect_in_image(self, image: np.ndarray, timestamp: str) -> List[ObjectDetection]:
         """

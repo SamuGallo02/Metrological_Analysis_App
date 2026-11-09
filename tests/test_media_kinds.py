@@ -47,6 +47,47 @@ class MediaKindsTest(unittest.TestCase):
         self.assertEqual([i for i in u.catalog("photos") if i["uploader"] == "kst1"], [])
         self.assertEqual(sorted(e["name"] for e in u.list("stereo", mine[0]["path"])), ["lx", "rx"])
 
+    def test_stereo_videos_have_their_own_area(self):
+        u, a = self.user("ksv1"), self.admin()
+        for side in ("lx", "rx"):
+            self.put(u, "stereo_videos", f"{SP}/{side}/dive.mp4", b"v" * 40)
+        self.put(u, "stereo_videos", f"{SP}/lx/dive.txt", b"3 0 0.5 0.5 0.2 0.2\n")
+        res = u.submit_species(SP, "stereo_video")
+        self.assertEqual((res["kind"], res["pending"]), ("stereo_video", True))
+        a.approve_submission(res["id"])
+        path = [i for i in u.catalog("stereo_video") if i["uploader"] == "ksv1"][0]["path"]
+        self.assertEqual(sorted(e["name"] for e in u.list("stereo_videos", path)), ["lx", "rx"])
+        self.assertEqual(sorted(e["name"] for e in u.list("stereo_videos", f"{path}/lx")), ["VID_0001.mp4", "VID_0001.txt"])
+        self.assertEqual([i for i in u.catalog("stereo") if i["uploader"] == "ksv1"], [])
+        with self.assertRaises(Exception):                                   # photos do not go in the video area
+            self.put(u, "stereo_videos", f"{SP}/lx/p.png", png_bytes())
+
+    def test_an_admin_corrects_the_labels_of_an_approved_photo(self):
+        u, a = self.user("kel1"), self.admin()
+        self.put(u, "photos", f"{SP}/p.png", png_bytes())
+        self.put(u, "photos", f"{SP}/p.txt", b"0 0.5 0.5 0.2 0.2\n")
+        res = u.submit_species(SP)
+        with self.assertRaises(ApiError) as pending:                      # still waiting: nothing to edit yet
+            a.save_labels("photos", f"{res['path']}/IMG_0001.png", "0 .1 .1 .1 .1\n")
+        self.assertEqual(pending.exception.status, 409)
+        a.approve_submission(res["id"])
+        path = [i for i in u.catalog("photos") if i["uploader"] == "kel1"][0]["path"]
+        saved = a.save_labels("photos", f"{path}/IMG_0001.png", "1 0.3 0.3 0.1 0.1\n", "crab\nfish\n")
+        self.assertEqual(saved["path"], f"{path}/IMG_0001.txt")
+        self.assertEqual(u.read_bytes("photos", f"{path}/IMG_0001.txt"), b"1 0.3 0.3 0.1 0.1\n")
+        self.assertEqual(u.read_bytes("photos", f"{path}/classes.txt"), b"crab\nfish\n")
+
+    def test_only_admins_edit_labels_and_only_of_photos(self):
+        u, a = self.user("kel2"), self.admin()
+        with self.assertRaises(ApiError) as e:
+            u.save_labels("photos", f"{SP}/x/IMG_0001.png", "0 .1 .1 .1 .1\n")
+        self.assertEqual(e.exception.status, 403)
+        with self.assertRaises(ApiError) as e:
+            a.save_labels("videos", f"{SP}/x/VID_0001.mp4", "0 0 .1 .1 .1 .1\n")
+        self.assertEqual(e.exception.status, 422)
+        with self.assertRaises(ApiError):                                  # outside the library
+            a.save_labels("photos", "../../server.db", "x")
+
     def test_videos_and_their_labels(self):
         u, a = self.user("kvi1"), self.admin()
         self.put(u, "videos", f"{SP}/dive.mp4", b"v" * 40)

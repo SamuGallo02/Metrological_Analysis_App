@@ -358,7 +358,7 @@ class GuiTest(unittest.TestCase):
         s = self._user_session("sf1", "sfuser1")
         w = ui.ServerFoldersWidget(s)
         self.assertNotIsInstance(w, QDialog)                              # the home shows it inside its own window
-        self.assertEqual([w.tabs.tabText(i) for i in range(w.tabs.count())], ["Photos", "Stereo photos", "Videos", "YOLO models", "Uploads"])
+        self.assertEqual([w.tabs.tabText(i) for i in range(w.tabs.count())], ["Photos", "Stereo photos", "Videos", "Stereo videos", "YOLO models", "Uploads"])
         settle(w)
 
     def test_preview_shows_the_photos_of_a_submission(self):
@@ -689,17 +689,17 @@ class GuiTest(unittest.TestCase):
         s = self.sess("sk1"); d = self.login_dialog(s, "admin", pw="adminpass1"); pump(lambda: d.result() == 1)
         home = ui.AdminHome(s, lambda: None, lambda: None)
         self.assertTrue(settle(home))
-        self.assertEqual(home.db.areas, ("photos", "stereo", "videos", "models", "datasets"))
-        self.assertEqual([home.db.tabs.tabText(i) for i in range(5)],
-                         ["Photos", "Stereo photos", "Videos", "YOLO models", "Datasets"])
+        self.assertEqual(home.db.areas, ("photos", "stereo", "videos", "stereo_videos", "models", "datasets"))
+        self.assertEqual([home.db.tabs.tabText(i) for i in range(6)],
+                         ["Photos", "Stereo photos", "Videos", "Stereo videos", "YOLO models", "Datasets"])
 
     def test_skeleton_admin_review_has_photos_datasets_and_models(self):
         i18n.set_language("en")
         s = self.sess("sk2"); d = self.login_dialog(s, "admin", pw="adminpass1"); pump(lambda: d.result() == 1)
         home = ui.AdminHome(s, lambda: None, lambda: None)
         self.assertTrue(settle(home))
-        self.assertEqual([home.review.tabs.tabText(i) for i in range(5)],
-                         ["Photos", "Stereo photos", "Videos", "Datasets", "YOLO models"])
+        self.assertEqual([home.review.tabs.tabText(i) for i in range(6)],
+                         ["Photos", "Stereo photos", "Videos", "Stereo videos", "Datasets", "YOLO models"])
         self.assertEqual(home.tabs.tabText(home.tabs.indexOf(home.review)), "Review")
 
     def test_skeleton_user_sees_photos_and_models_to_download_and_uploads(self):
@@ -707,9 +707,9 @@ class GuiTest(unittest.TestCase):
         s = self.sess("sk3"); d = self.login_dialog(s, "skeleton1", register=True); pump(lambda: d.result() == 1)
         dlg = ui.ServerFoldersWidget(s)
         self.assertTrue(settle(dlg))
-        self.assertEqual([dlg.tabs.tabText(i) for i in range(5)],
-                         ["Photos", "Stereo photos", "Videos", "YOLO models", "Uploads"])
-        for catalog in (dlg.photos, dlg.stereo, dlg.videos, dlg.models):                                # only download: no way to change anything
+        self.assertEqual([dlg.tabs.tabText(i) for i in range(6)],
+                         ["Photos", "Stereo photos", "Videos", "Stereo videos", "YOLO models", "Uploads"])
+        for catalog in (dlg.photos, dlg.stereo, dlg.videos, dlg.stereo_videos, dlg.models):                                # only download: no way to change anything
             self.assertTrue(catalog.btn_download.isVisibleTo(catalog))
             for name in ("btn_up_files", "btn_up_dir", "btn_mkdir", "btn_rename", "btn_delete", "btn_approve"):
                 self.assertFalse(hasattr(catalog, name))

@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QFileDialog, QHBoxLayout, QLab
                                QPushButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from common.i18n import tr, tr_error
-from common.params import KIND_AREA, KIND_VIDEO, VIDEO_SUFFIXES
+from common.params import KIND_AREA, KINDS_VIDEO, VIDEO_SUFFIXES
 from common.remote_tree import walk_remote
 from common.ui.qt_utils import run_async, fit_columns
 
@@ -80,7 +80,7 @@ class CatalogWidget(QWidget):
         top.addWidget(self.filter, 1)
         lay.addLayout(top)
         self.tree = QTreeWidget()
-        self.tree.setHeaderLabels([tr("Species"), tr("Videos") if kind == KIND_VIDEO else tr("Photos"), tr("Size"),
+        self.tree.setHeaderLabels([tr("Species"), tr("Videos") if kind in KINDS_VIDEO else tr("Photos"), tr("Size"),
                                    tr("Uploaded by"), tr("Approved by"), tr("Date"), tr("Folder"), tr("Labels")])
         fit_columns(self.tree)
         self.tree.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
@@ -159,7 +159,7 @@ class CatalogWidget(QWidget):
                 name = PurePosixPath(b["path"]).name
                 out.append({"name": name, "rel": b["path"], "size": sizes.get(b["path"], 0), "batch": b, "folder": ""})
             return out
-        wanted = VIDEO_SUFFIXES if self.kind == KIND_VIDEO else IMAGE_SUFFIXES
+        wanted = VIDEO_SUFFIXES if self.kind in KINDS_VIDEO else IMAGE_SUFFIXES
         for b in sorted(batches, key=lambda b: (b["date"], b["path"])):
             base = PurePosixPath(b["path"])
             files = walk_remote(client, area, b["path"])
@@ -231,10 +231,11 @@ class CatalogWidget(QWidget):
         rec = item.data(0, RECORD)
         if rec is None or not self.session.online:
             return
-        if self.kind == KIND_VIDEO:
+        if self.kind in KINDS_VIDEO:
             self.status.setText(tr("Download the video to watch it."))
         elif self.kind != "model":
-            ImageViewerDialog(self.session.client, self.area, rec["rel"], self, labels_area="datasets").exec()
+            ImageViewerDialog(self.session.client, self.area, rec["rel"], self, labels_area="datasets",
+                              editable=self.session.is_admin and self.kind in ("photos", "stereo")).exec()
         else:
             PreviewDialog(self.session.client, "model", {"path": rec["rel"]}, self).exec()
 

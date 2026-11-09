@@ -65,10 +65,25 @@ class UploadPlanTest(unittest.TestCase):
         self.touch("s/lx/1.txt")
         self.touch("s/lx/notes.md")
         self.assertTrue(has_stereo_folders(self.root / "s"))
-        remote = [r for _l, r in plan_stereo(self.root / "s", "Pinna nobilis")]
+        area, pairs = plan_stereo(self.root / "s", "Pinna nobilis")
+        self.assertEqual(area, "stereo")
+        remote = [r for _l, r in pairs]
         self.assertEqual(remote, ["Pinna nobilis/lx/1.jpg", "Pinna nobilis/lx/1.txt", "Pinna nobilis/lx/2.jpg",
                                   "Pinna nobilis/rx/1.jpg", "Pinna nobilis/rx/2.jpg"])
         self.assertFalse(has_stereo_folders(self.root))
+
+    def test_stereo_videos(self):
+        for side in ("lx", "rx"):
+            self.touch(f"v/{side}/dive.mp4")
+        area, pairs = plan_stereo(self.root / "v", "Pinna nobilis")
+        self.assertEqual(area, "stereo_videos")
+        self.assertEqual([r for _l, r in pairs], ["Pinna nobilis/lx/dive.mp4", "Pinna nobilis/rx/dive.mp4"])
+
+    def test_a_stereo_folder_cannot_mix_photos_and_videos(self):
+        self.touch("m/lx/a.jpg")
+        self.touch("m/rx/a.mp4")
+        with self.assertRaises(ValueError):
+            plan_stereo(self.root / "m", "Pinna nobilis")
 
     def test_kind_of(self):
         self.assertEqual([kind_of(Path(n)) for n in ("a.JPG", "b.mov", "c.txt")], ["photos", "videos", None])

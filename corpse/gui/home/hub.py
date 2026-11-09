@@ -48,6 +48,7 @@ class AnalysisHub(QWidget):
     `on_home`: callback of the "Back to home" button."""
 
     requested = Signal(str)
+    labels_requested = Signal()              # the user wants to correct the labels of a photo or video
 
     def __init__(self, on_home: Optional[Callable[[], None]] = None, demo: Optional[QWidget] = None,
                  parent: Optional[QWidget] = None):
@@ -61,6 +62,10 @@ class AnalysisHub(QWidget):
             back.clicked.connect(on_home)
             top.addWidget(back)
         top.addStretch(1)
+        self.btn_labels = QPushButton(tr("Edit labels..."))
+        self.btn_labels.setToolTip(tr("Correct the labels found by the model on a photo or video of this computer."))
+        self.btn_labels.clicked.connect(self.labels_requested.emit)
+        top.addWidget(self.btn_labels)
         self.demo = demo
         if demo is not None:
             top.addWidget(demo)                       # the demo lives only here, at the top

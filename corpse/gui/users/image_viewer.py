@@ -6,10 +6,13 @@ from typing import Any, List, Optional, Tuple
 
 from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QImage, QPainter, QPen, QPixmap, QPolygonF
-from PySide6.QtWidgets import QDialog, QDialogButtonBox, QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (QDialog, QDialogButtonBox, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QVBoxLayout,
+                               QWidget)
 
 from common.i18n import tr, tr_error
+from common.label_shapes import format_labels
 from common.remote_tree import walk_remote
+from common.ui.label_editor import ImageSource, LabelEditorDialog
 from common.ui.qt_utils import run_async
 from corpse.functions.users.yolo_labels import (Shape, class_label, class_names, label_candidates, names_candidates,
                                                 parse_labels)
@@ -79,11 +82,14 @@ class ImageViewerDialog(QDialog):
     """`rel` is the path of the photo in `area` of the server. Everything is read into memory (nothing is saved)."""
 
     def __init__(self, client: Any, area: str, rel: str, parent: Optional[QWidget] = None,
-                 labels_area: Optional[str] = None):
+                 labels_area: Optional[str] = None, editable: bool = False):
         """`labels_area`: another area of the server (the datasets) where the labels of this photo may be kept:
         it is searched, under the same species folder, for a label file with the same name as the photo."""
         super().__init__(parent)
         self.client, self.area, self.rel, self.labels_area = client, area, rel, labels_area
+        self.editable = editable                                  # administrators can correct the labels
+        self.shapes: List[Shape] = []
+        self.names: List[str] = []
         self.original: Optional[QImage] = None
         self.labelled: Optional[QImage] = None
         self.setWindowTitle(rel)
@@ -100,6 +106,11 @@ class ImageViewerDialog(QDialog):
         lay.addLayout(row, 1)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         buttons.rejected.connect(self.reject)
+        self.btn_edit = QPushButton(tr("Edit labels..."))
+        self.btn_edit.setVisible(editable)
+        self.btn_edit.setEnabled(False)                          # until the photo is loaded
+        self.btn_edit.clicked.connect(self._edit)
+        buttons.addButton(self.btn_edit, QDialogButtonBox.ButtonRole.ActionRole)
         lay.addWidget(buttons)
         run_async(self, self._load, self._show, lambda e: self.note.setText(tr("Error: {msg}", msg=tr_error(e))))
 
@@ -150,6 +161,8 @@ class ImageViewerDialog(QDialog):
     def _show(self, result: Tuple[QImage, List[Shape], List[str]]) -> None:
         image, shapes, names = result
         self.original = image
+        self.shapes, self.names = shapes, names
+        self.btn_edit.setEnabled(True)
         self.left.set_image(image)
         if shapes:
             self.labelled = draw_labels(image, shapes, names)
@@ -157,4 +170,20 @@ class ImageViewerDialog(QDialog):
             self.right.setVisible(True)
             self.note.setText(tr("{n} labelled objects", n=len(shapes)))
         else:
+            self.labelled = None
+            self.right.setVisible(False)
             self.note.setText(tr("No labels found for this photo."))
+
+    def _edit(self) -> None:
+        """Opens the label editor; what is saved replaces the labels of this photo on the server."""
+        if self.original is None:
+            return
+
+        def save(result, classes) -> None:
+            self.client.save_labels(self.area, self.rel, format_labels(result.get(0, [])),
+                                    "".join(c + "\n" for c in classes))
+
+        dialog = LabelEditorDialog(ImageSource(self.original), {0: self.shapes}, self.names, save, self.rel, self)
+        dialog.exec()
+        self.note.setText(tr("Loading..."))                     # shows the saved labels
+        run_async(self, self._load, self._show, lambda e: self.note.setText(tr("Error: {msg}", msg=tr_error(e))))

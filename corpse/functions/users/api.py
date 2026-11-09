@@ -165,7 +165,7 @@ class ApiClient:
     
      # ---- photos, stereo photos and videos of a species ------------------------------------------------
     def submit_species(self, species: str, kind: str = "photos") -> Dict[str, Any]:
-        """Sends what was uploaded for a species to review; `kind` is "photos", "stereo" or "video"."""
+        """Sends what was uploaded for a species to review; `kind` is "photos", "stereo", "video" or "stereo_video"."""
         return self._request("POST", "/api/species/submit", body={"species": species, "kind": kind})
 
     def species_submissions(self, status: Optional[str] = None, kind: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -178,6 +178,13 @@ class ApiClient:
     def reject_submission(self, sid: int) -> Dict[str, Any]:
         return self._request("POST", f"/api/species/submissions/{sid}/reject")
     
+    def save_labels(self, area: str, media: str, labels: str, classes: Optional[str] = None) -> Dict[str, Any]:
+        """Administrators: replaces the labels (YOLO text) of an approved photo, and the class names if given."""
+        body = {"area": area, "path": media, "labels": labels}
+        if classes is not None:
+            body["classes"] = classes
+        return self._request("POST", "/api/labels", body=body)
+
     def submit_dataset(self, name: str) -> Dict[str, Any]:
         return self._request("POST", "/api/datasets/submit", body={"name": name})
 
@@ -185,7 +192,7 @@ class ApiClient:
         return self._request("POST", "/api/models/submit", body={"species": species, "file": file})
 
     def catalog(self, kind: str) -> List[Dict[str, Any]]:
-        """The approved items of a kind ("photos", "stereo", "video", "model", "dataset") with who uploaded,
+        """The approved items of a kind ("photos", "stereo", "video", "stereo_video", "model", "dataset") with who uploaded,
         who approved and the date."""
         return self._request("GET", "/api/catalog", {"kind": kind})["items"]
 
