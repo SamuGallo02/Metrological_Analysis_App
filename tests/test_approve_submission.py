@@ -7,7 +7,6 @@ from common.errors import AppError
 from tests.util import upload_as_user
 from server.db import Database
 from server.storage import Storage
-from server.params import AREA_DIRS
 from server.submissions import approve_submission, reject_submission, submit_species
 
 
@@ -35,6 +34,17 @@ class ReviewSubmissionTest(unittest.TestCase):
         self.assertEqual(row["reviewed_by"], "admin")
         self.assertEqual(row["path"], f"Pinna nobilis/{result['folder']}")
 
+    def test_approval_survives_a_locked_quarantine_folder(self):
+        """On Windows a folder can stay locked for a while: the photos are published, so the approval must not fail."""
+        from unittest import mock
+        import server.storage as st
+        sid = self._submit()
+        with mock.patch.object(st, "_rmtree", side_effect=PermissionError("locked")), \
+                mock.patch.object(st.time, "sleep"):
+            result = approve_submission(self.store, self.db, sid, "admin")
+        self.assertEqual(result["photos"], 1)
+        self.assertEqual(self.db.get_submission(sid)["status"], "approved")
+
     def test_cannot_approve_twice(self):
         sid = self._submit()
         approve_submission(self.store, self.db, sid, "admin")
@@ -47,7 +57,9 @@ class ReviewSubmissionTest(unittest.TestCase):
 
     def test_failed_approval_leaves_the_submission_pending(self):
         sid = self._submit()
-        self._upload("Pinna nobilis/lx/b.jpg")                      # dopo l'invio mescola mono e stereo
+        folder = self.store.pending_media_dir("francy", "Pinna nobilis", "photos")
+        (folder / "lx").mkdir()                                     # after the upload it mixes photos and stereo
+        (folder / "lx" / "b.jpg").write_bytes(b"x")
         with self.assertRaises(AppError):
             approve_submission(self.store, self.db, sid, "admin")
         self.assertEqual(self.db.get_submission(sid)["status"], "pending")
@@ -58,8 +70,8 @@ class ReviewSubmissionTest(unittest.TestCase):
         self.assertEqual(result["photos"], 1)
         self.assertEqual(self.db.get_submission(sid)["status"], "rejected")
         with self.assertRaises(AppError):                                # le foto non ci sono più
-            self.store.pending_species_dir("francy", "Pinna nobilis")
-        species_dir = self.store.root / AREA_DIRS["species"] / "Pinna nobilis"
+            self.store.pending_media_dir("francy", "Pinna nobilis", "photos")
+        species_dir = self.store.library("photos") / "Pinna nobilis"
         self.assertFalse(species_dir.exists())                           # e nulla è entrato nel dataset
 
     def test_cannot_reject_an_approved_submission(self):

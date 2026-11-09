@@ -49,7 +49,7 @@ def repair(root: Path, problems: List[manifest.Problem], record: dict, progress:
 
     def one(rel: str) -> Optional[str]:
         try:
-            data = source.fetch_file(sha, rel)
+            data = source.current().fetch_file(sha, rel)
             if source.sha256_bytes(data) != files[rel]["sha256"]:
                 return None
             write_file(root, rel, data)
@@ -68,7 +68,7 @@ def repair(root: Path, problems: List[manifest.Problem], record: dict, progress:
         _say(progress, 88, "archive")
         tmpdir = Path(tempfile.mkdtemp(prefix="am_repair_"))
         try:
-            z = source.open_zip(source.download_archive(sha or config.BRANCH, tmpdir / "src.zip"))
+            z = source.open_zip(source.current().download_archive(sha or config.BRANCH, tmpdir / "src.zip"))
             members = source.zip_files(z)
             for rel in list(failed):
                 info = members.get(rel)
@@ -97,7 +97,7 @@ def update(root: Path, version: Version, os_name: str, progress: Progress = None
     tmpdir = Path(tempfile.mkdtemp(prefix="am_update_"))
     try:
         _say(progress, 2, "download")
-        z = source.open_zip(source.download_archive(
+        z = source.open_zip(source.current().download_archive(
             version.sha, tmpdir / "src.zip", lambda d, t: _say(progress, 2 + 40 * d / t if t else 20, "download")))
         sha = source.zip_commit(z) or version.sha
         members = {r: i for r, i in source.zip_files(z).items() if config.wanted(r, os_name)}

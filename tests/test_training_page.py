@@ -26,8 +26,7 @@ class TrainingPageSessionTest(unittest.TestCase):
         # la pagina non deve toccare le cartelle vere, né controllare rete e hardware
         for name, value in (("TDATASET_DIR", tmp / "datasets"), ("MODELS_DIR", tmp / "models"),
                             ("check_internet_connection", lambda: False),
-                            ("get_hardware_info", lambda: ("cpu", "CPU di prova")),
-                            ("HardwareAccelerationWidget", lambda parent=None: QWidget())):
+                            ("get_hardware_info", lambda: ("cpu", "CPU di prova"))):
             patcher = mock.patch.object(training_page, name, value)
             patcher.start()
             self.addCleanup(patcher.stop)

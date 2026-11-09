@@ -1,4 +1,4 @@
-"""Server folders with safe paths (each area is a folder named as in AREA_DIRS).
+"""Server folders with safe paths: one folder per area in store/library, uploads waiting in store/pending.
 
 Common areas (photos, models, datasets):
   * "user"   : reads and downloads anywhere (except the model quarantine), CREATES new files and folders but does not
@@ -13,6 +13,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import sys
 import threading
 import time
 from pathlib import Path, PurePosixPath
@@ -20,11 +21,14 @@ from typing import Any, Dict, List, Optional, Tuple
 from datetime import date
 
 from common.errors import AppError
-from common.params import AREA_MINE, AREA_SPECIES, AREAS, AREAS_SHARED
+from common.params import AREA_MINE, AREAS, AREAS_MEDIA, KIND_AREA
+
+KIND_OF_AREA = {area: kind for kind, area in KIND_AREA.items()}
 from common.model_metadata import classes_from_data_yaml
 
-from .params import AREA_DIRS, EXTENSIONS, MAX_BYTES, PENDING, SPECIES_EXAMPLE, SPECIES_RE, TMP, MAX_BYTES_EXT, DATASET_EXAMPLE
-from .species_tree import check_species_file, copy_numbered, count_photos, validate_species_dir
+from .params import (EXTENSIONS, LIBRARY_DIR, MAX_BYTES, MAX_BYTES_EXT, MINE_DIR, PENDING, PENDING_DIR_NAME, SPECIES_EXAMPLE,
+                     SPECIES_RE, STORE_DIR, TMP, DATASET_EXAMPLE)
+from .media_tree import check_media_file, count_media, move_numbered, validate_media_dir
 from .dataset_tree import count_dataset_images, validate_dataset_dir
 
 _MAGIC = {".jpg": (b"\xff\xd8\xff",), ".jpeg": (b"\xff\xd8\xff",), ".png": (b"\x89PNG\r\n\x1a\n",),
@@ -32,12 +36,12 @@ _MAGIC = {".jpg": (b"\xff\xd8\xff",), ".jpeg": (b"\xff\xd8\xff",), ".png": (b"\x
 _WIN_RESERVED = {"con", "prn", "aux", "nul"} | {f"com{i}" for i in range(1, 10)} | {f"lpt{i}" for i in range(1, 10)}
 _lock = threading.Lock()
 
-QUARANTINE_AREAS = ("models", AREA_SPECIES, "datasets")     # aree dove gli upload degli utenti passano da _pending
-ADMIN_ONLY_AREAS = ()                                       # nessuna area è vietata in lettura: restano chiuse solo le quarantene                           # aree che gli utenti normali non possono né leggere né sfogliare
+QUARANTINE_AREAS = AREAS_MEDIA + ("models", "datasets")     # every shared area: uploads wait in store/pending/<area>
+ADMIN_ONLY_AREAS = ()                                       # no area is closed for reading: only the pending uploads are
 
 
 def is_quarantine(area: str, rel: str) -> bool:
-    """True se rel è la cartella di quarantena (o sta dentro) di un'area che ne ha una."""
+    """True if rel is the pending folder of an area (or inside it)."""
     return area in QUARANTINE_AREAS and (rel == PENDING or rel.startswith(PENDING + "/"))
 
 
@@ -56,38 +60,97 @@ def clean_rel(rel: str) -> str:
     return "/".join(parts)
 
 
+
+def _retry(action, attempts: int = 5):
+    """Runs `action`, trying again a few times when the file system answers "permission denied" / "in use".
+    On Windows (and on folders synchronised by OneDrive or watched by an antivirus) a file can be locked for a
+    moment right after it was written."""
+    for n in range(attempts):
+        try:
+            return action()
+        except PermissionError:
+            if n == attempts - 1:
+                raise
+            time.sleep(0.2 * (n + 1))
+
+
+def _replace(src: Path, dst: Path) -> None:
+    _retry(lambda: os.replace(src, dst))
+
+
+def _unlock(func, path, _exc) -> None:
+    """rmtree callback: read-only files (common on Windows) are made writable and removed again."""
+    try:
+        os.chmod(path, 0o700)
+        func(path)
+    except OSError:
+        pass
+
+
+def _rmtree(path: Path) -> None:
+    if sys.version_info >= (3, 12):
+        shutil.rmtree(path, onexc=_unlock)
+    else:
+        shutil.rmtree(path, onerror=_unlock)
+
+
+def _remove_tree(path: Path, strict: bool = True) -> None:
+    """Deletes a folder, with retries. With strict=False a folder that cannot be removed is left behind instead of
+    raising: used for the leftovers of an operation that already succeeded."""
+    try:
+        _retry(lambda: _rmtree(path))
+    except OSError:
+        if strict:
+            raise
+
 class Storage:
+    """`root` is the data folder; everything this class manages is inside `root/store`."""
+
     def __init__(self, root: Path):
-        self.root = Path(root).resolve()
-        for a in AREAS:
-            (self.root / AREA_DIRS[a]).mkdir(parents=True, exist_ok=True)
+        self.data_dir = Path(root).resolve()
+        self.root = self.data_dir / STORE_DIR
+        for a in QUARANTINE_AREAS:
+            self.library(a).mkdir(parents=True, exist_ok=True)
+            self.pending_root(a).mkdir(parents=True, exist_ok=True)
+        (self.root / MINE_DIR).mkdir(parents=True, exist_ok=True)
 
     # ---- paths ----------------------------------------------------------
+    def library(self, area: str) -> Path:
+        """Folder of the approved items of an area."""
+        return self.root / LIBRARY_DIR / area
+
+    def pending_root(self, area: str) -> Path:
+        """Folder of the uploads of an area that wait for review (one subfolder per user)."""
+        return self.root / PENDING_DIR_NAME / area
+
     def base(self, area: str, owner: str) -> Path:
         if area not in AREAS:
             raise AppError("Unknown area.", 404)
         if area == AREA_MINE:
             if not owner:
                 raise AppError("Unknown area.", 404)
-            return self.root / AREA_DIRS[AREA_MINE] / owner
-        return self.root / AREA_DIRS[area]
+            return self.root / MINE_DIR / owner
+        return self.library(area)
 
-    def pending_species_dir(self, username: str, species: str) -> Path:
-        """Cartella in quarantena di un utente per una specie; 404 se non esiste."""
-        if re.fullmatch(SPECIES_RE, species or ""):
-            folder = self.root / AREA_DIRS[AREA_SPECIES] / PENDING / username / species
+    def pending_media_dir(self, username: str, species: str, kind: str) -> Path:
+        """Folder of a user's upload for a species waiting for review; 404 if there is none."""
+        if re.fullmatch(SPECIES_RE, species or "") and kind in KIND_AREA:
+            folder = self.pending_root(KIND_AREA[kind]) / username / species
             if folder.is_dir():
                 return folder
         raise AppError("No pending photos for this species.", 404)
 
     def resolve(self, area: str, rel: str, admin: bool, owner: str = "") -> Tuple[Path, str]:
         rel = clean_rel(rel)
-        base = self.base(area, owner)
         if not admin and (area in ADMIN_ONLY_AREAS or is_quarantine(area, rel)):
             raise AppError("Area reserved to administrators.", 403)
+        if is_quarantine(area, rel):                          # "_pending/..." is the waiting uploads of this area
+            base, sub = self.pending_root(area), rel[len(PENDING) + 1:]
+        else:
+            base, sub = self.base(area, owner), rel
         if area == AREA_MINE:
             base.mkdir(parents=True, exist_ok=True)
-        path = (base / rel).resolve() if rel else base.resolve()
+        path = (base / sub).resolve() if sub else base.resolve()
         if path != base.resolve() and base.resolve() not in path.parents:
             raise AppError("Invalid path.")
         return path, rel
@@ -114,6 +177,8 @@ class Storage:
             st = p.stat()
             entries.append({"name": p.name, "type": "dir" if p.is_dir() else "file",
                             "size": 0 if p.is_dir() else st.st_size, "mtime": st.st_mtime})
+        if admin and not rel and area in QUARANTINE_AREAS and self.pending_root(area).is_dir() and any(self.pending_root(area).iterdir()):
+            entries.insert(0, {"name": PENDING, "type": "dir", "size": 0, "mtime": 0})    # the waiting uploads
         return {"area": area, "path": rel, "entries": entries}
 
     def open_file(self, area: str, rel: str, admin: bool, owner: str = "") -> Tuple[Path, int]:
@@ -145,13 +210,13 @@ class Storage:
             if len(parts) < 2 or not re.fullmatch(SPECIES_RE, parts[0]):
                 raise AppError("Models go in a folder named after the scientific name (Genus species), "
                                "for example {example}.", 422, example=SPECIES_EXAMPLE)
-        elif area == AREA_SPECIES:
-            check_species_file(rel)                                  # structure and image type, for everyone
+        elif area in AREAS_MEDIA:
+            check_media_file(KIND_OF_AREA[area], rel)                # structure and file type, for everyone
         elif area == "datasets" and not admin and "/" not in rel:
             raise AppError("A dataset goes in a folder with images, labels and data.yaml, "
                            "for example {example}.", 422, example=DATASET_EXAMPLE)
-        if area in QUARANTINE_AREAS and not admin:
-            rel = f"{PENDING}/{username}/{rel}"                      # quarantine until an administrator approves
+        if area in AREAS_MEDIA or (area in QUARANTINE_AREAS and not admin):
+            rel = f"{PENDING}/{username}/{rel}"                      # waits until an administrator approves
         path, rel = self.resolve(area, rel, True if area != AREA_MINE else False, username)
         if area == AREA_MINE:
             old = path.stat().st_size if path.is_file() else 0
@@ -203,7 +268,7 @@ class Storage:
             raise AppError("Does not exist.", 404)
         quarantined = area in QUARANTINE_AREAS and rel.startswith(PENDING + "/")
         is_file = path.is_file()
-        shutil.rmtree(path) if path.is_dir() else path.unlink()
+        _remove_tree(path) if path.is_dir() else path.unlink()
         if quarantined:
             if is_file and area == "models" and path.suffix.lower() != ".json":
                 path.with_suffix(".json").unlink(missing_ok=True)       # i metadati seguono il modello
@@ -221,7 +286,7 @@ class Storage:
         if d == s or s in d.parents:
             raise AppError("Invalid move.")
         d.parent.mkdir(parents=True, exist_ok=True)
-        os.replace(s, d)
+        _replace(s, d)
         return dst
 
     def approve_model(self, rel: str, new_name: Optional[str] = None) -> str:
@@ -256,30 +321,30 @@ class Storage:
         return src, dst
     
     def _prune_quarantine(self, area: str, folder: Path) -> None:
-        """Dopo uno spostamento o una cancellazione in quarantena toglie le cartelle rimaste vuote,
-        dal basso verso l'alto, fino alla cartella di quarantena compresa; non va mai oltre."""
-        root = self.root / AREA_DIRS[area] / PENDING
-        while folder == root or root in folder.parents:
+        """After a move or a delete among the pending uploads, removes the folders left empty, from the bottom
+        up; it stops at the pending folder of the area (which stays) and never goes beyond."""
+        root = self.pending_root(area)
+        while root in folder.parents:
             try:
                 folder.rmdir()
             except OSError:
-                return                                  # non è vuota (o non c'è più): ci si ferma
+                return                                  # not empty (or already gone): stop here
             folder = folder.parent
-    
-    def _remove_pending(self, src: Path) -> None:
-        """Cancella una cartella in quarantena e le cartelle rimaste vuote sopra di essa.
-        Da chiamare con _lock già preso."""
-        shutil.rmtree(src)
-        self._prune_quarantine(AREA_SPECIES, src.parent)
-    
-    def approve_species(self, username: str, species: str, day: date) -> Tuple[str, int]:
-        """Approva l'invio di un utente: copia le foto numerate in dataset_Specie/<specie>/<specie>_<utente>_<giorno>
-        e svuota la quarantena. Ritorna (nome della cartella, numero di foto)."""
-        src = self.pending_species_dir(username, species)
-        errors = validate_species_dir(src)                  # dopo l'invio l'utente può aver cambiato i file
+
+    def _remove_pending(self, area: str, src: Path) -> None:
+        """Deletes a pending folder and the empty folders above it. Call with _lock held."""
+        _remove_tree(src, strict=False)                 # the work is already done: a locked leftover must not undo it
+        self._prune_quarantine(area, src.parent)
+
+    def approve_media(self, username: str, species: str, kind: str, day: date) -> Tuple[str, int]:
+        """Approves an upload: moves its files, numbered, to library/<area>/<species>/<species>_<user>_<day> and
+        removes what is left in the pending folder. Returns (folder name, number of media files)."""
+        area = KIND_AREA[kind]
+        src = self.pending_media_dir(username, species, kind)
+        errors = validate_media_dir(src, kind)              # after the upload the user may have changed the files
         if errors:
             raise errors[0]
-        parent = self.root / AREA_DIRS[AREA_SPECIES] / species
+        parent = self.library(area) / species
         with _lock:
             parent.mkdir(exist_ok=True)
             base = f"{species}_{username}_{day.isoformat()}"
@@ -287,30 +352,29 @@ class Storage:
             while final.exists():
                 final = parent / f"{base}_{n}"
                 n += 1
-            work = parent / (TMP + final.name)              # cartella di lavoro, invisibile agli utenti
-            shutil.rmtree(work, ignore_errors=True)         # residui di un tentativo interrotto
+            work = parent / (TMP + final.name)              # working folder, invisible to the users
+            _remove_tree(work, strict=False)                # leftovers of an interrupted attempt
             try:
-                count = copy_numbered(src, work)
-                os.replace(work, final)
+                count = move_numbered(src, work, kind)
+                _replace(work, final)
             finally:
-                shutil.rmtree(work, ignore_errors=True)
-            self._remove_pending(src)
+                _remove_tree(work, strict=False)
+            self._remove_pending(area, src)
         return final.name, count
-    
-    def reject_species(self, username: str, species: str) -> int:
-        """Rifiuta l'invio: cancella le foto in quarantena. Ritorna quante ne ha cancellate."""
-        src = self.pending_species_dir(username, species)
-        count = count_photos(src)
+
+    def reject_media(self, username: str, species: str, kind: str) -> int:
+        """Rejects an upload: deletes its files. Returns how many media files were deleted."""
+        src = self.pending_media_dir(username, species, kind)
+        count = count_media(src, kind)
         with _lock:
-            self._remove_pending(src)
+            self._remove_pending(KIND_AREA[kind], src)
         return count
-    
+
     def pending_dataset_dir(self, username: str, name: str, admin: bool = False) -> Path:
         """Folder of a dataset waiting for review (an admin's one is already among the server datasets); 404 if there is nothing."""
         if not name or "/" in name or name.startswith((".", "_")):
             raise AppError("Invalid dataset name.", 422)
-        base = self.root / AREA_DIRS["datasets"]
-        folder = base / name if admin else base / PENDING / username / name
+        folder = self.library("datasets") / name if admin else self.pending_root("datasets") / username / name
         if not folder.is_dir():
             raise AppError("No pending dataset with this name.", 404)
         return folder
@@ -323,7 +387,7 @@ class Storage:
         errors = validate_dataset_dir(src)
         if errors:
             raise errors[0]
-        base = self.root / AREA_DIRS["datasets"]
+        base = self.library("datasets")
         with _lock:
             dst = base / (final or name)
             if final:
@@ -334,7 +398,7 @@ class Storage:
             elif dst.exists():
                 raise AppError("A dataset with this name already exists.", 409)
             dst.parent.mkdir(parents=True, exist_ok=True)
-            os.replace(src, dst)
+            _replace(src, dst)
             self._prune_quarantine("datasets", src.parent)
         return dst.relative_to(base).as_posix(), count_dataset_images(dst)
 
@@ -343,14 +407,14 @@ class Storage:
         src = self.pending_dataset_dir(username, name)
         count = count_dataset_images(src)
         with _lock:
-            shutil.rmtree(src)
+            _remove_tree(src)
             self._prune_quarantine("datasets", src.parent)
         return count
     
     def dataset_classes(self, name: str, pending_user: Optional[str] = None) -> List[str]:
         """The species declared in the data.yaml of a dataset (published, or waiting if `pending_user` is given)."""
-        base = self.root / AREA_DIRS["datasets"]
-        folder = base / PENDING / pending_user / name if pending_user else base / name
+        folder = (self.pending_root("datasets") / pending_user / name if pending_user
+                  else self.library("datasets") / name)
         for f in ("data.yaml", "data.yml"):
             if (folder / f).is_file():
                 return classes_from_data_yaml(folder / f)

@@ -21,7 +21,8 @@ from .config import hash_key, load_admin_key
 from .db import Database
 from .ops import backup as bk
 from .ops import logsetup, network, stats
-from .params import DEFAULT_PORT, RATE_LIMIT_PER_MIN
+from .migrate import adopt_local_server_data
+from .params import DEFAULT_DATA_DIR, DEFAULT_PORT, RATE_LIMIT_PER_MIN
 
 MIN_KEY_LEN = 16
 
@@ -33,7 +34,8 @@ def weak_key(key: str) -> bool:
 
 def _build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="server", description="Users and database server")
-    ap.add_argument("--data", default=str(LOCAL_DIR), help="data folder (database and files); by default the local data folder of the app")
+    ap.add_argument("--data", default=str(DEFAULT_DATA_DIR), help="data folder of the server (database and files); "
+                    "by default `server_data` next to the local data folder of the app")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     sv = sub.add_parser("serve", help="start the server")
@@ -242,6 +244,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     data = Path(a.data)
     try:
+        if data == DEFAULT_DATA_DIR:                 # data of the server kept so far in the app's folder move once
+            adopt_local_server_data(LOCAL_DIR, data)
         if a.cmd == "hash-key":
             print(hash_key(getpass.getpass("Access key: ")))
             return 0

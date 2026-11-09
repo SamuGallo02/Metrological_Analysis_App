@@ -5,7 +5,7 @@ training/hardware.py, constants and paths in training/config.py - only the
 interface lives here. Contract with the app: TrainingPage(on_home, session=None).
 
 Shared dependencies (read-only, never to be modified to work on
-training): build_top_bar, HardwareAccelerationWidget, centered_content.
+training): build_top_bar, centered_content.
 
 Autore: Samuele Gallo
 """
@@ -38,7 +38,6 @@ from common.ui.widgets import build_top_bar
 from common.ui.qt_utils import run_async
 from common.ui.layout import centered_content
 from corpse.gui.training.server_dialog import ServerDatasetDialog
-from corpse.gui.training.components import HardwareAccelerationWidget
 from common.model_metadata import build_metadata, classes_from_data_yaml, count_images, read_metadata, write_metadata
 from corpse.functions.training.hardware import check_internet_connection, get_hardware_info
 from corpse.functions.training.worker import TrainingWorker
@@ -144,12 +143,6 @@ class TrainingPage(QWidget):
             hw_layout.addWidget(btn_colab)
 
         content.addWidget(hw_box)
-
-        # Extended diagnostic panel: lets you check the CUDA status in
-        # detail and, if needed, reinstall PyTorch with GPU support
-        # right from here before starting a heavy training run.
-        self.hw_widget = HardwareAccelerationWidget(self)
-        content.addWidget(self.hw_widget)
 
         form_layout = QFormLayout()
 

@@ -14,26 +14,31 @@ python -m server doctor | status | backup | users list        # gestione e manut
 Test su altri dispositivi, accesso da Internet con tunnel HTTPS, Docker, systemd, backup automatico e tutti i comandi di
 gestione: vedi **`deploy/README.md`**.
 
-## Dati: server e cartella locale coincidono
-Senza `--data` il server usa la cartella dei dati locali dell'app, `datasets/Dataset_Locale/`. Sul computer che ospita il
-server, quindi, le cartelle del server e quelle locali dell'amministratore sono le stesse:
+## Dati: come il server salva i file
+Il server tiene i suoi file in `<cartella dati>/store/`, separati da come l'app li mostra (le cartelle locali dell'app non
+c'entrano). Senza `--data` la cartella dati è `datasets/server_data/`, separata dai dati locali dell'app (`datasets/Dataset_Locale/`).
 
-| Area del server | Cartella |
+| Cartella | Contenuto |
 |---|---|
-| `photos` | `dataset_Foto_Stereo/` |
-| `models` | `models/` (una sottocartella per specie, con il nome scientifico: `Pinna nobilis/modello.pt`) |
-| `datasets` | `dataset_Training/` |
-| `species` (foto delle specie, base per le annotazioni) | `dataset_Specie/` |
-| `mine` (cartella personale di ogni utente, come un "drive") | `users/<utente>/` |
+| `store/library/photos/<Specie>/` | foto approvate (con le etichette `.txt`) |
+| `store/library/stereo/<Specie>/<lx\|rx>/` | coppie stereo approvate |
+| `store/library/videos/<Specie>/` | video approvati (con le etichette `.txt`) |
+| `store/library/models/<Specie>/` | modelli YOLO approvati (+ `.json`) |
+| `store/library/datasets/` | dataset di addestramento |
+| `store/pending/<area>/<utente>/` | caricamenti in attesa di approvazione (quarantena unica) |
+| `store/mine/<utente>/` | cartella personale di ogni utente |
 
-Il database (utenti, sessioni, registro) è `server.db` nella stessa cartella.
+Il database (utenti, sessioni, registro, **cronologia dei caricamenti** con chi ha caricato e chi ha approvato) è `server.db`
+nella cartella dati. Non c'è una tabella per file: caricamento, approvazione e data valgono per tutto il lotto.
 
-- **Modelli**: chi li carica indica il nome scientifico (Genere specie); finiscono in `models/_pending/<utente>/<Genere specie>/`
-  (quarantena) finché un amministratore non li approva, e vengono pubblicati in `models/<Genere specie>/`.
-- **Foto delle specie**: vedi la sezione *Foto delle specie* più sotto. Le foto caricate dagli utenti restano in quarantena
-  (`dataset_Specie/_pending/<utente>/`) finché un amministratore non le approva.
+- **Caricamenti**: tutti (anche gli amministratori) finiscono in `store/pending/`; l'approvazione sposta i file in
+  `store/library/` (rinominati IMG_0001, VID_0001… con le loro etichette), il rifiuto li elimina. La cronologia resta.
+- **Etichette**: ogni foto o video può avere un file `.txt` accanto (formato YOLO; nei video la prima colonna è il numero del
+  fotogramma) e un `classes.txt` con i nomi delle classi. L'analisi metrologica le salva da sola e vengono caricate insieme al file.
+- **Migrazione**: al primo avvio `server.db`, `store/`, `logs/` e `backups/` che stavano in `datasets/Dataset_Locale/` passano in `datasets/server_data/` (le cartelle dell'app non si toccano); poi le vecchie cartelle (`dataset_Specie`, `_pending`, `users/`…) vengono spostate nella nuova
+  struttura. Fai prima una copia della cartella dati.
 - **Dataset**: le cartelle caricate dagli utenti vengono inserite nei dataset del server; i file già presenti non si sovrascrivono.
-- **Backup**: copia `datasets/Dataset_Locale` a server fermo, oppure solo `server.db` con `sqlite3 server.db ".backup copia.db"`.
+- **Backup**: copia `datasets/server_data` a server fermo, oppure solo `server.db` con `sqlite3 server.db ".backup copia.db"`.
 - Per usare un'altra cartella: `python -m server --data PERCORSO serve`.
 
 ## Chiave di accesso amministratore
@@ -74,7 +79,7 @@ After=network.target
 [Service]
 WorkingDirectory=/opt/analisi
 Environment=AM_ADMIN_KEY=...la-tua-chiave-lunga...
-ExecStart=/usr/bin/python3 -m server --data /opt/analisi/datasets/Dataset_Locale serve --host 127.0.0.1 --port 8765 --trust-proxy
+ExecStart=/usr/bin/python3 -m server --data /opt/analisi/datasets/server_data serve --host 127.0.0.1 --port 8765 --trust-proxy
 Restart=always
 User=analisi
 [Install]
@@ -88,8 +93,8 @@ WantedBy=multi-user.target
 |---|---|---|
 | Leggere/scaricare foto, modelli, dataset | sì | sì |
 | Inserire file e cartelle | sì, **senza sovrascrivere** | sì |
-| Caricare modelli YOLO | in `models/_pending/<utente>/` (quarantena) | direttamente |
-| Caricare foto di una specie | in `dataset_Specie/_pending/<utente>/` (quarantena), poi "Invia per revisione" | direttamente |
+| Caricare modelli YOLO | in `store/pending/models/<utente>/` (quarantena) | in quarantena, approvazione automatica |
+| Caricare foto di una specie | foto, foto stereo o video in `store/pending/<area>/<utente>/`, poi "Invia per revisione" | come l'utente, ma l'invio è approvato subito |
 | Approvare o rifiutare le foto inviate | no | sì |
 | Rinominare, spostare, eliminare, approvare | no | sì |
 | **Cartella personale** (`mine`) | solo la propria: legge, scrive, sovrascrive, sposta, elimina, entro la quota | solo la propria |

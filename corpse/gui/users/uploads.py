@@ -1,4 +1,4 @@
-"""Uploads page of the user: three large buttons, one per kind. Whatever is sent waits for an administrator."""
+"""Uploads page of the user: one large button per kind of upload. Whatever is sent waits for an administrator."""
 from __future__ import annotations
 import re
 from pathlib import Path
@@ -7,9 +7,10 @@ from typing import Any, Callable, List, Optional, Tuple
 from PySide6.QtWidgets import QFileDialog, QInputDialog, QLabel, QMessageBox, QPushButton, QVBoxLayout, QWidget
 
 from common.i18n import tr, tr_error
-from common.params import AREA_SPECIES, SPECIES_EXAMPLE, SPECIES_RE
+from common.params import AREA_STEREO, AREA_VIDEOS, IMAGE_SUFFIXES, SPECIES_EXAMPLE, SPECIES_RE, VIDEO_SUFFIXES
 from common.ui.qt_utils import run_async
 from corpse.functions.users.session import Session
+from corpse.functions.users.upload_plan import has_stereo_folders, plan_media, plan_stereo
 from .transfer import TransferDialog
 
 
@@ -28,7 +29,8 @@ class UploadsWidget(QWidget):
         hint = QLabel(tr("Everything you send is checked by an administrator before it is published."))
         hint.setWordWrap(True)
         lay.addWidget(hint)
-        self.btn_photos = self._big(tr("Upload photos of a species"), self._photos, lay)
+        self.btn_photos = self._big(tr("Upload photos or videos of a species"), self._photos, lay)
+        self.btn_stereo = self._big(tr("Upload stereo photos"), self._stereo, lay)
         self.btn_dataset = self._big(tr("Upload a dataset"), self._dataset, lay)
         self.btn_model = self._big(tr("Upload a YOLO model"), self._model, lay)
         self.status = QLabel("")
@@ -73,15 +75,41 @@ class UploadsWidget(QWidget):
         return name
 
     def _photos(self) -> None:
-        d = QFileDialog.getExistingDirectory(self, tr("Choose the folder to upload"))
+        """One photo or many, and videos, picked together (even from different folders), for one species. A label
+        file with the same name next to a photo or saved by the analysis goes with it."""
+        patterns = " ".join(f"*{ext}" for ext in sorted(IMAGE_SUFFIXES + VIDEO_SUFFIXES))
+        files, _ = QFileDialog.getOpenFileNames(self, tr("Choose the photos to upload"), "",
+                                                f"{tr('Photos')} ({patterns})")
+        if not files:
+            return
+        chosen = [Path(f) for f in files]
+        parent = chosen[0].parent.name
+        species = parent if _is_species(parent) and all(c.parent == chosen[0].parent for c in chosen) \
+            else self._ask_species()
+        if not species:
+            return
+        plan = plan_media(chosen, species)
+        if not plan:
+            QMessageBox.warning(self, tr("Error"), tr("No photos or videos among the chosen files."))
+            return
+        for area, pairs in plan.items():                         # photos and videos are separate uploads
+            kind = "video" if area == AREA_VIDEOS else "photos"
+            self._send(area, pairs, species, lambda k=kind: self.session.client.submit_species(species, k))
+
+    def _stereo(self) -> None:
+        """A folder with an `lx` and an `rx` subfolder holding photos of the same names."""
+        d = QFileDialog.getExistingDirectory(self, tr("Choose the folder with the lx and rx subfolders"))
         if not d:
             return
         root = Path(d)
+        if not has_stereo_folders(root):
+            QMessageBox.warning(self, tr("Error"), tr("The folder must contain an lx and an rx subfolder."))
+            return
         species = root.name if _is_species(root.name) else self._ask_species()
         if not species:
             return
-        pairs = [(p, f"{species}/{p.name}") for p in _files(root, False)]
-        self._send(AREA_SPECIES, pairs, species, lambda: self.session.client.submit_species(species))
+        self._send(AREA_STEREO, plan_stereo(root, species), species,
+                   lambda: self.session.client.submit_species(species, "stereo"))
 
     def _dataset(self) -> None:
         d = QFileDialog.getExistingDirectory(self, tr("Choose the folder to upload"))

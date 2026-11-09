@@ -20,8 +20,9 @@ from common.params import AREA_MINE, ROLE_SERVER, ROLE_USER
 
 from .config import ServerConfig, key_matches, load_admin_key
 from .db import Database
+from .migrate import migrate_legacy
 from .ops import stats
-from .params import API_VERSION, KEY_LOCK_SECONDS, KEY_MAX_FAILS, MAX_JSON, RATE_LIMIT_PER_MIN, KIND_DATASET, KIND_MODEL, KIND_PHOTOS
+from .params import API_VERSION, KEY_LOCK_SECONDS, KEY_MAX_FAILS, MAX_JSON, RATE_LIMIT_PER_MIN, KIND_AREA
 from .ratelimit import RateLimiter
 from .storage import Storage, QUARANTINE_AREAS
 from .throttle import Throttle
@@ -274,9 +275,10 @@ class Handler(BaseHTTPRequestHandler):
     def _species(self, path: str, method: str, q: Dict[str, str], user: Dict[str, Any], admin: bool) -> None:
         name = user["username"]
         if path == "/api/species/submit" and method == "POST":
-            species = str(self._json().get("species", ""))
-            result = submit_species(self.store, self.db, name, species)
-            self.db.log(name, "species.submit", "species", result["path"])
+            d = self._json()
+            kind = str(d.get("kind") or "photos")
+            result = submit_species(self.store, self.db, name, str(d.get("species", "")), kind, admin=admin)
+            self.db.log(name, "species.submit", KIND_AREA[kind], result["path"])
             return self._send(201, result)
         if path == "/api/datasets/submit" and method == "POST":
             result = submit_dataset(self.store, self.db, name, str(self._json().get("name", "")), admin = admin)
@@ -290,7 +292,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/catalog" and method == "GET":
             self._drain()
             kind = q.get("kind", "")
-            if kind not in (KIND_PHOTOS, KIND_MODEL, KIND_DATASET):
+            if kind not in KIND_AREA:
                 raise AppError("Resource not found.", 404)
             return self._send(200, {"items": catalog(self.db, kind, self.store)})
         if path == "/api/species/submissions" and method == "GET":
@@ -305,7 +307,7 @@ class Handler(BaseHTTPRequestHandler):
             action = m.group(2)
             review = approve_submission if action == "approve" else reject_submission
             result = review(self.store, self.db, int(m.group(1)), name)
-            self.db.log(name, f"species.{action}", "species", m.group(1))
+            self.db.log(name, f"species.{action}", "submissions", m.group(1))
             return self._send(200, result)
         self._drain()
         raise AppError("Resource not found.", 404)
@@ -397,10 +399,12 @@ def make_server(data_dir: Path, host: str = "127.0.0.1", port: int = 8765, allow
     cfg = ServerConfig(data_dir, allow_register, load_admin_key(data_dir) if admin_key is None else admin_key,
                        trust_proxy)
     # one subclass per server: several servers in the same process (tests) do not share state
+    db = Database(data_dir / "server.db")
+    migrate_legacy(data_dir, db)                      # files of the previous layout move into store/ (idempotent)
     handler = type("BoundHandler", (Handler,), {
         "key_throttle": Throttle(KEY_MAX_FAILS, KEY_LOCK_SECONDS),
         "limiter": RateLimiter(RATE_LIMIT_PER_MIN if rate_limit is None else rate_limit),
-        "started": time.time(), "counter": [0], "db": Database(data_dir / "server.db"),
+        "started": time.time(), "counter": [0], "db": db,
         "store": Storage(data_dir), "cfg": cfg})
     httpd = _Server((host, port), handler)
     httpd.handler = handler

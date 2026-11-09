@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QDialog, QDialogButtonBox, QFo
 
 from common.format import fmt_time
 from common.i18n import tr, tr_error
-from common.params import AREA_SPECIES, AREAS_SHARED, ROLE_SERVER, ROLE_USER, SUBMISSION_PENDING
+from common.params import AREAS_SHARED, ROLE_SERVER, ROLE_USER, SUBMISSION_PENDING
 from common.ui.qt_utils import run_async
 
 from corpse.functions.users.session import Session
@@ -183,6 +183,8 @@ class SubmissionsWidget(QWidget):
         self.items: List[Dict[str, Any]] = []
         self.title, subject, count = {
             "photos": (tr("Photo review"), tr("Species"), tr("Photos")),
+            "stereo": (tr("Stereo photo review"), tr("Species"), tr("Photos")),
+            "video": (tr("Video review"), tr("Species"), tr("Videos")),
             "dataset": (tr("Dataset review"), tr("Dataset"), tr("Images")),
             "model": (tr("Model review"), tr("Species"), ""),
         }[kind]
@@ -266,6 +268,10 @@ class SubmissionsWidget(QWidget):
             if approve:
                 return tr("Approve the model of {species} sent by {user}?", species=name, user=user)
             return tr("Reject and permanently delete the model of {species} sent by {user}?", species=name, user=user)
+        if self.kind == "video":
+            if approve:
+                return tr("Approve the {n} videos of {species} sent by {user}?", n=n, species=name, user=user)
+            return tr("Reject and permanently delete the {n} videos of {species} sent by {user}?", n=n, species=name, user=user)
         if approve:
             return tr("Approve the {n} photos of {species} sent by {user}?", n=n, species=name, user=user)
         return tr("Reject and permanently delete the {n} photos of {species} sent by {user}?", n=n, species=name, user=user)
@@ -296,10 +302,14 @@ class ReviewWidget(QWidget):
     def __init__(self, session: Session, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.photos = SubmissionsWidget(session, "photos")
+        self.stereo = SubmissionsWidget(session, "stereo")
+        self.videos = SubmissionsWidget(session, "video")
         self.datasets = SubmissionsWidget(session, "dataset")
         self.models = SubmissionsWidget(session, "model")
         self.tabs = QTabWidget()
         self.tabs.addTab(self.photos, tr("Photos"))
+        self.tabs.addTab(self.stereo, tr("Stereo photos"))
+        self.tabs.addTab(self.videos, tr("Videos"))
         self.tabs.addTab(self.datasets, tr("Datasets"))
         self.tabs.addTab(self.models, tr("YOLO models"))
         lay = QVBoxLayout(self)
@@ -307,7 +317,7 @@ class ReviewWidget(QWidget):
         lay.addWidget(self.tabs)
 
     def refresh(self) -> None:
-        for w in (self.photos, self.datasets, self.models):
+        for w in (self.photos, self.stereo, self.videos, self.datasets, self.models):
             w.refresh()
 
 class AdminHome(QWidget):
@@ -327,7 +337,7 @@ class AdminHome(QWidget):
         lay.addWidget(self.banner)
         self.tabs = QTabWidget()
         self.users = UserAdminWidget(session)
-        self.db = ServerBrowserWidget(session, (AREA_SPECIES, "datasets", "models"))
+        self.db = ServerBrowserWidget(session, AREAS_SHARED)
         self.review = ReviewWidget(session)
         train = QWidget()
         tl = QVBoxLayout(train)

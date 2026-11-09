@@ -1,10 +1,11 @@
 """Headless test of the windows (QT_QPA_PLATFORM=offscreen)."""
 import os, sys, tempfile, threading, time, types, unittest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QMessageBox
 app = QApplication.instance() or QApplication([])
 for name in ("warning", "information", "critical"):
@@ -16,7 +17,6 @@ from tests.util import KEY, TestServer, png_bytes
 from corpse.functions.users.session import Session
 from corpse.functions.users.store import LocalStore
 from corpse.gui import users as ui
-from corpse.gui.users.tree_view import ServerTreeDialog
 from unittest import mock
 from corpse.functions.users.api import ApiClient
 
@@ -102,51 +102,48 @@ class GuiTest(unittest.TestCase):
         br = ui.ServerBrowserWidget(s)
         self.assertTrue(pump(lambda: br.status.text().endswith("items")), br.status.text())
         self.assertFalse(br.btn_delete.isVisibleTo(br) or br.btn_rename.isVisibleTo(br) or br.btn_approve.isVisibleTo(br))
+        mine = ui.ServerBrowserWidget(s, ("mine",))                                         # personal area: free structure
+        self.assertTrue(pump(lambda: mine.status.text().endswith("items")))
         png = self.tmp / "f.png"; png.write_bytes(png_bytes())
-        jobs = [("f.png", png.stat().st_size, lambda cb, cancel: s.client.upload("photos", "f.png", png, cb, cancel))]
+        jobs = [("f.png", png.stat().st_size, lambda cb, cancel: s.client.upload("mine", "f.png", png, cb, cancel))]
         td = ui.TransferDialog("t", jobs); td.exec()
         self.assertFalse(td.errors or td.skipped)
-        br.refresh(); self.assertTrue(pump(lambda: br.tree.topLevelItemCount() == 1))
-        td2 = ui.TransferDialog("t", jobs); td2.exec(); self.assertTrue(td2.skipped and not td2.errors)
+        mine.refresh()
+        self.assertTrue(pump(lambda: any(mine.tree.topLevelItem(i).text(0) == "f.png" for i in range(mine.tree.topLevelItemCount()))))
+        td2 = ui.TransferDialog("t", jobs); td2.exec(); self.assertFalse(td2.errors)          # the owner may overwrite
 
-        mine = ui.ServerBrowserWidget(s, ("mine",))                                         # personal area: everything visible
-        self.assertTrue(pump(lambda: mine.status.text().endswith("items")))
         self.assertTrue(mine.btn_delete.isVisibleTo(mine) and mine.btn_rename.isVisibleTo(mine))
         self.assertTrue(pump(lambda: mine.quota.isVisibleTo(mine) and mine.quota.maximum() == 1024))
 
-    def test_folder_tree_opens_levels_on_demand(self):
+    def test_browser_is_always_a_tree_that_opens_levels_on_demand(self):
         s = self.sess("tr1"); d = self.login_dialog(s, "tree1", register=True); pump(lambda: d.result() == 1)
         png = self.tmp / "t.png"; png.write_bytes(png_bytes())
-        s.client.upload("photos", "uno/due/t.png", png)
-        s.client.upload("photos", "uno/altro.png", png)
-        dlg = ServerTreeDialog(s, ("photos", "datasets"))
-        self.assertEqual(dlg.tree.topLevelItemCount(), 2)
-        top = dlg.tree.topLevelItem(0)
-        top.setExpanded(True)                                           # first level
+        s.client.upload("mine", "uno/due/t.png", png)
+        s.client.upload("mine", "uno/altro.png", png)
+        br = ui.ServerBrowserWidget(s, ("mine",))
+        self.assertFalse(hasattr(br, "btn_tree"))                       # no "Folder tree" button: it is the view itself
         names = lambda it: [it.child(i).text(0) for i in range(it.childCount())]      # the server is shared by the tests
-        self.assertTrue(pump(lambda: "uno" in names(top)))
-        uno = top.child(names(top).index("uno"))
+        self.assertTrue(pump(lambda: br.status.text().endswith("items")))
+        top = [br.tree.topLevelItem(i) for i in range(br.tree.topLevelItemCount())]
+        uno = [t for t in top if t.text(0).endswith("uno")][0]
         self.assertEqual(uno.child(0).text(0), "Loading...")           # not requested yet: only the arrow
         uno.setExpanded(True)                                           # second level, folders first
-        self.assertTrue(pump(lambda: uno.childCount() == 2 and uno.child(0).text(0) == "due"))
+        self.assertTrue(pump(lambda: uno.childCount() == 2 and uno.child(0).text(0).endswith("due")))
         uno.child(0).setExpanded(True)                                  # third level
         self.assertTrue(pump(lambda: uno.child(0).childCount() == 1 and uno.child(0).child(0).text(0) == "t.png"))
-        empty = dlg.tree.topLevelItem(1)
-        empty.setExpanded(True)
-        self.assertTrue(pump(lambda: empty.childCount() >= 1 and empty.child(0).text(0) != "Loading..."))
-        got = []
-        dlg.folder_chosen.connect(lambda a, p: got.append((a, p)))
-        dlg.tree.setCurrentItem(uno.child(0).child(0))                  # a file: its folder is chosen
-        dlg._choose()
-        self.assertEqual(got, [("photos", "uno/due")])
+        br.tree.setCurrentItem(uno.child(0).child(0))                  # a file selected: uploads would go to its folder
+        self.assertEqual(br._target(), "uno/due")
+        br.tree.setCurrentItem(uno)
+        self.assertEqual(br._target(), "uno")
+        self.assertEqual(br._selected()[0]["path"], "uno")
 
-    def test_browser_tree_button_jumps_to_folder(self):
+    def test_browser_start_folder(self):
         s = self.sess("tr2"); d = self.login_dialog(s, "tree2", register=True); pump(lambda: d.result() == 1)
         png = self.tmp / "u.png"; png.write_bytes(png_bytes())
-        s.client.upload("photos", "alfa/beta/u.png", png)
-        br = ui.ServerBrowserWidget(s, ("photos", "datasets"))
+        s.client.upload("mine", "alfa/beta/u.png", png)
+        br = ui.ServerBrowserWidget(s, ("mine",))
         self.assertTrue(pump(lambda: br.status.text().endswith("items")))
-        br._goto("photos", "alfa/beta")
+        br._goto("mine", "alfa/beta")
         self.assertTrue(pump(lambda: br.tree.topLevelItemCount() == 1 and "u.png" in br.tree.topLevelItem(0).text(0)))
         self.assertEqual(br.path, "alfa/beta")
 
@@ -166,9 +163,10 @@ class GuiTest(unittest.TestCase):
         self.assertTrue(dlg.url.isVisibleTo(dlg) or not dlg.isVisible())
 
         s2 = self.sess("sv2"); d = self.login_dialog(s2, "srv1", register=True); pump(lambda: d.result() == 1)
-        bar = ui.AccountBar(s2)
+        from corpse.gui.settings_dialog import ServerPanel
+        bar = ServerPanel(s2)                                           # the address is changed from the settings
         out = []
-        bar.logout_requested.connect(lambda: out.append(1))
+        bar.changed.connect(lambda: out.append(1))
         with mock.patch.object(QInputDialog, "getText", return_value=(self.url + "/", True)):
             bar._change_server()                                        # same server: nothing happens
         self.assertEqual(out, [])
@@ -220,7 +218,7 @@ class GuiTest(unittest.TestCase):
         self.assertTrue(home.db.btn_delete.isVisibleTo(home.db))
         self.assertEqual(home.tabs.count(), 4)
         self.assertEqual(home.tabs.tabText(2), "Review")
-        self.assertIn("species", home.db.areas)                                 # l'admin sfoglia anche le foto delle specie
+        self.assertIn("stereo", home.db.areas)                                  # the admin also browses the stereo photos and videos
         self.assertTrue(pump(lambda: home.users.events.rowCount() >= 1))
         self.assertTrue(s.store.users_snapshot()["users"])
         home.users.table.selectRow(0); self.assertEqual(home.users._current()["username"], "admin")
@@ -244,7 +242,7 @@ class GuiTest(unittest.TestCase):
         a = self.sess("pr1"); a.login("admin", "adminpass1", self.url)
         c = ApiClient(self.url); c.register("pruser", "password123"); c.login("pruser", "password123")
         img = self.tmp / "p.png"; img.write_bytes(png_bytes())
-        c.upload("species", "Pinna nobilis/p.png", img)
+        c.upload("photos", "Pinna nobilis/p.png", img)
         c.submit_species("Pinna nobilis")
         w = ui.SubmissionsWidget(a)
         mine = lambda: [i for i, s in enumerate(w.items) if s["username"] == "pruser"]
@@ -254,7 +252,7 @@ class GuiTest(unittest.TestCase):
         with yes:                                                       # finta risposta "Sì" alla conferma
             w._approve()
         self.assertTrue(pump(lambda: c.species_submissions()[0]["status"] == "approved"))
-        c.upload("species", "Epinephelus marginatus/q.png", img)
+        c.upload("photos", "Epinephelus marginatus/q.png", img)
         c.submit_species("Epinephelus marginatus")
         w.refresh()
         self.assertTrue(pump(lambda: len(mine()) == 2))
@@ -267,7 +265,7 @@ class GuiTest(unittest.TestCase):
         a = self.sess("pr2"); a.login("admin", "adminpass1", self.url)
         c = ApiClient(self.url); c.register("pruser2", "password123"); c.login("pruser2", "password123")
         img = self.tmp / "p.png"; img.write_bytes(png_bytes())
-        c.upload("species", "Pinna nobilis/p.png", img)
+        c.upload("photos", "Pinna nobilis/p.png", img)
         c.submit_species("Pinna nobilis")
         c.upload("models", "Pinna nobilis/m.pt", img)                    # il contenuto non conta: è solo un file
         c.submit_model("Pinna nobilis", "m.pt")
@@ -290,19 +288,36 @@ class GuiTest(unittest.TestCase):
         c.login("admin", "adminpass1")
         return c
 
-    def test_uploads_page_sends_a_photo_folder_to_review(self):
+    def test_uploads_page_sends_a_single_photo_to_review(self):
         from PySide6.QtWidgets import QFileDialog
         s = self._user_session("up1", "upuser1")
         folder = self.tmp / "Pinna nobilis"
         folder.mkdir()
         (folder / "a.png").write_bytes(png_bytes())
         w = ui.UploadsWidget(s)
-        with mock.patch.object(QFileDialog, "getExistingDirectory", return_value=str(folder)):
-            w.btn_photos.click()                                         # carica la cartella e la invia alla revisione
+        with mock.patch.object(QFileDialog, "getOpenFileNames", return_value=([str(folder / "a.png")], "")):
+            w.btn_photos.click()                                         # one photo from a species folder: sent to review
         admin = self._admin_client()
         waiting = lambda: [x["species"] for x in admin.species_submissions(status="pending", kind="photos")
                            if x["username"] == "upuser1"]
         self.assertTrue(pump(lambda: waiting() == ["Pinna nobilis"]))
+        settle(w)
+
+    def test_uploads_page_sends_several_photos_picked_together(self):
+        from PySide6.QtWidgets import QFileDialog, QInputDialog
+        s = self._user_session("up8", "upuser8")
+        names = []
+        for n in ("a.png", "b.png", "c.png"):
+            (self.tmp / n).write_bytes(png_bytes())
+            names.append(str(self.tmp / n))
+        w = ui.UploadsWidget(s)
+        with mock.patch.object(QFileDialog, "getOpenFileNames", return_value=(names, "")), \
+                mock.patch.object(QInputDialog, "getText", return_value=("Mola mola mola", True)):
+            w.btn_photos.click()
+        admin = self._admin_client()
+        waiting = lambda: [x["photos"] for x in admin.species_submissions(status="pending", kind="photos")
+                           if x["username"] == "upuser8"]
+        self.assertTrue(pump(lambda: waiting() == [3]))                  # three names are a valid scientific name
         settle(w)
 
     def test_uploads_page_sends_a_dataset_to_review(self):
@@ -343,7 +358,7 @@ class GuiTest(unittest.TestCase):
         s = self._user_session("sf1", "sfuser1")
         w = ui.ServerFoldersWidget(s)
         self.assertNotIsInstance(w, QDialog)                              # the home shows it inside its own window
-        self.assertEqual([w.tabs.tabText(i) for i in range(w.tabs.count())], ["Photos", "YOLO models", "Uploads"])
+        self.assertEqual([w.tabs.tabText(i) for i in range(w.tabs.count())], ["Photos", "Stereo photos", "Videos", "YOLO models", "Uploads"])
         settle(w)
 
     def test_preview_shows_the_photos_of_a_submission(self):
@@ -352,12 +367,31 @@ class GuiTest(unittest.TestCase):
         c.login("pvuser1", "password123")
         img = self.tmp / "p.png"
         img.write_bytes(png_bytes())
-        c.upload("species", "Pinna nobilis/p.png", img)
+        c.upload("photos", "Pinna nobilis/p.png", img)
         sent = c.submit_species("Pinna nobilis")
         admin = self._admin_client()
         row = [s for s in admin.species_submissions(kind="photos") if s["id"] == sent["id"]][0]
         d = ui.PreviewDialog(admin, "photos", row)
         self.assertTrue(pump(lambda: d.thumbs.count() == 1))
+        settle(d)
+
+    def test_preview_writes_nothing_to_disk(self):
+        c = ApiClient(self.url)
+        c.register("pvuser3", "password123")
+        c.login("pvuser3", "password123")
+        img = self.tmp / "q.png"
+        img.write_bytes(png_bytes())
+        c.upload("photos", "Pinna nobilis/q.png", img)
+        sent = c.submit_species("Pinna nobilis")
+        admin = self._admin_client()
+        row = [s for s in admin.species_submissions(kind="photos") if s["id"] == sent["id"]][0]
+
+        def no_download(*a, **k):
+            raise AssertionError("a preview must not download files to disk")
+        admin.download = no_download
+        d = ui.PreviewDialog(admin, "photos", row)
+        self.assertTrue(pump(lambda: d.thumbs.count() == 1))
+        self.assertFalse(hasattr(d, "_tmp"))
         settle(d)
 
     def test_preview_of_a_model_shows_its_details(self):
@@ -409,7 +443,7 @@ class GuiTest(unittest.TestCase):
         c.login(user, "password123")
         img = self.tmp / f"{user}.png"
         img.write_bytes(png_bytes())
-        c.upload("species", f"{species}/p.png", img)
+        c.upload("photos", f"{species}/p.png", img)
         self._admin_client().approve_submission(c.submit_species(species)["id"])
 
     def _approved_model(self, user, species, name):
@@ -427,24 +461,57 @@ class GuiTest(unittest.TestCase):
         tops = [w.tree.topLevelItem(i) for i in range(w.tree.topLevelItemCount())]
         return [t for t in tops if t.text(0) == species][0]
 
-    def test_catalog_lists_the_species_with_who_sent_and_who_approved(self):
+    def _opened(self, w, species):
+        """The species row, opened and with its real children loaded (they are fetched when it is opened)."""
+        row = self._species_row(w, species)
+        row.setExpanded(True)
+        self.assertTrue(pump(lambda: row.childCount() >= 1 and row.child(0).data(0, __import__('corpse.gui.users.catalog', fromlist=['x']).RECORD) is not None))
+        return row
+
+    def test_catalog_lists_every_species_alphabetically_and_every_photo_beside_its_data(self):
         self._approved_photos("cvuser1", "Hippocampus guttulatus")
-        w = ui.CatalogWidget(self._user_session("cat1", "cvuser2"), "photos")
-        self.assertTrue(pump(lambda: w.tree.topLevelItemCount() >= 1))
-        row = self._species_row(w, "Hippocampus guttulatus").child(0)
-        self.assertEqual((row.text(1), row.text(2), row.text(3)), ("1", "cvuser1", "admin"))
-        self.assertRegex(row.text(4), r"^\d{4}-\d{2}-\d{2}$")             # only the date, never the time
+        self._approved_photos("cvuser2", "Anthias anthias")
+        w = ui.CatalogWidget(self._user_session("cat1", "cvuser10"), "photos")
+        self.assertTrue(pump(lambda: w.tree.topLevelItemCount() >= 2))
+        names = [w.tree.topLevelItem(i).text(0) for i in range(w.tree.topLevelItemCount())]
+        self.assertEqual(names, sorted(names, key=str.lower))
+        row = self._opened(w, "Hippocampus guttulatus").child(0)
+        self.assertEqual((row.text(3), row.text(4)), ("cvuser1", "admin"))
+        self.assertRegex(row.text(5), r"^\d{4}-\d{2}-\d{2}$")             # only the date, never the time
+        self.assertTrue(row.text(0).lower().endswith(".png"))
         settle(w)
 
-    def test_catalog_download_needs_an_entry_not_a_species(self):
+    def test_catalog_filter_hides_what_does_not_match(self):
+        self._approved_photos("cvuser11", "Mullus surmuletus")
+        self._approved_photos("cvuser12", "Sarpa salpa")
+        w = ui.CatalogWidget(self._user_session("cat6", "cvuser13"), "photos")
+        self.assertTrue(pump(lambda: w.tree.topLevelItemCount() >= 2))
+        w.filter.setText("sarpa")
+        self.assertTrue(self._species_row(w, "Mullus surmuletus").isHidden())
+        self.assertFalse(self._species_row(w, "Sarpa salpa").isHidden())
+        w.filter.setText("cvuser11")                                       # by who uploaded
+        self.assertFalse(self._species_row(w, "Mullus surmuletus").isHidden())
+        self.assertTrue(self._species_row(w, "Sarpa salpa").isHidden())
+        w.filter.setText("")
+        self.assertFalse(self._species_row(w, "Sarpa salpa").isHidden())
+        settle(w)
+
+    def test_catalog_sorts_species_alphabetically_in_both_directions(self):
+        self._approved_photos("cvuser14", "Boops boops")
+        w = ui.CatalogWidget(self._user_session("cat7", "cvuser15"), "photos")
+        self.assertTrue(pump(lambda: w.tree.topLevelItemCount() >= 1))
+        for order in (Qt.SortOrder.DescendingOrder, Qt.SortOrder.AscendingOrder):
+            w.tree.sortByColumn(3, order)
+            names = [w.tree.topLevelItem(i).text(0) for i in range(w.tree.topLevelItemCount())]
+            self.assertEqual(names, sorted(names, key=str.lower))
+        settle(w)
+
+    def test_catalog_download_needs_a_selection(self):
         self._approved_photos("cvuser3", "Chromis chromis")
         w = ui.CatalogWidget(self._user_session("cat2", "cvuser4"), "photos")
         self.assertTrue(pump(lambda: w.tree.topLevelItemCount() >= 1))
-        group = self._species_row(w, "Chromis chromis")
         self.assertFalse(w.btn_download.isEnabled())
-        w.tree.setCurrentItem(group)
-        self.assertFalse(w.btn_download.isEnabled())                      # a species row is not downloadable
-        w.tree.setCurrentItem(group.child(0))
+        w.tree.setCurrentItem(self._opened(w, "Chromis chromis").child(0))
         self.assertTrue(w.btn_download.isEnabled())
         settle(w)
 
@@ -452,8 +519,8 @@ class GuiTest(unittest.TestCase):
         self._approved_model("cvuser5", "Dentex dentex", "cvm")
         w = ui.CatalogWidget(self._user_session("cat3", "cvuser6"), "model")
         self.assertTrue(pump(lambda: w.tree.topLevelItemCount() >= 1))
-        row = self._species_row(w, "Dentex dentex").child(0)
-        self.assertEqual((row.text(0), row.text(2), row.text(3)), ("cvm.pt", "cvuser5", "admin"))
+        row = self._opened(w, "Dentex dentex").child(0)
+        self.assertEqual((row.text(0), row.text(3), row.text(4), row.text(2)), ("cvm.pt", "cvuser5", "admin", "10 B"))
         settle(w)
 
     def test_catalog_downloads_the_chosen_photos(self):
@@ -461,12 +528,12 @@ class GuiTest(unittest.TestCase):
         self._approved_photos("cvuser7", "Diplodus sargus")
         w = ui.CatalogWidget(self._user_session("cat4", "cvuser8"), "photos")
         self.assertTrue(pump(lambda: w.tree.topLevelItemCount() >= 1))
-        w.tree.setCurrentItem(self._species_row(w, "Diplodus sargus").child(0))
+        w.tree.setCurrentItem(self._opened(w, "Diplodus sargus").child(0))
         dest = self.tmp / "scaricate"
         dest.mkdir()
         with mock.patch.object(QFileDialog, "getExistingDirectory", return_value=str(dest)):
             w.btn_download.click()
-        self.assertTrue(pump(lambda: any(dest.rglob("IMG_0001.png")) or any(dest.rglob("IMG_0001.*"))))
+        self.assertTrue(pump(lambda: any(dest.rglob("IMG_0001.*"))))
         settle(w)
 
     def test_catalog_columns_fill_the_width_and_the_header_is_taller(self):
@@ -476,6 +543,36 @@ class GuiTest(unittest.TestCase):
         self.assertEqual(header.sectionResizeMode(2), QHeaderView.ResizeMode.Stretch)
         self.assertGreaterEqual(header.minimumHeight(), 30)
         settle(w)
+
+    def test_photo_viewer_shows_the_labels_on_the_right_when_they_exist(self):
+        class Fake:                                         # a server holding one photo and, maybe, its label
+            def __init__(self, files): self.files = files
+            def read_bytes(self, area, rel, max_bytes=0):
+                if (area, rel) not in self.files: raise KeyError(rel)
+                return self.files[(area, rel)]
+            def list(self, area, rel):
+                names = {}
+                for (a, r) in self.files:
+                    if a == area and r.startswith(rel + "/"):
+                        head, _, tail = r[len(rel) + 1:].partition("/")
+                        names[head] = "dir" if tail else "file"
+                return [{"name": n, "type": t, "size": 1} for n, t in names.items()]
+        photo = {("photos", "Coris julis/b/IMG_0001.png"): png_bytes()}
+        with_labels = dict(photo)
+        with_labels[("datasets", "Coris julis/d/labels/IMG_0001.txt")] = b"0 0.5 0.5 0.4 0.4\n"
+        with_labels[("datasets", "Coris julis/d/data.yaml")] = b"names:\n  0: wrasse\n"
+        dlg = ui.ImageViewerDialog(Fake(with_labels), "photos", "Coris julis/b/IMG_0001.png", labels_area="datasets")
+        self.assertTrue(pump(lambda: dlg.original is not None))
+        self.assertIsNotNone(dlg.labelled)
+        self.assertFalse(dlg.right.isHidden())
+        dlg2 = ui.ImageViewerDialog(Fake(photo), "photos", "Coris julis/b/IMG_0001.png", labels_area="datasets")
+        self.assertTrue(pump(lambda: dlg2.original is not None))
+        self.assertIsNone(dlg2.labelled)
+        self.assertTrue(dlg2.right.isHidden())
+
+    def _opened_first_photo(self, species, client):
+        from common.remote_tree import walk_remote
+        return [p for p, _s in walk_remote(client, "photos", species) if p.lower().endswith(".png")][0]
 
     # ---- other pages ---------------------------------------------------------
     def test_language_widget(self):
@@ -592,15 +689,17 @@ class GuiTest(unittest.TestCase):
         s = self.sess("sk1"); d = self.login_dialog(s, "admin", pw="adminpass1"); pump(lambda: d.result() == 1)
         home = ui.AdminHome(s, lambda: None, lambda: None)
         self.assertTrue(settle(home))
-        self.assertEqual(home.db.areas, ("species", "datasets", "models"))
-        self.assertEqual([home.db.tabs.tabText(i) for i in range(3)], ["Photo catalog", "Datasets", "YOLO models"])
+        self.assertEqual(home.db.areas, ("photos", "stereo", "videos", "models", "datasets"))
+        self.assertEqual([home.db.tabs.tabText(i) for i in range(5)],
+                         ["Photos", "Stereo photos", "Videos", "YOLO models", "Datasets"])
 
     def test_skeleton_admin_review_has_photos_datasets_and_models(self):
         i18n.set_language("en")
         s = self.sess("sk2"); d = self.login_dialog(s, "admin", pw="adminpass1"); pump(lambda: d.result() == 1)
         home = ui.AdminHome(s, lambda: None, lambda: None)
         self.assertTrue(settle(home))
-        self.assertEqual([home.review.tabs.tabText(i) for i in range(3)], ["Photos", "Datasets", "YOLO models"])
+        self.assertEqual([home.review.tabs.tabText(i) for i in range(5)],
+                         ["Photos", "Stereo photos", "Videos", "Datasets", "YOLO models"])
         self.assertEqual(home.tabs.tabText(home.tabs.indexOf(home.review)), "Review")
 
     def test_skeleton_user_sees_photos_and_models_to_download_and_uploads(self):
@@ -608,8 +707,9 @@ class GuiTest(unittest.TestCase):
         s = self.sess("sk3"); d = self.login_dialog(s, "skeleton1", register=True); pump(lambda: d.result() == 1)
         dlg = ui.ServerFoldersWidget(s)
         self.assertTrue(settle(dlg))
-        self.assertEqual([dlg.tabs.tabText(i) for i in range(3)], ["Photos", "YOLO models", "Uploads"])
-        for catalog in (dlg.photos, dlg.models):                                # only download: no way to change anything
+        self.assertEqual([dlg.tabs.tabText(i) for i in range(5)],
+                         ["Photos", "Stereo photos", "Videos", "YOLO models", "Uploads"])
+        for catalog in (dlg.photos, dlg.stereo, dlg.videos, dlg.models):                                # only download: no way to change anything
             self.assertTrue(catalog.btn_download.isVisibleTo(catalog))
             for name in ("btn_up_files", "btn_up_dir", "btn_mkdir", "btn_rename", "btn_delete", "btn_approve"):
                 self.assertFalse(hasattr(catalog, name))

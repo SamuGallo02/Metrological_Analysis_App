@@ -32,7 +32,7 @@ class TestServer:
     def close(self):
         self.httpd.shutdown(); self.httpd.server_close(); self.tmp.cleanup()
 
-def upload_as_user(store, rel, username="francy", area="species", data=b"x"):
+def upload_as_user(store, rel, username="francy", area="photos", data=b"x"):
     """Simula l'upload di un utente normale: il file finisce davvero in quarantena."""
     dest, eff = store.check_new_file(area, rel, False, username, 10)
     dest.parent.mkdir(parents=True, exist_ok=True)

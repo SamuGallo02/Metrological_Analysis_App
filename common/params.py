@@ -46,10 +46,24 @@ ROLE_USER = "user"                             # classic view
 ROLE_SERVER = "server"                         # administrator: users, database, training
 ROLES = (ROLE_USER, ROLE_SERVER)
 
-AREAS_SHARED = ("photos", "models", "datasets")    # common folders: everyone reads and adds, the admin edits
-AREA_MINE = "mine"                                  # personal folder on the server: the owner can do everything
-AREA_SPECIES = "species"                            # photos of one species, with review (see server/species_tree.py)
-AREAS = AREAS_SHARED + (AREA_SPECIES, AREA_MINE)
+# Server areas. Each approved item lives in `store/library/<area>/` and each upload waits in `store/pending/<area>/`
+# until an administrator approves it. The folders are organised by kind, whatever the app shows.
+AREA_PHOTOS, AREA_STEREO, AREA_VIDEOS = "photos", "stereo", "videos"
+AREAS_MEDIA = (AREA_PHOTOS, AREA_STEREO, AREA_VIDEOS)         # one folder per species, then one per approved upload
+AREAS_SHARED = AREAS_MEDIA + ("models", "datasets")           # common folders: everyone reads and adds, the admin edits
+AREA_MINE = "mine"                                            # personal folder on the server: the owner can do everything
+AREAS = AREAS_SHARED + (AREA_MINE,)
+
+# what a submission is about -> the area that holds it once approved
+KIND_PHOTOS, KIND_STEREO, KIND_VIDEO, KIND_DATASET, KIND_MODEL = "photos", "stereo", "video", "dataset", "model"
+KIND_AREA = {KIND_PHOTOS: AREA_PHOTOS, KIND_STEREO: AREA_STEREO, KIND_VIDEO: AREA_VIDEOS,
+             KIND_MODEL: "models", KIND_DATASET: "datasets"}
+KINDS_MEDIA = (KIND_PHOTOS, KIND_STEREO, KIND_VIDEO)
+
+IMAGE_SUFFIXES = (".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp")
+VIDEO_SUFFIXES = (".mp4", ".avi", ".mov", ".mkv", ".webm")
+LABEL_SUFFIX = ".txt"                                         # YOLO labels sit next to the media with the same name
+STEREO_SIDES = ("lx", "rx")
 
 # user profile fields -> maximum length (used by server and client)
 PROFILE_FIELDS = {"full_name": 80, "email": 120, "organization": 120, "phone": 40, "bio": 500}

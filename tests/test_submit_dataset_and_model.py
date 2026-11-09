@@ -23,11 +23,11 @@ class SubmitDatasetAndModelTest(unittest.TestCase):
 
     def put_dataset(self, user="mario", name="coralli"):
         for f in ("data.yaml", "images/a.jpg", "labels/a.txt"):
-            self.put(f"dataset_Training/_pending/{user}/{name}/{f}")
+            self.put(f"store/pending/datasets/{user}/{name}/{f}")
 
     def put_model(self, user="mario"):
-        self.put(f"models/_pending/{user}/Pinna nobilis/m.pt")
-        self.put(f"models/_pending/{user}/Pinna nobilis/m.json", b"{}")
+        self.put(f"store/pending/models/{user}/Pinna nobilis/m.pt")
+        self.put(f"store/pending/models/{user}/Pinna nobilis/m.json", b"{}")
 
     def test_a_valid_dataset_is_registered_as_waiting(self):
         self.put_dataset()
@@ -37,7 +37,7 @@ class SubmitDatasetAndModelTest(unittest.TestCase):
                          ("dataset", "coralli", "pending", 1))
 
     def test_an_invalid_dataset_is_not_registered(self):
-        self.put("dataset_Training/_pending/mario/coralli/images/a.jpg")        # no data.yaml and no label
+        self.put("store/pending/datasets/mario/coralli/images/a.jpg")        # no data.yaml and no label
         with self.assertRaises(AppError):
             submit_dataset(self.store, self.db, "mario", "coralli")
         self.assertEqual(self.db.list_submissions(), [])
@@ -57,14 +57,14 @@ class SubmitDatasetAndModelTest(unittest.TestCase):
         self.assertEqual((row["status"], row["reviewed_by"]), ("approved", "admin"))
         self.assertRegex(row["path"], r"^coralli/coralli_mario_\d{4}-\d{2}-\d{2}$")
         self.assertIsNotNone(row["reviewed"])
-        self.assertTrue((self.root / "dataset_Training" / row["path"] / "data.yaml").is_file())
+        self.assertTrue((self.root / "store" / "library" / "datasets" / row["path"] / "data.yaml").is_file())
 
     def test_rejecting_a_dataset_removes_it_and_keeps_the_record(self):
         self.put_dataset()
         sid = submit_dataset(self.store, self.db, "mario", "coralli")["id"]
         reject_submission(self.store, self.db, sid, "admin")
         self.assertEqual(self.db.get_submission(sid)["status"], "rejected")
-        self.assertFalse((self.root / "dataset_Training" / "_pending").exists())
+        self.assertEqual(list(self.store.pending_root("datasets").iterdir()), [])
 
     def test_a_model_is_registered_and_approving_it_moves_it_with_its_metadata(self):
         self.put_model()
@@ -74,9 +74,9 @@ class SubmitDatasetAndModelTest(unittest.TestCase):
         approve_submission(self.store, self.db, result["id"], "admin")
         row = self.db.get_submission(result["id"])
         self.assertEqual((row["status"], row["reviewed_by"], row["path"]), ("approved", "admin", "Pinna nobilis/m.pt"))
-        self.assertTrue((self.root / "models" / "Pinna nobilis" / "m.pt").is_file())
-        self.assertTrue((self.root / "models" / "Pinna nobilis" / "m.json").is_file())
-        self.assertFalse((self.root / "models" / "_pending").exists())
+        self.assertTrue((self.store.library("models") / "Pinna nobilis" / "m.pt").is_file())
+        self.assertTrue((self.store.library("models") / "Pinna nobilis" / "m.json").is_file())
+        self.assertEqual(list(self.store.pending_root("models").iterdir()), [])
 
     def test_a_model_that_was_not_uploaded_is_not_found(self):
         with self.assertRaises(AppError) as ctx:
@@ -88,7 +88,7 @@ class SubmitDatasetAndModelTest(unittest.TestCase):
         sid = submit_model(self.store, self.db, "mario", "Pinna nobilis", "m.pt")["id"]
         reject_submission(self.store, self.db, sid, "admin")
         self.assertEqual(self.db.get_submission(sid)["status"], "rejected")
-        self.assertFalse((self.root / "models" / "_pending").exists())
+        self.assertEqual(list(self.store.pending_root("models").iterdir()), [])
 
     def test_the_kinds_are_listed_apart(self):
         self.put_dataset()
@@ -100,7 +100,7 @@ class SubmitDatasetAndModelTest(unittest.TestCase):
         self.assertEqual(self.db.list_submissions(kind="photos"), [])
 
     def test_an_admin_model_is_recorded_as_approved_at_once(self):
-        self.put("models/Pinna nobilis/m.pt")                                     # published directly
+        self.put("store/library/models/Pinna nobilis/m.pt")                                     # published directly
         result = submit_model(self.store, self.db, "admin", "Pinna nobilis", "m.pt", admin=True)
         row = self.db.get_submission(result["id"])
         self.assertEqual((row["status"], row["reviewed_by"], row["path"]), ("approved", "admin", "Pinna nobilis/m.pt"))
@@ -109,14 +109,14 @@ class SubmitDatasetAndModelTest(unittest.TestCase):
 
     def test_an_admin_dataset_is_recorded_as_approved_at_once(self):
         for f in ("data.yaml", "images/a.jpg", "labels/a.txt"):
-            self.put(f"dataset_Training/coralli/{f}")
+            self.put(f"store/library/datasets/coralli/{f}")
         result = submit_dataset(self.store, self.db, "admin", "coralli", admin=True)
         row = self.db.get_submission(result["id"])
         self.assertEqual((row["status"], row["reviewed_by"], row["path"]), ("approved", "admin", "coralli"))
         self.assertFalse(result["pending"])
 
     def test_an_admin_dataset_is_checked_too(self):
-        self.put("dataset_Training/coralli/images/a.jpg")                         # no data.yaml and no label
+        self.put("store/library/datasets/coralli/images/a.jpg")                         # no data.yaml and no label
         with self.assertRaises(AppError):
             submit_dataset(self.store, self.db, "admin", "coralli", admin=True)
         self.assertEqual(self.db.list_submissions(), [])

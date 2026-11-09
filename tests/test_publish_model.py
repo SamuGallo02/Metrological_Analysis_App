@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from common.errors import AppError
 from common.model_metadata import build_metadata, write_metadata
 from corpse.functions.training.publish import publish_model
-from server.params import AREA_DIRS, PENDING
+from server.params import PENDING
 from tests.test_system import Base
 
 SPECIES = "Pinna nobilis"
@@ -16,7 +16,7 @@ SPECIES = "Pinna nobilis"
 
 class PublishModelTest(Base):
     def models_dir(self):
-        return Path(self.data) / AREA_DIRS["models"]
+        return Path(self.data) / "store" / "library" / "models"
 
     def model(self, name, with_metadata=True):
         model = self.f(f"{name}.pt", b"modelbytes")
@@ -28,7 +28,7 @@ class PublishModelTest(Base):
     def test_a_user_publishes_into_quarantine(self):
         res = publish_model(self.user("pub1"), self.model("u1"), SPECIES)
         self.assertEqual(res, {"remote": f"{SPECIES}/u1.pt", "pending": True, "metadata": True})
-        folder = self.models_dir() / PENDING / "pub1" / SPECIES
+        folder = Path(self.data) / "store" / "pending" / "models" / "pub1" / SPECIES
         self.assertTrue((folder / "u1.pt").is_file())
         self.assertTrue((folder / "u1.json").is_file())
 

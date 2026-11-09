@@ -13,5 +13,5 @@ class LabelsTest(unittest.TestCase):
                          "Awaiting approval / mario / Pinna nobilis")
         self.assertEqual(path_label(""), "")
 
-    def test_the_species_area_has_a_label(self):
-        self.assertEqual(area_label("species"), "Photo catalog")
+    def test_every_media_area_has_a_label(self):
+        self.assertEqual([area_label(a) for a in ("photos", "stereo", "videos")], ["Photos", "Stereo photos", "Videos"])

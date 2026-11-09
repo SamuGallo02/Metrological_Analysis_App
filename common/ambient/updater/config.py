@@ -6,14 +6,17 @@ from typing import Optional
 
 REPO = "nautilus-unipd/Metrological_Analysis_App"
 BRANCH = "main"
+DEFAULT_SOURCE = "github"                  # where the code comes from; the project's own server will be added
 DEFAULT_MODE = "ask"                       # "ask" (propose), "auto" (install at startup) or "off"
 MODES = ("ask", "auto", "off")
 CHECK_EVERY = 24 * 3600                    # seconds between two automatic checks
 HTTP_TIMEOUT = 30                          # seconds
 QUICK_TIMEOUT = 4                          # automatic checks must never hold the app back
 
-# Folders of the repository that users do not need (same list as the downloadable installer).
-SKIP_DIRS = {"server", "server_data", "tests", "docs", "site", "deploy", ".github"}
+# What the "user edition" (the one downloaded from the site) does NOT contain: the server, its deployment kit, the
+# tests, the developer tools and the administrator screens. Same lists as the downloadable installer (a test checks it).
+SKIP_DIRS = {"server", "server_data", "tests", "docs", "site", "deploy", ".github", "tools"}
+SKIP_FILES = {"corpse/gui/users/admin.py", ".dockerignore", ".gitattributes", ".gitignore"}
 LAUNCHER_DIR = "common/launchers"
 LAUNCHERS = {"windows": "AnalisiMetrologica.vbs", "macos": "AvviaAnalisiMetrologica.command",
              "linux": "AvviaAnalisiMetrologica.sh"}
@@ -42,7 +45,7 @@ def wanted(rel: str, os_name: Optional[str]) -> bool:
     """True if the file (path relative to the project, with /) is part of an installation on `os_name`:
     not in a server-only folder and not the launcher of another operating system."""
     top = rel.split("/", 1)[0]
-    if top in SKIP_DIRS:
+    if top in SKIP_DIRS or rel in SKIP_FILES:
         return False
     if os_name and rel.startswith(LAUNCHER_DIR + "/"):
         own = LAUNCHERS.get(os_name)

@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QApplication, QComboBox, QDialog, QHBoxLayout, QLabel, QMessageBox, QPlainTextEdit,
                                QProgressBar, QPushButton, QVBoxLayout, QWidget)
 
@@ -30,11 +31,13 @@ def restart_app(root: Path = ROOT) -> None:
         app.quit()
 
 
-class UpdateDialog(QDialog):
+class UpdatesPanel(QWidget):
+    """Check / update / repair the application's code and choose how updates are handled. Used in the settings
+    window and, alone, in the update dialog."""
+
     def __init__(self, parent: Optional[QWidget] = None, root: Path = ROOT, start_update: bool = False):
         super().__init__(parent)
         self.root = Path(root)
-        self.setWindowTitle(tr("Updates"))
         self.setMinimumWidth(520)
         self._dev = versions.is_dev_checkout(self.root)
         self._busy = False
@@ -60,16 +63,15 @@ class UpdateDialog(QDialog):
         self.btn_check = QPushButton(tr("Check now"))
         self.btn_update = QPushButton(tr("Update now"))
         self.btn_repair = QPushButton(tr("Verify and repair files"))
-        self.btn_close = QPushButton(tr("Close"))
         self.btn_check.clicked.connect(self.check)
         self.btn_update.clicked.connect(self.update_now)
         self.btn_repair.clicked.connect(self.repair)
-        self.btn_close.clicked.connect(self.accept)
         for b in (self.btn_check, self.btn_update, self.btn_repair):
             row.addWidget(b)
         row.addStretch(1)
-        row.addWidget(self.btn_close)
-        for w in (self.info, self.mode, self.status, self.bar, self.log):
+        self.mode_hint = QLabel(tr("Only the files that changed are downloaded, from the same source as the installer."))
+        self.mode_hint.setWordWrap(True)
+        for w in (self.info, self.mode, self.mode_hint, self.status, self.bar, self.log):
             lay.addWidget(w)
         lay.addLayout(row)
         self.proc = HiddenProcess(self)
@@ -160,6 +162,20 @@ class UpdateDialog(QDialog):
             self.status.setText(tr("All files are fine or were restored.") if code == 0
                                 else tr("Some files could not be restored (is the internet connection working?)."))
         self._run(["repair", "--deep"], done)
+
+
+class UpdateDialog(QDialog):
+    """The updates panel in a window of its own (used by the 'new version available' offer)."""
+
+    def __init__(self, parent: Optional[QWidget] = None, root: Path = ROOT, start_update: bool = False):
+        super().__init__(parent)
+        self.setWindowTitle(tr("Updates"))
+        lay = QVBoxLayout(self)
+        self.panel = UpdatesPanel(self, root, start_update)
+        lay.addWidget(self.panel)
+        close = QPushButton(tr("Close"))
+        close.clicked.connect(self.accept)
+        lay.addWidget(close, 0, Qt.AlignmentFlag.AlignRight)
 
 
 def offer_update_later(window: QWidget, root: Path = ROOT) -> None:

@@ -25,32 +25,32 @@ class QuarantineTest(unittest.TestCase):
         self.assertNotIn("_pending", [e["name"] for e in self.store.list_dir("models", "", False, "altro")["entries"]])
 
     def test_species_pending_is_hidden_from_users(self):
-        eff = self._upload_as_user("species", "Pinna nobilis/a.jpg")
+        eff = self._upload_as_user("photos", "Pinna nobilis/a.jpg")
         with self.assertRaises(AppError):
-            self.store.resolve("species", eff, False, "altro")
-        self.store.resolve("species", eff, True, "admin")
-        self.assertNotIn("_pending", [e["name"] for e in self.store.list_dir("species", "", False, "altro")["entries"]])
-        self.assertIn("_pending", [e["name"] for e in self.store.list_dir("species", "", True, "admin")["entries"]])
+            self.store.resolve("photos", eff, False, "altro")
+        self.store.resolve("photos", eff, True, "admin")
+        self.assertNotIn("_pending", [e["name"] for e in self.store.list_dir("photos", "", False, "altro")["entries"]])
+        self.assertIn("_pending", [e["name"] for e in self.store.list_dir("photos", "", True, "admin")["entries"]])
     
     def test_users_cannot_create_folders_in_quarantine_areas(self):
-        for area in ("models", "species"):
+        for area in ("models", "photos"):
             with self.subTest(area=area):
                 with self.assertRaises(AppError):
                     self.store.mkdir(area, "Pinna nobilis", False, "francy")
 
     def test_quarantine_root_cannot_be_deleted(self):
-        for area in ("models", "species"):
+        for area in ("models", "photos"):
             with self.subTest(area=area):
                 with self.assertRaises(AppError):
                     self.store.delete(area, "_pending")
 
     def test_pending_species_dir(self):
-        self._upload_as_user("species", "Pinna nobilis/a.jpg")
-        folder = self.store.pending_species_dir("francy", "Pinna nobilis")
+        self._upload_as_user("photos", "Pinna nobilis/a.jpg")
+        folder = self.store.pending_media_dir("francy", "Pinna nobilis", "photos")
         self.assertTrue(folder.is_dir())
         with self.assertRaises(AppError):
-            self.store.pending_species_dir("francy", "Epinephelus marginatus")   # mai caricata
+            self.store.pending_media_dir("francy", "Epinephelus marginatus", "photos")   # mai caricata
         with self.assertRaises(AppError):
-            self.store.pending_species_dir("francy", "../francy")                # nome non valido
+            self.store.pending_media_dir("francy", "../francy", "photos")                # nome non valido
         with self.assertRaises(AppError):
-            self.store.pending_species_dir("altro", "Pinna nobilis")             # le foto sono di un altro utente
+            self.store.pending_media_dir("altro", "Pinna nobilis", "photos")             # le foto sono di un altro utente

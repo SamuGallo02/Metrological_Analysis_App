@@ -16,8 +16,8 @@ class SubmitSpeciesTest(unittest.TestCase):
         self.store = Storage(Path(self._tmp.name))
         self.db = Database(Path(self._tmp.name) / "test.db")
 
-    def _upload(self, rel):
-        upload_as_user(self.store, rel)
+    def _upload(self, rel, area="photos"):
+        upload_as_user(self.store, rel, area=area)
 
     def test_valid_submission_is_registered(self):
         self._upload("Pinna nobilis/a.jpg")
@@ -30,9 +30,9 @@ class SubmitSpeciesTest(unittest.TestCase):
         self.assertEqual(rows[0]["path"], "_pending/francy/Pinna nobilis")
 
     def test_incomplete_stereo_is_rejected(self):
-        self._upload("Pinna nobilis/rx/a.jpg")      # manca lx
+        self._upload("Pinna nobilis/rx/a.jpg", "stereo")      # lx is missing
         with self.assertRaises(AppError):
-            submit_species(self.store, self.db, "francy", "Pinna nobilis")
+            submit_species(self.store, self.db, "francy", "Pinna nobilis", "stereo")
         self.assertEqual(self.db.list_submissions(), [])                       # nessuna riga creata
 
     def test_double_submit_is_rejected(self):

@@ -54,6 +54,7 @@ corpse/                 il cuore dell'applicazione
   functions/            logica, senza interfaccia: analysis, home, training, users
   gui/                  interfaccia PySide6: analysis, home, manual, training, users
 datasets/Dataset_Locale/  dati dell'utente: foto, video, dataset di training, modelli, risultati
+datasets/server_data/     dati del server (database, store/, log, backup)
 librery/                ambienti virtuali creati dall'installer (venv, venv_mac, venv_linux)
 server/                 server HTTP per account e cartelle condivise (non installato dagli utenti)
 tools/                  demo webcam, acquisizione coppie di test, generazione dei pacchetti lingua
@@ -97,9 +98,11 @@ Guida completa in `deploy/README.md` e `docs/SERVER.md`.
 ## Riparazione e aggiornamenti (senza git)
 
 L'installer registra in `librery/.code_version.json` la versione installata e l'impronta (dimensione + SHA-256) di ogni file.
-- **Riparazione**: a ogni avvio `main.py` controlla (in pochi millisecondi) che i file esistano e abbiano la dimensione giusta; quelli mancanti o danneggiati vengono riscaricati **da soli**, alla stessa versione installata. "Verifica e ripara file" (pulsante *Aggiornamenti*) confronta anche gli SHA-256.
-- **Aggiornamento**: quando su GitHub esce una nuova *release* (o, se non ce ne sono, un nuovo commit su `main`) l'app propone di aggiornare, al massimo una volta al giorno. Si scaricano e scrivono solo i file cambiati; se cambiano le librerie richieste viene installato solo ciò che manca. Dal pulsante *Aggiornamenti* si sceglie la modalità: chiedi / automatico / mai.
+- **Riparazione**: a ogni avvio `main.py` controlla (in pochi millisecondi) che i file esistano e abbiano la dimensione giusta; quelli mancanti o danneggiati vengono riscaricati **da soli**, alla stessa versione installata. "Verifica e ripara file" (*Impostazioni → Aggiornamenti*) confronta anche gli SHA-256.
+- **Aggiornamento**: quando su GitHub esce una nuova *release* (o, se non ce ne sono, un nuovo commit su `main`) l'app propone di aggiornare, al massimo una volta al giorno. Si scaricano e scrivono solo i file cambiati; se cambiano le librerie richieste viene installato solo ciò che manca. Da *Impostazioni → Aggiornamenti* si sceglie la modalità: chiedi / automatico / mai.
 - Da terminale: `python -m common.ambient.updater status|check|update|repair [--deep]|mode ask|auto|off`.
+- **Edizione utente**: l'installer e gli aggiornamenti scaricano solo ciò che serve agli utenti. Restano fuori server, test, documentazione, deploy, strumenti di sviluppo e schermate di amministrazione (elenco in `common/ambient/updater/config.py`, identico a quello dell'installer). L'origine del codice è una *sorgente* intercambiabile (`updater/source.py`): oggi GitHub, in futuro il server.
+- **Impostazioni**: un unico pulsante raccoglie lingua, indirizzo del server, aggiornamenti e componenti opzionali (training GPU), che si installano solo se li vuoi, con conferma.
 - Una cartella clonata con git (`.git`) non viene toccata: si aggiorna con `git pull`. Dati utente, modelli e `librery/` non vengono mai modificati.
 
 ## Rigenerare gli installer

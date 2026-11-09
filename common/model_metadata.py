@@ -38,17 +38,22 @@ def metrics_from_results(results: Any) -> Dict[str, float]:
 
 
 def classes_from_data_yaml(yaml_path: Path) -> List[str]:
-    """I nomi delle classi scritti in data.yaml (`names:`), in ordine di numero. Lista vuota se non si leggono."""
+    """Class names written in a data.yaml file (`names:`), in order of number. Empty list if unreadable."""
+    try:
+        return classes_from_yaml_text(Path(yaml_path).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError):
+        return []
+
+
+def classes_from_yaml_text(text: str) -> List[str]:
+    """Same as `classes_from_data_yaml`, for text already in memory (e.g. a file read from the server)."""
     try:
         import yaml
-    except ImportError:                                  # il server usa solo la libreria standard: lettura minima
-        try:
-            return _names_without_yaml(Path(yaml_path).read_text(encoding="utf-8"))
-        except (OSError, UnicodeDecodeError):
-            return []
+    except ImportError:                                  # the server uses only the standard library: minimal reader
+        return _names_without_yaml(text)
     try:
-        data = yaml.safe_load(Path(yaml_path).read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, yaml.YAMLError):
+        data = yaml.safe_load(text)
+    except yaml.YAMLError:
         return []
     names = data.get("names") if isinstance(data, dict) else None
     if isinstance(names, dict):
@@ -56,6 +61,7 @@ def classes_from_data_yaml(yaml_path: Path) -> List[str]:
     if isinstance(names, list):
         return [str(v) for v in names]
     return []
+
 
 def _unquote(text: str) -> str:
     return text.strip().strip("'\"")

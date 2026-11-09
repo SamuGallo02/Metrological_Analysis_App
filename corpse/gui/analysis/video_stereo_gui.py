@@ -19,16 +19,10 @@ from PySide6.QtWidgets import QComboBox, QFileDialog, QHBoxLayout, QLabel, QMess
 
 from corpse.functions.analysis.analysis import ObjectAnalyzer, PairResult, StereoConfig, render_overlay
 from corpse.functions.analysis.pairing import find_stereo_video_pair
+from corpse.functions.analysis.label_export import LabelRecorder, model_class_names, save_media_labels
 from corpse.functions.analysis.tracking import ObjectTracker, generate_adaptive_prefixes
 from corpse.gui.analysis.analysis_page_base import AnalysisPageBase
-
-from common.paths import STEREO_VIDEO_DIR as DATASETS_VIDEO_STEREO_DIR  # noqa: E402
-
-
-def scan_video_stereo_datasets(root: Path = DATASETS_VIDEO_STEREO_DIR) -> List[str]:
-    if not root.is_dir():
-        return []
-    return sorted(f.name for f in root.iterdir() if f.is_dir())
+from corpse.gui.analysis.library_picker import add_folder, on_selected, refresh, remove_selected
 
 
 class VideoStereoAnalysisWorker(QThread):
@@ -75,6 +69,8 @@ class VideoStereoAnalysisWorker(QThread):
 
             analyzer = ObjectAnalyzer(self.model_path, self.stereo_config)
             tracker = ObjectTracker()
+            recorder = LabelRecorder(model_class_names(analyzer))
+            label_lines: List[str] = []                              # `frame cls ...` for the left video
             seen_classes: Set[str] = set()
 
             target_labels_lower = None
@@ -110,6 +106,8 @@ class VideoStereoAnalysisWorker(QThread):
                         num_part = str(det.track_id).split("-")[-1].split("_")[-1]
                         det.track_id = f"{prefix}-{num_part}"
 
+                label_lines.extend(recorder.lines_for(result.detections, left_frame.shape[1], left_frame.shape[0],
+                                                      frame_idx))
                 result.overlay_image = render_overlay(result.left_image, result.detections)
                 writer.write(result.overlay_image)
 
@@ -117,6 +115,7 @@ class VideoStereoAnalysisWorker(QThread):
                 if total_frames > 0:
                     self.progress.emit(frame_idx, total_frames)
 
+            save_media_labels(self.left_video, label_lines, recorder.classes)
             self.finished_all.emit()
 
         except Exception as exc:
@@ -156,6 +155,10 @@ class VideoStereoAnalysisPage(AnalysisPageBase):
         btn_refresh_datasets = QPushButton("Aggiorna elenco")
         btn_refresh_datasets.clicked.connect(self._refresh_datasets)
         dataset_bar.addWidget(btn_refresh_datasets)
+        btn_remove_dataset = QPushButton("Rimuovi dall'elenco")
+        btn_remove_dataset.setToolTip("Toglie la cartella dall'elenco: i file non vengono cancellati.")
+        btn_remove_dataset.clicked.connect(self._remove_dataset)
+        dataset_bar.addWidget(btn_remove_dataset)
         layout.addLayout(dataset_bar)
 
         note = QLabel("La cartella deve contenere le sottocartelle rx/ e lx/, ciascuna con un solo file video.")
@@ -164,64 +167,21 @@ class VideoStereoAnalysisPage(AnalysisPageBase):
 
         self._refresh_datasets()
 
+    KIND = "video_stereo"
+
     def _add_dataset(self) -> None:
-        DATASETS_VIDEO_STEREO_DIR.mkdir(parents=True, exist_ok=True)
-        source_dir = QFileDialog.getExistingDirectory(
-            self, "Seleziona cartella con i due video sincronizzati (rx/lx)", str(DATASETS_VIDEO_STEREO_DIR.resolve())
-        )
-        if not source_dir:
-            return
+        """Registers a folder where it is: nothing is copied into the application's folders."""
+        add_folder(self, self.KIND, "Seleziona cartella con i due video sincronizzati (rx/lx)",
+                   None)
 
-        import shutil
-        source = Path(source_dir)
-        dest = DATASETS_VIDEO_STEREO_DIR / source.name
-        if dest.exists():
-            reply = QMessageBox.question(
-                self, "Cartella esistente", f"Una cartella denominata '{source.name}' esiste già. Sovrascrivere?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            )
-            if reply != QMessageBox.StandardButton.Yes:
-                return
-            try:
-                shutil.rmtree(dest)
-            except OSError as exc:
-                QMessageBox.critical(self, "Errore rimozione", f"Impossibile sovrascrivere:\n{exc}")
-                return
-
-        try:
-            shutil.copytree(source, dest)
-        except OSError as exc:
-            QMessageBox.critical(self, "Errore di copia", f"Impossibile copiare:\n{exc}")
-            return
-
-        self._refresh_datasets()
-        self.folder_combo.setCurrentText(source.name)
+    def _remove_dataset(self) -> None:
+        remove_selected(self, self.KIND)
 
     def _refresh_datasets(self) -> None:
-        DATASETS_VIDEO_STEREO_DIR.mkdir(parents=True, exist_ok=True)
-        current = self.folder_combo.currentText()
-        self.folder_combo.blockSignals(True)
-        self.folder_combo.clear()
-
-        datasets = scan_video_stereo_datasets()
-        if not datasets:
-            self.folder_combo.addItem("Nessuna cartella trovata in datasets/Dataset_Locale/dataset_Video_Stereo/")
-            self.folder_combo.setEnabled(False)
-            self.selected_folder = None
-        else:
-            self.folder_combo.setEnabled(True)
-            self.folder_combo.addItems(datasets)
-            if current in datasets:
-                self.folder_combo.setCurrentText(current)
-            self.selected_folder = str(DATASETS_VIDEO_STEREO_DIR / self.folder_combo.currentText())
-
-        self.folder_combo.blockSignals(False)
-        self._update_run_button_state()
+        refresh(self, self.KIND)
 
     def _on_folder_selection_changed(self, _index: int) -> None:
-        name = self.folder_combo.currentText()
-        self.selected_folder = str(DATASETS_VIDEO_STEREO_DIR / name) if name else None
-        self._update_run_button_state()
+        on_selected(self, self.KIND)
 
     def _update_run_button_state(self) -> None:
         if not hasattr(self, "btn_run") or not hasattr(self, "model_combo") or not hasattr(self, "selected_folder"):

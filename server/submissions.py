@@ -7,34 +7,42 @@ from datetime import datetime
 from common.errors import AppError
 
 from .db import Database
-from .params import SPECIES_RE, PENDING, SUBMISSION_APPROVED, SUBMISSION_PENDING, SUBMISSION_REJECTED, KIND_PHOTOS, KIND_DATASET, KIND_MODEL
-from .species_tree import count_photos, validate_species_dir
+from .params import (SPECIES_RE, PENDING, SUBMISSION_APPROVED, SUBMISSION_PENDING, SUBMISSION_REJECTED, KIND_PHOTOS,
+                     KIND_DATASET, KIND_MODEL, KINDS_MEDIA)
+from .media_tree import count_media, validate_media_dir
 from .storage import Storage
 from .dataset_tree import count_dataset_images, validate_dataset_dir
 
 
-def submit_species(store: Storage, db: Database, username: str, species: str) -> Dict[str, Any]:
-    folder = store.pending_species_dir(username, species)          # 404 se non c'è nulla in quarantena
-    errors = validate_species_dir(folder)
+def submit_species(store: Storage, db: Database, username: str, species: str, kind: str = KIND_PHOTOS,
+                   admin: bool = False) -> Dict[str, Any]:
+    """Registers the photos / stereo photos / videos a user uploaded for a species. What an administrator
+    sends is approved at once, by the administrator."""
+    if kind not in KINDS_MEDIA:
+        raise AppError("Unknown kind of upload.", 422)
+    folder = store.pending_media_dir(username, species, kind)       # 404 if there is nothing waiting
+    errors = validate_media_dir(folder, kind)
     if errors:
-        raise errors[0]                                            # rifiuta: nessuna riga viene creata
+        raise errors[0]                                            # refused: no row is created
     path = f"{PENDING}/{username}/{species}"
-    for s in db.list_submissions(username=username, status=SUBMISSION_PENDING):
-        if s["path"] == path:
-            raise AppError("You already have a pending submission for this species.", 409)
-    photos = count_photos(folder)
-    sid = db.add_submission(username, species, path, photos)
-    return {"id": sid, "species": species, "path": path, "photos": photos}
+    _check_not_waiting(db, username, path, kind)
+    items = count_media(folder, kind)
+    sid = db.add_submission(username, species, path, items, kind=kind)
+    result = {"id": sid, "kind": kind, "species": species, "path": path, "photos": items, "pending": not admin}
+    if admin:
+        approve_submission(store, db, sid, username)
+        result["pending"] = False
+    return result
 
-def _check_not_waiting(db: Database, username: str, path: str) -> None:
+def _check_not_waiting(db: Database, username: str, path: str, kind: Optional[str] = None) -> None:
     for s in db.list_submissions(username=username, status=SUBMISSION_PENDING):
-        if s["path"] == path:
+        if s["path"] == path and (kind is None or s["kind"] == kind):
             raise AppError("You already have a pending submission for this item.", 409)
 
 
 def _record(db: Database, username: str, subject: str, path: str, items: int, kind: str, admin: bool) -> int:
     """Registers the submission. What an administrator publishes is approved at once, by the administrator."""
-    _check_not_waiting(db, username, path)
+    _check_not_waiting(db, username, path, kind)
     sid = db.add_submission(username, subject, path, items, kind=kind)
     if admin:
         db.review_submission(sid, SUBMISSION_APPROVED, username)
@@ -81,11 +89,11 @@ def approve_submission(store: Storage, db: Database, sid: int, reviewer: str) ->
         final = store.approve_model(sub["path"])                   # il modello e il suo .json si spostano insieme
         db.review_submission(sid, SUBMISSION_APPROVED, reviewer, path=final)
         return {"id": sid, "kind": KIND_MODEL, "path": final}
-    day = datetime.fromtimestamp(sub["created"]).date()              # la data dell'invio
-    folder, photos = store.approve_species(sub["username"], sub["species"], day)
+    day = datetime.fromtimestamp(sub["created"]).date()              # the date of the upload
+    folder, photos = store.approve_media(sub["username"], sub["species"], sub["kind"], day)
     db.review_submission(sid, SUBMISSION_APPROVED, reviewer,     # solo se i file sono andati a posto
                          path=f"{sub['species']}/{folder}", photos=photos)
-    return {"id": sid, "species": sub["species"], "folder": folder, "photos": photos}
+    return {"id": sid, "kind": sub["kind"], "species": sub["species"], "folder": folder, "photos": photos}
 
 def reject_submission(store: Storage, db: Database, sid: int, reviewer: str) -> Dict[str, Any]:
     sub = _pending_submission(db, sid)
@@ -97,9 +105,9 @@ def reject_submission(store: Storage, db: Database, sid: int, reviewer: str) -> 
         store.delete("models", sub["path"])                        # toglie anche il .json e le cartelle vuote
         db.review_submission(sid, SUBMISSION_REJECTED, reviewer)
         return {"id": sid, "kind": KIND_MODEL, "path": sub["path"]}
-    photos = store.reject_species(sub["username"], sub["species"])   # cancella le foto
+    photos = store.reject_media(sub["username"], sub["species"], sub["kind"])   # deletes the files
     db.review_submission(sid, SUBMISSION_REJECTED, reviewer)         # ma la riga resta, con lo stato "rejected"
-    return {"id": sid, "species": sub["species"], "photos": photos}
+    return {"id": sid, "kind": sub["kind"], "species": sub["species"], "photos": photos}
 
 def catalog(db: Database, kind: str, store: Optional[Storage] = None) -> List[Dict[str, Any]]:
     """The approved items of a kind, for the catalogs: alphabetical by species, then by date.

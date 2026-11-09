@@ -9,26 +9,19 @@ Autore: Samuele Gallo
 
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 from typing import List, Optional, Set, Union
 
 import cv2
 from PySide6.QtCore import QThread, Signal
-from PySide6.QtWidgets import QComboBox, QFileDialog, QHBoxLayout, QLabel, QMessageBox, QPushButton, QVBoxLayout
+from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
 
 from corpse.functions.analysis.analysis import ObjectAnalyzer, PairResult, render_overlay
 from corpse.functions.analysis.pairing import SingleImageFinder, is_stereo_dataset_folder
+from corpse.functions.analysis.label_export import LabelRecorder, model_class_names, save_media_labels
 from corpse.functions.analysis.tracking import ObjectTracker, generate_adaptive_prefixes
 from corpse.gui.analysis.analysis_page_base import AnalysisPageBase
-
-from common.paths import PHOTO_DIR as DATASETS_FOTO_DIR  # noqa: E402
-
-
-def scan_foto_datasets(root: Path = DATASETS_FOTO_DIR) -> List[str]:
-    if not root.is_dir():
-        return []
-    return sorted(f.name for f in root.iterdir() if f.is_dir())
+from corpse.gui.analysis.library_picker import add_folder, on_selected, refresh, remove_selected
 
 
 class PhotoAnalysisWorker(QThread):
@@ -56,6 +49,7 @@ class PhotoAnalysisWorker(QThread):
 
             analyzer = ObjectAnalyzer(self.model_path)
             tracker = ObjectTracker()
+            recorder = LabelRecorder(model_class_names(analyzer))     # labels stay associated with each photo
             seen_classes: Set[str] = set()
 
             target_labels_lower = None
@@ -86,6 +80,8 @@ class PhotoAnalysisWorker(QThread):
                         num_part = str(det.track_id).split("-")[-1].split("_")[-1]
                         det.track_id = f"{prefix}-{num_part}"
 
+                save_media_labels(item.image_path, recorder.lines_for(detections, image.shape[1], image.shape[0]),
+                                  recorder.classes)
                 overlay = render_overlay(image, detections)
                 result = PairResult(
                     timestamp=item.timestamp, right_image=image, left_image=image,
@@ -129,75 +125,36 @@ class PhotoAnalysisPage(AnalysisPageBase):
         btn_refresh_datasets = QPushButton("Aggiorna elenco")
         btn_refresh_datasets.clicked.connect(self._refresh_datasets)
         dataset_bar.addWidget(btn_refresh_datasets)
+        btn_remove_dataset = QPushButton("Rimuovi dall'elenco")
+        btn_remove_dataset.setToolTip("Toglie la cartella dall'elenco: i file non vengono cancellati.")
+        btn_remove_dataset.clicked.connect(self._remove_dataset)
+        dataset_bar.addWidget(btn_remove_dataset)
         layout.addLayout(dataset_bar)
 
         self._refresh_datasets()
 
+    KIND = "photo"
+
+    @staticmethod
+    def _validate_folder(folder: Path):
+        if is_stereo_dataset_folder(folder):
+            return (f"'{folder.name}' contiene le sottocartelle rx/lx: e' un dataset per l'Analisi Stereo, "
+                    f"non per l'Analisi Foto. Selezionala nella pagina Analisi Stereo invece.")
+        return None
+
     def _add_dataset(self) -> None:
-        DATASETS_FOTO_DIR.mkdir(parents=True, exist_ok=True)
-        source_dir = QFileDialog.getExistingDirectory(
-            self, "Seleziona cartella con foto singole (non rx/lx)", str(DATASETS_FOTO_DIR.resolve())
-        )
-        if not source_dir:
-            return
+        """Registers a folder where it is: nothing is copied into the application's folders."""
+        add_folder(self, self.KIND, "Seleziona cartella con foto singole (non rx/lx)",
+                   self._validate_folder)
 
-        source = Path(source_dir)
-        if is_stereo_dataset_folder(source):
-            QMessageBox.critical(
-                self, "Cartella non valida",
-                f"'{source.name}' contiene le sottocartelle rx/lx: è un dataset per l'Analisi Stereo, "
-                f"non per l'Analisi Foto. Selezionala nella pagina Analisi Stereo invece.",
-            )
-            return
-
-        dest = DATASETS_FOTO_DIR / source.name
-        if dest.exists():
-            reply = QMessageBox.question(
-                self, "Cartella esistente", f"Una cartella denominata '{source.name}' esiste già. Sovrascrivere?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            )
-            if reply != QMessageBox.StandardButton.Yes:
-                return
-            try:
-                shutil.rmtree(dest)
-            except OSError as exc:
-                QMessageBox.critical(self, "Errore rimozione", f"Impossibile sovrascrivere:\n{exc}")
-                return
-
-        try:
-            shutil.copytree(source, dest)
-        except OSError as exc:
-            QMessageBox.critical(self, "Errore di copia", f"Impossibile copiare:\n{exc}")
-            return
-
-        self._refresh_datasets()
-        self.folder_combo.setCurrentText(source.name)
+    def _remove_dataset(self) -> None:
+        remove_selected(self, self.KIND)
 
     def _refresh_datasets(self) -> None:
-        DATASETS_FOTO_DIR.mkdir(parents=True, exist_ok=True)
-        current = self.folder_combo.currentText()
-        self.folder_combo.blockSignals(True)
-        self.folder_combo.clear()
-
-        datasets = scan_foto_datasets()
-        if not datasets:
-            self.folder_combo.addItem("Nessuna cartella trovata in datasets/Dataset_Locale/dataset_Foto/")
-            self.folder_combo.setEnabled(False)
-            self.selected_folder = None
-        else:
-            self.folder_combo.setEnabled(True)
-            self.folder_combo.addItems(datasets)
-            if current in datasets:
-                self.folder_combo.setCurrentText(current)
-            self.selected_folder = str(DATASETS_FOTO_DIR / self.folder_combo.currentText())
-
-        self.folder_combo.blockSignals(False)
-        self._update_run_button_state()
+        refresh(self, self.KIND)
 
     def _on_folder_selection_changed(self, _index: int) -> None:
-        name = self.folder_combo.currentText()
-        self.selected_folder = str(DATASETS_FOTO_DIR / name) if name else None
-        self._update_run_button_state()
+        on_selected(self, self.KIND)
 
     def _update_run_button_state(self) -> None:
         if not hasattr(self, "btn_run") or not hasattr(self, "model_combo") or not hasattr(self, "selected_folder"):

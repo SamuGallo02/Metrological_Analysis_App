@@ -1,6 +1,6 @@
 """Translated labels for roles and areas (functions: the language may change after import)."""
 from common.i18n import tr
-from common.params import AREA_MINE, ROLE_SERVER, SUBMISSION_APPROVED, SUBMISSION_PENDING, SUBMISSION_REJECTED, AREA_SPECIES
+from common.params import AREA_MINE, ROLE_SERVER, SUBMISSION_APPROVED, SUBMISSION_PENDING, SUBMISSION_REJECTED
 
 PENDING_DIR = "_pending" 
 
@@ -9,8 +9,8 @@ def role_label(role: str) -> str:
 
 
 def area_label(area: str) -> str:
-    return {"photos": tr("Photos"), "models": tr("YOLO models"), "datasets": tr("Datasets"),
-            AREA_SPECIES: tr("Photo catalog"), AREA_MINE: tr("My folder")}.get(area, area)
+    return {"photos": tr("Photos"), "stereo": tr("Stereo photos"), "videos": tr("Videos"),
+            "models": tr("YOLO models"), "datasets": tr("Datasets"), AREA_MINE: tr("My folder")}.get(area, area)
 
 
 def status_label(status: str) -> str:

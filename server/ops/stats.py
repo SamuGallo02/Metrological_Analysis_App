@@ -31,10 +31,15 @@ def collect(db: Database, data_dir: Path, started: float = 0.0, requests: int = 
         last_day = c.execute("SELECT COUNT(*) FROM events WHERE ts>?", (now - 86400,)).fetchone()[0]
         logins = c.execute("SELECT COUNT(*) FROM events WHERE action='login' AND ts>?", (now - 86400,)).fetchone()[0]
     usage = shutil.disk_usage(data_dir if data_dir.exists() else data_dir.parent)
-    areas = {a: folder_size(data_dir / d) for a, d in params.AREA_DIRS.items() if (data_dir / d).is_dir()}
+    store = data_dir / params.STORE_DIR
+    areas = {a: folder_size(store / params.LIBRARY_DIR / a) for a in params.KIND_AREA.values()
+             if (store / params.LIBRARY_DIR / a).is_dir()}
+    if (store / params.MINE_DIR).is_dir():
+        areas["mine"] = folder_size(store / params.MINE_DIR)
+    waiting = folder_size(store / params.PENDING_DIR_NAME)
     return {"api": params.API_VERSION, "uptime": int(now - started) if started else None, "requests": requests,
             "users": users, "admins": admins, "sessions": sessions, "events_24h": last_day, "logins_24h": logins,
-            "db_bytes": db.path.stat().st_size if db.path.exists() else 0, "areas": areas,
+            "db_bytes": db.path.stat().st_size if db.path.exists() else 0, "areas": areas, "pending_bytes": waiting,
             "disk_free": usage.free, "disk_total": usage.total}
 
 

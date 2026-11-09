@@ -223,23 +223,36 @@ class TestProfile(Base):
 
 
 class TestFiles(Base):
+    def _published(self, user_name, species="Pinna nobilis"):
+        """An approved photo in the library (uploaded by `user_name`, approved by the admin)."""
+        u, a = self.user(user_name), self.admin()
+        u.upload("photos", f"{species}/a.png", self.f("a.png", png_bytes()))
+        a.approve_submission(u.submit_species(species)["id"])
+        return u, a, f"{species}/{[x['name'] for x in a.list('photos', species)][0]}"
+
     def test_user_read_insert_not_modify(self):
         u, a = self.user("ugo"), self.admin()
-        r = u.upload("photos", "ugo/a.png", self.f("a.png", png_bytes()))
-        self.assertEqual(r["path"], "ugo/a.png")
-        self.assertEqual([e["name"] for e in u.list("photos", "ugo")], ["a.png"])
-        with self.assertRaises(ApiError) as e: u.upload("photos", "ugo/a.png", self.f("a.png", png_bytes()))
+        r = u.upload("photos", "Pinna nobilis/a.png", self.f("a.png", png_bytes()))
+        self.assertTrue(r["pending"])                                        # an upload waits for review
+        with self.assertRaises(ApiError) as e: u.upload("photos", "Pinna nobilis/a.png", self.f("a.png", png_bytes()))
         self.assertEqual(e.exception.status, 409)
-        for op in (lambda: u.delete("photos", "ugo/a.png"), lambda: u.move("photos", "ugo/a.png", "ugo/b.png")):
+        with self.assertRaises(ApiError) as e: u.list("photos", "_pending")  # the waiting uploads are for the admin
+        self.assertEqual(e.exception.status, 403)
+        a.approve_submission(u.submit_species("Pinna nobilis")["id"])
+        folder = f"Pinna nobilis/{[x['name'] for x in a.list('photos', 'Pinna nobilis')][0]}"
+        self.assertEqual([e["name"] for e in u.list("photos", folder)], ["IMG_0001.png"])
+        image = f"{folder}/IMG_0001.png"
+        for op in (lambda: u.delete("photos", image), lambda: u.move("photos", image, f"{folder}/b.png")):
             with self.assertRaises(ApiError) as e: op()
             self.assertEqual(e.exception.status, 403)
-        self.assertEqual(u.download("photos", "ugo/a.png", self.work / "dl.png").read_bytes(), png_bytes())
-        a.move("photos", "ugo/a.png", "ugo/b.png"); a.delete("photos", "ugo/b.png")
-        self.assertEqual(a.list("photos", "ugo"), [])
+        self.assertEqual(u.download("photos", image, self.work / "dl.png").read_bytes(), png_bytes())
+        a.move("photos", image, f"{folder}/b.png"); a.delete("photos", f"{folder}/b.png")
+        self.assertEqual(a.list("photos", folder), [])
 
     def test_other_user_can_read_donations(self):
-        self.user("dona1").upload("photos", "dona1/x.png", self.f("x.png", png_bytes()))
-        self.assertEqual(self.user("dona2").list("photos", "dona1")[0]["name"], "x.png")
+        _u, _a, folder = self._published("dona1")
+        other = self.user("dona2")
+        self.assertEqual(other.list("photos", folder)[0]["name"], "IMG_0001.png")
 
     def test_path_traversal(self):
         u = self.user("evil")
@@ -253,11 +266,11 @@ class TestFiles(Base):
 
     def test_extension_and_magic(self):
         u = self.user("ext")
-        with self.assertRaises(ApiError) as e: u.upload("photos", "x.exe", self.f("x.exe", b"MZ" * 10))
+        with self.assertRaises(ApiError) as e: u.upload("photos", "Pinna nobilis/x.exe", self.f("x.exe", b"MZ" * 10))
         self.assertEqual(e.exception.status, 415)
         with self.assertRaises(ApiError) as e: u.upload("mine", "x.exe", self.f("x.exe", b"MZ" * 10))
         self.assertEqual(e.exception.status, 415)
-        with self.assertRaises(ApiError) as e: u.upload("photos", "fake.png", self.f("fake.png", b"non sono un png" * 5))
+        with self.assertRaises(ApiError) as e: u.upload("photos", "Pinna nobilis/fake.png", self.f("fake.png", b"non sono un png" * 5))
         self.assertEqual(e.exception.status, 415)
 
     def test_models_quarantine(self):
@@ -291,13 +304,14 @@ class TestFiles(Base):
         r = u.upload("models", "Pinna nobilis nobilis/y.pt", self.f("y.pt", b"PK" * 30))      # with subspecies
         self.assertTrue(r["pending"])
 
-    def test_server_areas_use_local_folder_names(self):
-        """On the lab computer the server data and the local data of the app are the same folder."""
-        from common.params import LOCAL_FOLDER_NAMES
+    def test_the_data_folder_is_organised_by_kind_apart_from_the_app(self):
+        """Server files live in store/: library/<kind>, pending/<kind>/<user>, mine/<user>."""
         self.admin().upload("datasets", "set1/a.txt", self.f("a.txt", b"x"))
-        self.assertTrue((self.data / LOCAL_FOLDER_NAMES["training"] / "set1" / "a.txt").is_file())
+        self.assertTrue((self.data / "store" / "library" / "datasets" / "set1" / "a.txt").is_file())
         self.user("zed").upload("mine", "n.txt", self.f("n.txt", b"y"))
-        self.assertTrue((self.data / LOCAL_FOLDER_NAMES["users"] / "zed" / "n.txt").is_file())
+        self.assertTrue((self.data / "store" / "mine" / "zed" / "n.txt").is_file())
+        self.user("zed").upload("videos", "Pinna nobilis/v.mp4", self.f("v.mp4", b"y" * 20))
+        self.assertTrue((self.data / "store" / "pending" / "videos" / "zed" / "Pinna nobilis" / "v.mp4").is_file())
 
     def test_user_dataset_waits_in_quarantine_and_is_not_merged(self):
         """A dataset uploaded by a user waits in quarantine: the server datasets are not touched, and the user
@@ -341,7 +355,7 @@ class TestFiles(Base):
         with self.assertRaises(ApiError): a.delete("models", "_pending")
 
     def test_events_log(self):
-        a = self.admin(); self.user("event1").upload("photos", "event1/e.png", self.f("e.png", png_bytes()))
+        a = self.admin(); self.user("event1").upload("photos", "Pinna nobilis/e.png", self.f("e.png", png_bytes()))
         self.assertTrue(any(e["action"] == "upload" and e["username"] == "event1" for e in a.events()))
         with self.assertRaises(ApiError): self.user("event1").events()
 
@@ -462,7 +476,7 @@ class TestSpeciesReview(Base):
     def test_submit_and_approve(self):
         u, other, a = self.user("bio"), self.user("bio2"), self.admin()
         for name in ("a", "b"):
-            u.upload("species", f"Pinna nobilis/{name}.png", self.f(f"{name}.png", png_bytes()))
+            u.upload("photos", f"Pinna nobilis/{name}.png", self.f(f"{name}.png", png_bytes()))
         sub = u.submit_species("Pinna nobilis")
         self.assertEqual((sub["species"], sub["photos"]), ("Pinna nobilis", 2))
         self.assertEqual([s["id"] for s in u.species_submissions()], [sub["id"]])        # l'utente vede le sue
@@ -474,18 +488,18 @@ class TestSpeciesReview(Base):
         res = a.approve_submission(sub["id"])
         self.assertEqual(res["photos"], 2)
         self.assertEqual(u.species_submissions()[0]["status"], "approved")
-        self.assertIn(res["folder"], [x["name"] for x in other.list("species", "Pinna nobilis")])   # il dataset è di tutti
+        self.assertIn(res["folder"], [x["name"] for x in other.list("photos", "Pinna nobilis")])   # il dataset è di tutti
         with self.assertRaises(ApiError) as e:
             a.approve_submission(sub["id"])
         self.assertEqual(e.exception.status, 409)                                        # non si approva due volte
 
     def test_reject_keeps_the_record_but_not_the_photos(self):
         u, a = self.user("bio3"), self.admin()
-        u.upload("species", "Epinephelus marginatus/a.png", self.f("r.png", png_bytes()))
+        u.upload("photos", "Epinephelus marginatus/a.png", self.f("r.png", png_bytes()))
         sub = u.submit_species("Epinephelus marginatus")
         a.reject_submission(sub["id"])
         self.assertEqual(u.species_submissions()[0]["status"], "rejected")
-        self.assertNotIn("Epinephelus marginatus", [x["name"] for x in u.list("species")])
+        self.assertNotIn("Epinephelus marginatus", [x["name"] for x in u.list("photos")])
 
 
 class TestDatasetAndModelReview(Base):

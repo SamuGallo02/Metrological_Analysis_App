@@ -36,6 +36,7 @@ from corpse.gui.home.webcam_demo import WebcamDemoButton
 from corpse.gui.training import TrainingPage
 from corpse.gui.training.setup_dialog import ensure_training_ready
 from corpse.functions.users.session import Session
+from corpse.gui.settings_dialog import SettingsDialog
 from corpse.gui.users import AccountBar, AdminHome, ProfilePage, ServerFoldersWidget
 
 ANALYSIS_COLOR, TRAINING_COLOR, SERVER_COLOR = "#1565c0", "#d84315", "#2e7d32"
@@ -133,6 +134,7 @@ class AppWindow(QMainWindow):
         self.account_bar = AccountBar(session)
         self.account_bar.logout_requested.connect(self._sign_out)
         self.account_bar.profile_requested.connect(self._open_profile)
+        self.account_bar.settings_requested.connect(self._open_settings)
         root.addWidget(self.account_bar)
         self.stack = QStackedWidget()
         root.addWidget(self.stack, 1)
@@ -154,14 +156,15 @@ class AppWindow(QMainWindow):
         self.analysis_hub.requested.connect(lambda aid: self.stack.setCurrentWidget(self.analysis_targets[aid]))
 
         # home based on the account type
-        if session.is_admin:
+        has_admin_screens = AdminHome is not None          # missing in the user edition
+        if session.is_admin and has_admin_screens:
             self.home_page: QWidget = AdminHome(session, on_training=self._open_training,
                                                 on_analysis=lambda: self.stack.setCurrentWidget(self.analysis_hub))
         else:
             self.home_page = HomePage(session, on_analysis=lambda: self.stack.setCurrentWidget(self.analysis_hub),
                                       on_training=self._open_training, on_server=self._open_server)
 
-        if session.is_admin:
+        if session.is_admin and has_admin_screens:
             self.account_bar.state_changed.connect(self.home_page.apply_state)
         for page in (self.home_page, self.analysis_hub, *self.analysis_targets.values(), self.training_page):
             self.stack.addWidget(page)
@@ -195,6 +198,11 @@ class AppWindow(QMainWindow):
         self._dynamic[key] = holder
         self.stack.addWidget(holder)
         self.stack.setCurrentWidget(holder)
+
+    def _open_settings(self) -> None:
+        dialog = SettingsDialog(self.session, self)
+        dialog.server_changed.connect(self._sign_out)       # the account belonged to the old server
+        dialog.exec()
 
     def _open_profile(self) -> None:
         self._show_dynamic("profile", ProfilePage(self.session))

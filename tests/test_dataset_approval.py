@@ -12,8 +12,8 @@ class DatasetApprovalTest(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
         self.store = Storage(self.root)
-        self.datasets = self.root / "dataset_Training"
-        self.pending = self.datasets / "_pending"
+        self.datasets = self.store.library("datasets")
+        self.pending = self.store.pending_root("datasets")
 
     def put(self, user, name, *files):
         for f in files:
@@ -25,7 +25,7 @@ class DatasetApprovalTest(unittest.TestCase):
         self.put("mario", "coralli", "data.yaml", "images/a.jpg", "labels/a.txt")
         self.assertEqual(self.store.approve_dataset("mario", "coralli"), ("coralli", 1))
         self.assertTrue((self.datasets / "coralli" / "images" / "a.jpg").is_file())
-        self.assertFalse(self.pending.exists())
+        self.assertEqual(list(self.pending.iterdir()), [])                  # nothing left waiting
 
     def test_approving_does_not_overwrite_an_existing_dataset(self):
         self.put("mario", "coralli", "data.yaml", "images/a.jpg", "labels/a.txt")
@@ -44,7 +44,7 @@ class DatasetApprovalTest(unittest.TestCase):
     def test_rejecting_removes_the_dataset_and_clears_the_quarantine(self):
         self.put("mario", "coralli", "data.yaml", "images/a.jpg", "labels/a.txt")
         self.assertEqual(self.store.reject_dataset("mario", "coralli"), 1)
-        self.assertFalse(self.pending.exists())
+        self.assertEqual(list(self.pending.iterdir()), [])                  # nothing left waiting
 
     def test_a_dataset_that_is_not_waiting_is_not_found(self):
         with self.assertRaises(AppError) as ctx:

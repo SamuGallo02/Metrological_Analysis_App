@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import os
 import re
 import urllib.request
 import zipfile
@@ -100,3 +101,70 @@ def open_zip(path: Path) -> zipfile.ZipFile:
 
 def zip_from_bytes(data: bytes) -> zipfile.ZipFile:
     return zipfile.ZipFile(io.BytesIO(data))
+
+
+# ---- interchangeable sources ----------------------------------------------------
+class UpdateSource:
+    """Where the code of the user edition is read from. GitHub today; later the project's own server, which will
+    publish the same three things: which version is the latest, its archive, and single files of an exact version.
+    The updater only talks to this interface, so changing the source does not touch the rest."""
+
+    name = ""
+
+    def latest(self, timeout: float = config.HTTP_TIMEOUT):
+        """The newest published version (a `versions.Version`)."""
+        raise NotImplementedError
+
+    def download_archive(self, ref: str, dest: Path, progress: Progress = None,
+                         timeout: float = config.HTTP_TIMEOUT) -> Path:
+        """The archive (zip) of a version into `dest`."""
+        raise NotImplementedError
+
+    def fetch_file(self, sha: str, rel: str, timeout: float = config.HTTP_TIMEOUT) -> bytes:
+        """One file of an exact version (used to repair only what is damaged)."""
+        raise NotImplementedError
+
+
+class GitHubSource(UpdateSource):
+    name = "github"
+
+    def latest(self, timeout: float = config.HTTP_TIMEOUT):
+        from .versions import Version
+        repo = config.repo()
+        tag, published = "", ""
+        try:
+            rel = get_json(f"/repos/{repo}/releases/latest", timeout)
+            tag, published = str(rel.get("tag_name") or ""), str(rel.get("published_at") or "")
+        except SourceError:
+            pass                                          # no releases (404) or not reachable: look at the branch
+        ref = tag or config.BRANCH
+        commit = get_json(f"/repos/{repo}/commits/{ref}", timeout)
+        sha = str(commit.get("sha") or "")
+        if not sha:
+            raise SourceError("GitHub did not return a commit.")
+        if not published:
+            published = str(((commit.get("commit") or {}).get("committer") or {}).get("date") or "")
+        return Version(sha=sha, label=tag or f"{config.BRANCH}@{sha[:7]}", published=published)
+
+    def download_archive(self, ref, dest, progress=None, timeout=config.HTTP_TIMEOUT):
+        return download_archive(ref, dest, progress, timeout)
+
+    def fetch_file(self, sha, rel, timeout=config.HTTP_TIMEOUT):
+        return fetch_file(sha, rel, timeout)
+
+
+_FACTORIES: Dict[str, Callable[[], UpdateSource]] = {"github": GitHubSource}
+
+
+def register(name: str, factory: Callable[[], UpdateSource]) -> None:
+    """Adds a source (the server one will be registered here when it exists)."""
+    _FACTORIES[name] = factory
+
+
+def current(name: Optional[str] = None) -> UpdateSource:
+    """The source in use: `name`, else the AM_UPDATE_SOURCE variable, else `config.DEFAULT_SOURCE`."""
+    wanted = name or os.environ.get("AM_UPDATE_SOURCE") or config.DEFAULT_SOURCE
+    factory = _FACTORIES.get(wanted)
+    if factory is None:
+        raise SourceError(f"Unknown update source: {wanted}")
+    return factory()

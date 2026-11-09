@@ -7,14 +7,14 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (QAbstractItemView, QDialog, QFileDialog, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
+from PySide6.QtWidgets import (QAbstractItemView, QFileDialog, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
                                QMessageBox, QProgressBar, QPushButton, QTabBar, QTreeWidget, QTreeWidgetItem,
                                QVBoxLayout, QWidget, QTabWidget)
 
 from common.format import fmt_size, fmt_time
 from common.i18n import tr, tr_error
 
-from common.params import AREA_MINE, AREAS_SHARED, SPECIES_EXAMPLE, SPECIES_RE, AREA_SPECIES
+from common.params import AREA_MINE, AREAS_SHARED, SPECIES_EXAMPLE, SPECIES_RE
 from common.ui.qt_utils import run_async
 from common.remote_tree import walk_remote
 from common.model_metadata import fetch_remote_metadata
@@ -22,7 +22,6 @@ from common.model_metadata import fetch_remote_metadata
 from corpse.functions.users.session import Session
 from .labels import PENDING_DIR, area_label, folder_label, path_label
 from .transfer import TransferDialog
-from .tree_view import ServerTreeDialog
 from .model_info import model_info_lines
 from .uploads import UploadsWidget
 from .catalog import CatalogWidget
@@ -59,9 +58,9 @@ class ServerBrowserWidget(QWidget):
         self.tree = QTreeWidget()
         self.tree.setHeaderLabels([tr("Name"), tr("Type"), tr("Size"), tr("Modified")])
         self.tree.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-        self.tree.setRootIsDecorated(False)
+        self.tree.setRootIsDecorated(True)                        # always a tree: folders open in place, on demand
         self.tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        self.tree.itemDoubleClicked.connect(self._open)
+        self.tree.itemExpanded.connect(self._expanded)
         lay.addWidget(self.tree, 1)
 
         self.info = QLabel()                          # dettagli del modello selezionato (solo nella scheda dei modelli)
@@ -72,9 +71,8 @@ class ServerBrowserWidget(QWidget):
         self.tree.itemSelectionChanged.connect(self._show_info)
 
         row = QHBoxLayout()
-        self.btn_up = self._btn(tr("Up"), self._up, row)
         self.btn_refresh = self._btn(tr("Refresh"), self.refresh, row)
-        self.btn_tree = self._btn(tr("Folder tree"), self._show_tree, row)
+        self.btn_collapse = self._btn(tr("Collapse all"), self.tree.collapseAll, row)
         self.btn_dl = self._btn(tr("Download"), self._download, row)
         self.btn_up_files = self._btn(tr("Upload files..."), self._upload_files, row)
         self.btn_up_dir = self._btn(tr("Upload folder..."), self._upload_dir, row)
@@ -136,7 +134,19 @@ class ServerBrowserWidget(QWidget):
         self.refresh()
 
     def _selected(self) -> List[Dict[str, Any]]:
-        return [it.data(0, Qt.ItemDataRole.UserRole) for it in self.tree.selectedItems()]
+        """The selected entries; each has "path", its full path inside the area."""
+        return [d for d in (it.data(0, Qt.ItemDataRole.UserRole) for it in self.tree.selectedItems()) if d]
+
+    def _target(self) -> str:
+        """Where uploads and new folders go: the selected folder (or the folder of the selected file),
+        otherwise the folder the tree starts from."""
+        sel = self._selected()
+        if len(sel) != 1:
+            return self.path
+        path = sel[0]["path"]
+        if sel[0]["type"] == "dir":
+            return path
+        return path.rsplit("/", 1)[0] if "/" in path else ""
 
     def _show_info(self) -> None:
         """Dettagli del modello selezionato: i metadati (.json) accanto al file, nella scheda dei modelli."""
@@ -148,7 +158,7 @@ class ServerBrowserWidget(QWidget):
         if area != "models" or not is_model:
             self.info.hide()
             return
-        rel = self._rel(sel[0]["name"])
+        rel = sel[0]["path"]
         self.info.setText(tr("Loading..."))
         self.info.show()
 
@@ -159,8 +169,9 @@ class ServerBrowserWidget(QWidget):
         run_async(self, lambda: fetch_remote_metadata(self.session.client, area, rel), done,
                   lambda _e: done(None))
 
-    def _rel(self, name: str) -> str:
-        return f"{self.path}/{name}" if self.path else name
+    @staticmethod
+    def _rel_in(folder: str, name: str) -> str:
+        return f"{folder}/{name}" if folder else name
 
     def _refresh_quota(self) -> None:
         show = self.area == AREA_MINE and self.session.online
@@ -175,7 +186,7 @@ class ServerBrowserWidget(QWidget):
 
         run_async(self, self.session.client.usage, done, lambda e: None)
 
-    # ---- list ------------------------------------------------------------
+    # ---- tree ------------------------------------------------------------
     def refresh(self) -> None:
         self.crumb.setText(f"<b>{area_label(self.area)}</b> / {path_label(self.path)}")
         self.tree.clear()
@@ -184,39 +195,74 @@ class ServerBrowserWidget(QWidget):
             return
         self.status.setText(tr("Loading..."))
         self._refresh_quota()
-        area, path = self.area, self.path
+        self._load(None, self.path)
+
+    def _load(self, parent: Optional[QTreeWidgetItem], path: str) -> None:
+        """Lists `path` and puts its entries under `parent` (None: at the top of the tree)."""
+        area, root = self.area, self.path
 
         def done(entries: List[Dict[str, Any]]) -> None:
-            if (area, path) != (self.area, self.path):
+            if (area, root) != (self.area, self.path):             # the tree was reloaded or changed area meanwhile
                 return
             if not path:                       # the folder of the waiting items is not shown: they are reviewed in Review
                 entries = [e for e in entries if not (e["type"] == "dir" and e["name"] == PENDING_DIR)]
-            for e in entries:
+            if parent is not None:
+                parent.takeChildren()
+                if not entries:
+                    parent.addChild(QTreeWidgetItem([tr("(empty)"), "", "", ""]))
+            elif self.tree.topLevelItemCount():
+                self.tree.clear()
+            for e in sorted(entries, key=lambda e: (e["type"] != "dir", e["name"].lower())):
                 is_dir = e["type"] == "dir"
+                entry = dict(e, path=f"{path}/{e['name']}" if path else e["name"])
                 shown = folder_label(e["name"]) if is_dir else e["name"]
                 it = QTreeWidgetItem([(tr("[folder] ") if is_dir else "") + shown,
                                       tr("Folder") if is_dir else tr("File"),
                                       "" if is_dir else fmt_size(e["size"]), fmt_time(e["mtime"])])
-                it.setData(0, Qt.ItemDataRole.UserRole, e)
-                self.tree.addTopLevelItem(it)
+                it.setData(0, Qt.ItemDataRole.UserRole, entry)
+                if is_dir:
+                    it.addChild(QTreeWidgetItem([tr("Loading..."), "", "", ""]))      # placeholder: shows the arrow
+                if parent is None:
+                    self.tree.addTopLevelItem(it)
+                else:
+                    parent.addChild(it)
             self.status.setText(tr("{n} items", n=len(entries)))
 
-        run_async(self, lambda: self.session.client.list(area, path), done,
-                  lambda e: self.status.setText(tr("Error: {msg}", msg=tr_error(e))))
+        def fail(e: Exception) -> None:
+            if parent is not None:
+                parent.takeChildren()
+                parent.setData(0, Qt.ItemDataRole.UserRole, dict(parent.data(0, Qt.ItemDataRole.UserRole), loaded=False))
+            self.status.setText(tr("Error: {msg}", msg=tr_error(e)))
 
-    def _open(self, item: QTreeWidgetItem) -> None:
-        e = item.data(0, Qt.ItemDataRole.UserRole)
-        if e["type"] == "dir":
-            self.path = self._rel(e["name"])
-            self.refresh()
+        run_async(self, lambda: self.session.client.list(area, path), done, fail)
 
-    def _show_tree(self) -> None:
-        """Explorer-like tree of the areas; "Show in the list" jumps to the chosen folder."""
-        dlg = ServerTreeDialog(self.session, self.areas, self)
-        dlg.folder_chosen.connect(self._goto)
-        dlg.exec()
+    def _expanded(self, item: QTreeWidgetItem) -> None:
+        entry = item.data(0, Qt.ItemDataRole.UserRole)
+        if not entry or entry["type"] != "dir" or entry.get("loaded"):
+            return
+        item.setData(0, Qt.ItemDataRole.UserRole, dict(entry, loaded=True))          # one request per folder
+        self._load(item, entry["path"])
+
+    def _reload(self, path: str) -> None:
+        """Lists `path` again, keeping the rest of the tree as it is."""
+        if not path or path == self.path:
+            return self.refresh()
+        stack = [self.tree.topLevelItem(i) for i in range(self.tree.topLevelItemCount())]
+        while stack:
+            it = stack.pop()
+            entry = it.data(0, Qt.ItemDataRole.UserRole)
+            if entry and entry["type"] == "dir":
+                if entry["path"] == path:
+                    if it.isExpanded() or entry.get("loaded"):
+                        it.setData(0, Qt.ItemDataRole.UserRole, dict(entry, loaded=True))
+                        return self._load(it, path)
+                    return
+                if it.isExpanded():
+                    stack.extend(it.child(i) for i in range(it.childCount()))
+        self.refresh()
 
     def _goto(self, area: str, path: str) -> None:
+        """Starts the tree from `path` of `area`."""
         if area in self.areas:
             self.tabs.blockSignals(True)
             self.tabs.setCurrentIndex(self.areas.index(area))
@@ -224,10 +270,6 @@ class ServerBrowserWidget(QWidget):
             self.area, self.path = area, path
             self._apply_role()
             self.refresh()
-
-    def _up(self) -> None:
-        self.path = self.path.rsplit("/", 1)[0] if "/" in self.path else ""
-        self.refresh()
 
     def _start_dir(self) -> str:
         folders = self.session.local_folders()
@@ -246,19 +288,19 @@ class ServerBrowserWidget(QWidget):
         dest_dir = Path(dest)
         self.status.setText(tr("Preparing the list..."))
 
-        def plan() -> List[Tuple[str, int]]:
-            items: List[Tuple[str, int]] = []
+        def plan() -> List[Tuple[str, int, str]]:
+            items: List[Tuple[str, int, str]] = []                # (path, size, folder it is saved relative to)
             for e in sel:
-                rel = self._rel(e["name"])
+                parent = e["path"].rsplit("/", 1)[0] if "/" in e["path"] else ""
                 if e["type"] == "dir":
-                    items.extend(walk_remote(self.session.client, self.area, rel))
+                    items.extend((rel, size, parent) for rel, size in walk_remote(self.session.client, self.area, e["path"]))
                 else:
-                    items.append((rel, e["size"]))
+                    items.append((e["path"], e["size"], parent))
             return items
 
-        def go(items: List[Tuple[str, int]]) -> None:
-            base, jobs = self.path, []
-            for rel, size in items:
+        def go(items: List[Tuple[str, int, str]]) -> None:
+            jobs = []
+            for rel, size, base in items:
                 if self.area == "models":                      # keeps the species folder: models/<Genus species>/x.pt
                     local = dest_dir / Path(rel)
                 else:
@@ -293,7 +335,8 @@ class ServerBrowserWidget(QWidget):
             return None
         return [(l, f"{species}/{r}") for l, r in pairs]
 
-    def _upload_paths(self, pairs: List[Tuple[Path, str]]) -> None:
+    def _upload_paths(self, pairs: List[Tuple[Path, str]], target: Optional[str] = None) -> None:
+        self._upload_target = self.path if target is None else target
         pairs = self._with_species(pairs)
         if not pairs:
             return
@@ -304,19 +347,20 @@ class ServerBrowserWidget(QWidget):
         dlg = TransferDialog(tr("Upload"), jobs, self)
         dlg.exec()
         self._report(dlg, downloaded=False)
-        self.refresh()
+        self._reload(self._upload_target)
 
     def _upload_files(self) -> None:
         files, _ = QFileDialog.getOpenFileNames(self, tr("Choose the files to upload"), self._start_dir())
-        self._upload_paths([(Path(f), self._rel(Path(f).name)) for f in files])
+        target = self._target()
+        self._upload_paths([(Path(f), self._rel_in(target, Path(f).name)) for f in files], target)
 
     def _upload_dir(self) -> None:
         d = QFileDialog.getExistingDirectory(self, tr("Choose the folder to upload"), self._start_dir())
         if not d:
             return
-        root = Path(d)
-        self._upload_paths([(p, self._rel(f"{root.name}/{p.relative_to(root).as_posix()}"))
-                            for p in sorted(root.rglob("*")) if p.is_file()])
+        root, target = Path(d), self._target()
+        self._upload_paths([(p, self._rel_in(target, f"{root.name}/{p.relative_to(root).as_posix()}"))
+                            for p in sorted(root.rglob("*")) if p.is_file()], target)
 
     def _report(self, dlg: TransferDialog, downloaded: bool) -> None:
         n_ok = len(dlg.jobs) - len(dlg.errors) - len(dlg.skipped)
@@ -336,8 +380,9 @@ class ServerBrowserWidget(QWidget):
     def _mkdir(self) -> None:
         name, ok = QInputDialog.getText(self, tr("New folder"), tr("Folder name:"))
         if ok and name.strip():
-            run_async(self, lambda: self.session.client.mkdir(self.area, self._rel(name.strip())),
-                      lambda _r: self.refresh(), self._warn)
+            target = self._target()
+            run_async(self, lambda: self.session.client.mkdir(self.area, self._rel_in(target, name.strip())),
+                      lambda _r: self._reload(target), self._warn)
 
     def _warn(self, e: Exception) -> None:
         QMessageBox.warning(self, tr("Error"), tr_error(e))
@@ -347,7 +392,7 @@ class ServerBrowserWidget(QWidget):
         sel = self._selected()
         if len(sel) != 1:
             return QMessageBox.information(self, tr("Rename"), tr("Select a single item."))
-        src = self._rel(sel[0]["name"])
+        src = sel[0]["path"]
         new, ok = QInputDialog.getText(self, tr("Rename/Move"), tr("New path (relative to the area):"), text=src)
         if ok and new.strip() and new.strip() != src:
             run_async(self, lambda: self.session.client.move(self.area, src, new.strip()),
@@ -364,16 +409,16 @@ class ServerBrowserWidget(QWidget):
 
         def job() -> None:
             for e in sel:
-                self.session.client.delete(self.area, self._rel(e["name"]))
+                self.session.client.delete(self.area, e["path"])
 
         run_async(self, job, lambda _r: self.refresh(), self._warn)
 
     def _approve(self) -> None:
         sel = [e for e in self._selected() if e["type"] == "file"]
-        if self.area != "models" or not self.path.startswith(PENDING_DIR) or len(sel) != 1:
+        if self.area != "models" or len(sel) != 1 or not sel[0]["path"].startswith(PENDING_DIR):
             return QMessageBox.information(self, tr("Approve"), tr("Open the {folder} folder, then the user's folder, and select a model.",
                                             folder=folder_label(PENDING_DIR)))
-        rel = self._rel(sel[0]["name"])
+        rel = sel[0]["path"]
         parts = rel.split("/")                                  # _pending/<user>/<species>/<file>
         default = "/".join(parts[2:]) if len(parts) > 2 else sel[0]["name"]
         name, ok = QInputDialog.getText(self, tr("Approve model"),
@@ -389,10 +434,14 @@ class ServerFoldersWidget(QWidget):
         super().__init__(parent)
         lay = QVBoxLayout(self)
         self.photos = CatalogWidget(session, "photos")
+        self.stereo = CatalogWidget(session, "stereo")
+        self.videos = CatalogWidget(session, "video")
         self.models = CatalogWidget(session, "model")
         self.uploads = UploadsWidget(session)                                 # filled in the next blocks
         self.tabs = QTabWidget()
         self.tabs.addTab(self.photos, tr("Photos"))
+        self.tabs.addTab(self.stereo, tr("Stereo photos"))
+        self.tabs.addTab(self.videos, tr("Videos"))
         self.tabs.addTab(self.models, tr("YOLO models"))
         self.tabs.addTab(self.uploads, tr("Uploads"))
         lay.addWidget(self.tabs)

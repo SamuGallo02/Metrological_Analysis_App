@@ -50,7 +50,8 @@ INSTALLER_BUILD = "2026-10-18-a"             # shown in the log: tells which ver
 # repository folders that are not installed on users' computers
 # Must stay identical to common/ambient/updater/config.py (a test checks it): this file runs alone,
 # before the project exists, so it cannot import it.
-SERVER_ONLY_DIRS = {"server", "server_data", "tests", "docs", "site", "deploy", ".github"}
+SERVER_ONLY_DIRS = {"server", "server_data", "tests", "docs", "site", "deploy", ".github", "tools"}
+SERVER_ONLY_FILES = {"corpse/gui/users/admin.py", ".dockerignore", ".gitattributes", ".gitignore"}
 LAUNCHER_DIR = "common/launchers"
 LAUNCHERS = {"windows": "AnalisiMetrologica.vbs", "macos": "AvviaAnalisiMetrologica.command",
              "linux": "AvviaAnalisiMetrologica.sh"}
@@ -253,7 +254,7 @@ class Pipeline:
         return (self.dest / "main.py").exists() and (self.dest / "common").is_dir()
 
     def _wanted(self, rel: str) -> bool:
-        if rel.split("/", 1)[0] in SERVER_ONLY_DIRS:
+        if rel.split("/", 1)[0] in SERVER_ONLY_DIRS or rel in SERVER_ONLY_FILES:
             return False
         if rel.startswith(LAUNCHER_DIR + "/"):
             return rel.rsplit("/", 1)[-1] == LAUNCHERS.get(self.os_name)

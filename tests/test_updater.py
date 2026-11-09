@@ -132,6 +132,48 @@ class UpdaterTest(unittest.TestCase):
             self.assertFalse((self.root / skipped).exists())
         self.assertEqual(manifest.load(self.root)["sha"], self.sha1)
 
+    def test_the_user_edition_has_no_server_side_files(self):
+        for rel in ("server/app.py", "tools/build_language_packs.py", "corpse/gui/users/admin.py", ".gitignore"):
+            self.assertFalse(config.wanted(rel, "windows"), rel)
+        for rel in ("corpse/gui/users/catalog.py", "corpse/functions/users/api.py", "main.py"):
+            self.assertTrue(config.wanted(rel, "windows"), rel)
+
+    def test_the_source_is_interchangeable(self):
+        from common.ambient.updater import source
+        self.assertEqual(source.current().name, "github")
+
+        class Other(source.UpdateSource):
+            name = "other"
+
+            def latest(self, timeout=0):
+                return versions.Version(sha="a" * 40, label="from-other")
+
+        source.register("other", Other)
+        try:
+            self.assertEqual(source.current("other").latest().label, "from-other")
+            os.environ["AM_UPDATE_SOURCE"] = "other"
+            self.assertEqual(versions.latest().label, "from-other")      # the updater follows the chosen source
+        finally:
+            os.environ.pop("AM_UPDATE_SOURCE", None)
+            source._FACTORIES.pop("other", None)
+        with self.assertRaises(source.SourceError):
+            source.current("nowhere")
+
+    def test_the_app_starts_without_the_admin_screens(self):
+        import subprocess
+        code = ("import sys, importlib.abc\n"
+                "class Block(importlib.abc.MetaPathFinder):\n"
+                "    def find_spec(self, name, path, target=None):\n"
+                "        if name == 'corpse.gui.users.admin': raise ImportError('not in the user edition')\n"
+                "sys.meta_path.insert(0, Block())\n"
+                "import corpse.gui.users as u\n"
+                "assert u.AdminHome is None and u.CatalogWidget is not None\n"
+                "import corpse.gui.home.home_gui\n")
+        env = dict(os.environ, QT_QPA_PLATFORM="offscreen")
+        res = subprocess.run([sys.executable, "-c", code], cwd=str(Path(__file__).resolve().parent.parent), env=env,
+                             capture_output=True, text=True)
+        self.assertEqual(res.returncode, 0, res.stderr)
+
     def test_launcher_follows_os(self):
         self.assertTrue(config.wanted("common/launchers/AvviaAnalisiMetrologica.sh", "linux"))
         self.assertFalse(config.wanted("common/launchers/AnalisiMetrologica.vbs", "linux"))
@@ -140,10 +182,11 @@ class UpdaterTest(unittest.TestCase):
     def test_installer_lists_match(self):
         src = (Path(__file__).resolve().parent.parent / "common/ambient/distribution/installer_gui.py").read_text(encoding="utf-8")
         ns = {}
-        for name in ("SERVER_ONLY_DIRS", "LAUNCHER_DIR", "LAUNCHERS", "VERSION_FILE"):
+        for name in ("SERVER_ONLY_DIRS", "SERVER_ONLY_FILES", "LAUNCHER_DIR", "LAUNCHERS", "VERSION_FILE"):
             m = re.search(rf"^{name} = (.+?)(?=\n[A-Za-z_]+ =|\n\n)", src, re.S | re.M)
             ns[name] = eval(m.group(1))
         self.assertEqual(ns["SERVER_ONLY_DIRS"], config.SKIP_DIRS)
+        self.assertEqual(ns["SERVER_ONLY_FILES"], config.SKIP_FILES)
         self.assertEqual(ns["LAUNCHER_DIR"], config.LAUNCHER_DIR)
         self.assertEqual(ns["LAUNCHERS"], config.LAUNCHERS)
         self.assertEqual(ns["VERSION_FILE"], config.VERSION_FILE)

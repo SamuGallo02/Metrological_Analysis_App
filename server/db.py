@@ -44,8 +44,7 @@ class Database:
               username TEXT NOT NULL, species TEXT NOT NULL, path TEXT NOT NULL,
               status TEXT NOT NULL, photos INTEGER NOT NULL DEFAULT 0,
               created REAL NOT NULL, reviewed_by TEXT, reviewed REAL);
-            CREATE UNIQUE INDEX IF NOT EXISTS one_pending_per_folder
-              ON submissions(path) WHERE status='pending';
+            DROP INDEX IF EXISTS one_pending_per_folder;
             """)
             have = {r[1] for r in c.execute("PRAGMA table_info(users)")}
             for col, decl in _COLUMNS.items():
@@ -54,6 +53,8 @@ class Database:
             have = {r[1] for r in c.execute("PRAGMA table_info(submissions)")}
             if "kind" not in have:                           # database created by a previous version
                 c.execute(f"ALTER TABLE submissions ADD COLUMN kind TEXT NOT NULL DEFAULT '{KIND_PHOTOS}'")
+            c.execute("CREATE UNIQUE INDEX IF NOT EXISTS one_pending_per_item "       # photos and stereo of a species can both wait
+                      "ON submissions(kind, path) WHERE status='pending'")
 
     def _c(self) -> sqlite3.Connection:
         con = sqlite3.connect(str(self.path), timeout=15)
@@ -237,6 +238,14 @@ class Database:
         with self._c() as c:
             return [dict(r) for r in c.execute(query + " ORDER BY id DESC", args)]
         
+    def set_submission_kind(self, old_kind: str, path: str, new_kind: str, status: Optional[str] = None) -> int:
+        """Changes the kind of the rows of an item (used when the layout is reorganised). Returns how many rows."""
+        with self._c() as c:
+            query, args = "UPDATE submissions SET kind=? WHERE kind=? AND path=?", [new_kind, old_kind, path]
+            if status:
+                query, args = query + " AND status=?", args + [status]
+            return c.execute(query, args).rowcount
+
     def get_submission(self, sid: int) -> Dict[str, Any]:
         with self._c() as c:
             row = c.execute("SELECT * FROM submissions WHERE id=?", (sid,)).fetchone()

@@ -163,9 +163,10 @@ class ApiClient:
     def events(self, limit: int = 200) -> List[Dict[str, Any]]:
         return self._request("GET", "/api/events", {"limit": str(limit)})["events"]
     
-     # ---- species photos ----------------------------------------------------
-    def submit_species(self, species: str) -> Dict[str, Any]:
-        return self._request("POST", "/api/species/submit", body={"species": species})
+     # ---- photos, stereo photos and videos of a species ------------------------------------------------
+    def submit_species(self, species: str, kind: str = "photos") -> Dict[str, Any]:
+        """Sends what was uploaded for a species to review; `kind` is "photos", "stereo" or "video"."""
+        return self._request("POST", "/api/species/submit", body={"species": species, "kind": kind})
 
     def species_submissions(self, status: Optional[str] = None, kind: Optional[str] = None) -> List[Dict[str, Any]]:
         params = {k: v for k, v in (("status", status), ("kind", kind)) if v}
@@ -184,7 +185,8 @@ class ApiClient:
         return self._request("POST", "/api/models/submit", body={"species": species, "file": file})
 
     def catalog(self, kind: str) -> List[Dict[str, Any]]:
-        """The approved photos ("photos") or models ("model") with who uploaded, who approved and the date."""
+        """The approved items of a kind ("photos", "stereo", "video", "model", "dataset") with who uploaded,
+        who approved and the date."""
         return self._request("GET", "/api/catalog", {"kind": kind})["items"]
 
     # ---- files --------------------------------------------------------------
@@ -239,6 +241,30 @@ class ApiClient:
         finally:
             conn.close()
         return self._parse(r.status, raw)
+
+    def read_bytes(self, area: str, remote_path: str, max_bytes: int = 32 << 20) -> bytes:
+        """The content of a remote file, kept in memory (for previews: nothing is written to disk).
+        Files larger than `max_bytes` are refused without being downloaded."""
+        conn = self._conn()
+        try:
+            conn.request("GET", self._url("/api/files/download", {"area": area, "path": remote_path}),
+                         headers=self._headers())
+            r = conn.getresponse()
+            if r.status >= 400:
+                self._parse(r.status, r.read())
+            total = int(r.getheader("X-File-Size") or r.getheader("Content-Length") or 0)
+            if total > max_bytes:
+                raise ApiError("File too large to preview.", 413)
+            data = r.read(max_bytes + 1)
+            if len(data) > max_bytes:
+                raise ApiError("File too large to preview.", 413)
+            if total and len(data) != total:
+                raise OfflineError("Incomplete download: try again to resume it.")
+            return data
+        except (OSError, http.client.HTTPException, socket.timeout) as e:
+            raise self._offline(e) from e
+        finally:
+            conn.close()
 
     def download(self, area: str, remote_path: str, dest: Path, progress: Progress = None,
                  cancel: Cancel = None) -> Path:

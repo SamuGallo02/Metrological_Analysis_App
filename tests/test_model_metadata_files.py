@@ -6,7 +6,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from common.errors import AppError
-from server.params import AREA_DIRS, PENDING
+from server.params import PENDING
 from server.storage import Storage
 
 SPECIES = "Pinna nobilis"
@@ -17,11 +17,11 @@ class ModelMetadataFilesTest(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
         self.store = Storage(Path(self._tmp.name))
-        self.models = self.store.root / AREA_DIRS["models"]
+        self.models = self.store.library("models")
 
     def _quarantined(self, *names):
         """Crea dei file direttamente in quarantena (come se un utente li avesse già caricati)."""
-        folder = self.models / PENDING / "francy" / SPECIES
+        folder = self.store.pending_root("models") / "francy" / SPECIES
         folder.mkdir(parents=True, exist_ok=True)
         for n in names:
             (folder / n).write_bytes(b"x")
@@ -41,7 +41,7 @@ class ModelMetadataFilesTest(unittest.TestCase):
         self.store.approve_model(f"{folder}/m.pt")
         self.assertTrue((self.models / SPECIES / "m.pt").is_file())
         self.assertTrue((self.models / SPECIES / "m.json").is_file())
-        self.assertFalse((self.models / PENDING / "francy" / SPECIES / "m.json").exists())
+        self.assertFalse((self.store.pending_root("models") / "francy" / SPECIES / "m.json").exists())
 
     def test_metadata_follows_a_renamed_model(self):
         folder = self._quarantined("m.pt", "m.json")
@@ -60,7 +60,7 @@ class ModelMetadataFilesTest(unittest.TestCase):
         with self.assertRaises(AppError) as ctx:
             self.store.approve_model(f"{folder}/m.pt")
         self.assertEqual(ctx.exception.status, 409)
-        self.assertTrue((self.models / PENDING / "francy" / SPECIES / "m.pt").is_file())   # ancora in quarantena
+        self.assertTrue((self.store.pending_root("models") / "francy" / SPECIES / "m.pt").is_file())   # ancora in quarantena
 
 
 if __name__ == "__main__":

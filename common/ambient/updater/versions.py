@@ -5,8 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from . import config, manifest
-from .source import SourceError, get_json
+from . import config, manifest, source
 
 
 @dataclass
@@ -17,23 +16,9 @@ class Version:
 
 
 def latest(timeout: float = config.HTTP_TIMEOUT) -> Version:
-    """Newest published version: the latest GitHub release if the repository has releases (a version is
-    'launched' when a release is published), otherwise the head of the main branch."""
-    repo = config.repo()
-    tag, published = "", ""
-    try:
-        rel = get_json(f"/repos/{repo}/releases/latest", timeout)
-        tag, published = str(rel.get("tag_name") or ""), str(rel.get("published_at") or "")
-    except SourceError:
-        pass                                              # no releases (404) or not reachable: look at the branch
-    ref = tag or config.BRANCH
-    commit = get_json(f"/repos/{repo}/commits/{ref}", timeout)
-    sha = str(commit.get("sha") or "")
-    if not sha:
-        raise SourceError("GitHub did not return a commit.")
-    if not published:
-        published = str(((commit.get("commit") or {}).get("committer") or {}).get("date") or "")
-    return Version(sha=sha, label=tag or f"{config.BRANCH}@{sha[:7]}", published=published)
+    """Newest published version of the user edition, from the update source in use (a release if there are any,
+    otherwise the head of the main branch, for GitHub)."""
+    return source.current().latest(timeout)
 
 
 def installed(root: Path) -> Optional[dict]:
