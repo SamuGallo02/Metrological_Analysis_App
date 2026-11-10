@@ -35,14 +35,29 @@ Sugli altri dispositivi: `AM_SERVER_URL=https://qualcosa.trycloudflare.com`. L'i
 tunnel l'accesso termina. (Alternativa equivalente: `ngrok http 8765`.) Per un tunnel avvia il server con `python -m server serve --public` (equivale a `--trust-proxy` e applica le stesse regole di sicurezza di `--lan`: chiave corta disattivata).
 
 ## 3. Server stabile (Linux, VPS o Raspberry)
-**Con Docker** (server + HTTPS automatico con Caddy):
+**Con Docker** (server + backup giornaliero + HTTPS automatico con Caddy):
 ```
 # 1) metti il tuo dominio in deploy/Caddyfile
 # 2) chiave amministratore lunga (opzionale):
 export AM_ADMIN_KEY="$(openssl rand -hex 24)"
-docker compose -f deploy/docker-compose.yml up -d --build
-docker compose -f deploy/docker-compose.yml exec server python -m server --data /data create-admin NOME
+docker compose -f docker-compose.yml up -d --build
+docker compose -f docker-compose.yml exec server python -m server --data /data create-admin NOME
 ```
+Tutto ciò che il server conserva (database, `store/`, log, backup) sta nel volume `server-data`, montato su `/data`. Per tenerlo in
+una cartella normale della macchina: `export AM_DATA_DIR=/srv/analisi-data` (la cartella deve appartenere all'utente 10001:
+`chown -R 10001 /srv/analisi-data`) prima di avviare. Il servizio `backup` copia il database ogni giorno in `/data/backups`
+(ultime 7 copie, con i file).
+
+*Trasferire i dati di un server già in uso* (per esempio `datasets/server_data` di questo PC): con il server Docker fermo
+(`docker compose stop server backup`) copia il contenuto della cartella nel volume e riavvia:
+```
+docker run --rm -v analisi_server-data:/data -v "$PWD/server_data":/src alpine sh -c "cp -a /src/. /data/ && chown -R 10001 /data"
+docker compose start server backup
+```
+(il nome del volume è `<cartella-del-compose>_server-data`; `docker volume ls` lo mostra). Se la cartella ha ancora la
+struttura vecchia, il server la riordina da solo all'avvio: fai prima una copia.
+Aggiornare il server: `git pull`, poi `docker compose up -d --build` (i dati restano nel volume).
+
 **Senza Docker (systemd)**: copia il progetto in `/opt/analisi`, poi `deploy/analisi-server.service` e
 `deploy/analisi-backup.{service,timer}` in `/etc/systemd/system/` e `systemctl enable --now analisi-server analisi-backup.timer`.
 Metti davanti Caddy/nginx (vedi `deploy/Caddyfile`) e avvia il server con `--host 127.0.0.1 --trust-proxy`.

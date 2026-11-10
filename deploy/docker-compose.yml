@@ -1,16 +1,32 @@
 # docker compose -f deploy/docker-compose.yml up -d --build
 # First start: docker compose -f deploy/docker-compose.yml exec server python -m server --data /data create-admin NAME
+#
+# Where the data lives: by default in the Docker volume "server-data". To keep it in a normal folder of the machine
+# (easier to look at and to copy), set AM_DATA_DIR before starting, e.g.  export AM_DATA_DIR=/srv/analisi-data
+# (the folder must belong to user 10001:  chown -R 10001 /srv/analisi-data).
 services:
   server:
     build:
       context: ..
       dockerfile: deploy/Dockerfile
+    image: analisi-server:latest
+    init: true
     restart: unless-stopped
     environment:
       AM_ADMIN_KEY: "${AM_ADMIN_KEY:-}"        # empty = access key disabled; use a long random one
     volumes:
-      - server-data:/data
+      - ${AM_DATA_DIR:-server-data}:/data
     expose: ["8765"]
+  backup:                                       # a coherent copy of the database every day, the last 7 are kept
+    image: analisi-server:latest
+    init: true
+    restart: unless-stopped
+    depends_on: [server]
+    environment:
+      AM_ADMIN_KEY: ""
+    volumes:
+      - ${AM_DATA_DIR:-server-data}:/data
+    command: ["sh", "-c", "while true; do sleep 86400; python -m server --data /data backup --files --keep 7; done"]
   caddy:                                        # HTTPS with an automatic certificate
     image: caddy:2
     restart: unless-stopped

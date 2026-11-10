@@ -3,8 +3,8 @@ FROM python:3.12-slim
 WORKDIR /app
 COPY common ./common
 COPY server ./server
-# Data (database, files, backups, logs) lives in the volume mounted on /data.
-ENV AM_DATA=/data PYTHONUNBUFFERED=1
+# Everything the server keeps (database, store/, backups, logs) lives in the volume mounted on /data.
+ENV AM_DATA=/data PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 RUN useradd --system --uid 10001 analisi && mkdir /data && chown analisi /data
 USER analisi
 VOLUME /data
