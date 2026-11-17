@@ -21,7 +21,7 @@ from corpse.functions.analysis.pairing import SingleImageFinder, is_stereo_datas
 from corpse.functions.analysis.label_export import LabelRecorder, model_class_names, save_media_labels
 from corpse.functions.analysis.tracking import ObjectTracker, generate_adaptive_prefixes
 from corpse.gui.analysis.analysis_page_base import AnalysisPageBase
-from corpse.gui.analysis.library_picker import add_folder, on_selected, refresh, remove_selected
+from corpse.gui.analysis.library_picker import on_selected, refresh
 
 
 class PhotoAnalysisWorker(QThread):

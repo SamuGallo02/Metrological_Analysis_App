@@ -18,6 +18,7 @@ from common.i18n import tr, tr_error
 from common.params import PROFILE_FIELDS
 from common.ui.qt_utils import run_async
 from common.ui.language import LanguageWidget
+from common.ui.places import managed
 
 from corpse.functions.users.params import LOCAL_FOLDERS
 from corpse.functions.users.session import Session
@@ -162,7 +163,8 @@ class ProfilePage(QWidget):
         return w
 
     def _browse(self, edit: QLineEdit) -> None:
-        d = QFileDialog.getExistingDirectory(self, tr("Choose a folder"), edit.text() or str(Path.home()))
+        """Where downloads and uploads of a kind go: the folder already chosen, or the one of the application."""
+        d = QFileDialog.getExistingDirectory(self, tr("Choose a folder"), edit.text() or managed("", None))
         if d:
             edit.setText(d)
 

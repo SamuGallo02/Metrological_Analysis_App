@@ -56,6 +56,7 @@ from corpse.functions.analysis.reporting import compute_summary, detections_to_d
 from common.ui.widgets import ClickableImageLabel, build_top_bar, open_zoom_dialog, render_image_to_label
 
 from common.paths import MODELS_DIR  # noqa: E402
+from common.ui.places import desktop
 
 
 def scan_models(models_dir: Path = MODELS_DIR) -> List[str]:
@@ -742,7 +743,9 @@ class AnalysisPageBase(QWidget):
             render_image_to_label(self.preview_right_label, result.right_image)
 
     def _export_csv(self) -> None:
-        path, _ = QFileDialog.getSaveFileName(self, "Esporta report CSV", "risultati.csv", "CSV (*.csv)")
+        # The measurements leave the application: they start on the Desktop, beside the chosen folder's name.
+        start = Path(desktop()) / f"{Path(self.selected_folder).name if self.selected_folder else 'risultati'}.csv"
+        path, _ = QFileDialog.getSaveFileName(self, "Esporta report CSV", str(start), "CSV (*.csv)")
         if path:
             try:
                 df = detections_to_dataframe(self.results)
