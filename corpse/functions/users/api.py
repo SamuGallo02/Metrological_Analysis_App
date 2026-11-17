@@ -164,9 +164,11 @@ class ApiClient:
         return self._request("GET", "/api/events", {"limit": str(limit)})["events"]
     
      # ---- photos, stereo photos and videos of a species ------------------------------------------------
-    def submit_species(self, species: str, kind: str = "photos") -> Dict[str, Any]:
-        """Sends what was uploaded for a species to review; `kind` is "photos", "stereo", "video" or "stereo_video"."""
-        return self._request("POST", "/api/species/submit", body={"species": species, "kind": kind})
+    def submit_species(self, species: str, kind: str = "photos", group: str = "") -> Dict[str, Any]:
+        """Sends what was uploaded for a species to review; `kind` is "photos", "stereo", "video" or
+        "stereo_video". With `group`, it is published on behalf of a work group: the group signs it."""
+        return self._request("POST", "/api/species/submit",
+                             body={"species": species, "kind": kind, "group": group})
 
     def species_submissions(self, status: Optional[str] = None, kind: Optional[str] = None) -> List[Dict[str, Any]]:
         params = {k: v for k, v in (("status", status), ("kind", kind)) if v}
@@ -185,11 +187,111 @@ class ApiClient:
             body["classes"] = classes
         return self._request("POST", "/api/labels", body=body)
 
-    def submit_dataset(self, name: str) -> Dict[str, Any]:
-        return self._request("POST", "/api/datasets/submit", body={"name": name})
+    # ---- training asked of the server ---------------------------------------
+    def request_training(self, dataset: str, base_model: str, epochs: int = 50, imgsz: int = 640, batch: int = 8,
+                         species: str = "") -> Dict[str, Any]:
+        """Asks the server to train a model on one of its datasets: a worker with a GPU will do the work."""
+        return self._request("POST", "/api/training/jobs",
+                             body={"dataset": dataset, "base_model": base_model, "epochs": epochs,
+                                   "imgsz": imgsz, "batch": batch, "species": species})["job"]
 
-    def submit_model(self, species: str, file: str) -> Dict[str, Any]:
-        return self._request("POST", "/api/models/submit", body={"species": species, "file": file})
+    def training_jobs(self, everyone: bool = False, status: str = "") -> List[Dict[str, Any]]:
+        q = {}
+        if everyone:
+            q["all"] = "1"
+        if status:
+            q["status"] = status
+        return self._request("GET", "/api/training/jobs", params=q).get("jobs", [])
+
+    def cancel_training(self, job_id: int) -> Dict[str, Any]:
+        return self._request("POST", "/api/training/cancel", body={"id": job_id})["job"]
+
+    def claim_training(self, worker: str) -> Optional[Dict[str, Any]]:
+        """Administrators (the worker): takes the oldest waiting job, or None."""
+        return self._request("POST", "/api/training/next", body={"worker": worker}).get("job")
+
+    def update_training(self, job_id: int, **fields: Any) -> Dict[str, Any]:
+        return self._request("POST", "/api/training/update", body={"id": job_id, **fields})["job"]
+
+    # ---- improvement of a photo or a video asked of the server --------------
+    def request_enhance(self, path: str, method: str = "") -> Dict[str, Any]:
+        """Asks the server to improve a file of your personal folder; a worker does the work and writes the
+        improved copy beside it (`enhanced/` with the same name)."""
+        return self._request("POST", "/api/enhance/jobs", body={"path": path, "method": method})["job"]
+
+    def enhance_jobs(self, everyone: bool = False, status: str = "") -> List[Dict[str, Any]]:
+        q = {}
+        if everyone:
+            q["all"] = "1"
+        if status:
+            q["status"] = status
+        return self._request("GET", "/api/enhance/jobs", params=q).get("jobs", [])
+
+    def cancel_enhance(self, job_id: int) -> Dict[str, Any]:
+        return self._request("POST", "/api/enhance/cancel", body={"id": job_id})["job"]
+
+    def claim_enhance(self, worker: str) -> Optional[Dict[str, Any]]:
+        """Administrators (the worker): takes the oldest waiting improvement, or None."""
+        return self._request("POST", "/api/enhance/next", body={"worker": worker}).get("job")
+
+    def update_enhance(self, job_id: int, **fields: Any) -> Dict[str, Any]:
+        return self._request("POST", "/api/enhance/update", body={"id": job_id, **fields})["job"]
+
+    # ---- work groups -------------------------------------------------------
+    def groups(self, everyone: bool = False) -> List[Dict[str, Any]]:
+        """The work groups you belong to, each with its members and the role you have in it. A server
+        administrator can ask for all of them with `everyone`."""
+        return self._request("GET", "/api/groups", params={"all": "1"} if everyone else {}).get("groups", [])
+
+    def create_group(self, name: str) -> Dict[str, Any]:
+        """Anybody can make a group: whoever makes it is its first administrator."""
+        return self._request("POST", "/api/groups", body={"name": name})["group"]
+
+    def update_group(self, name: str, description: Optional[str] = None,
+                     free_upload: Optional[bool] = None) -> Dict[str, Any]:
+        """Settings of a group: what it is for, and whether the members may add files without approval."""
+        body: Dict[str, Any] = {"name": name}
+        if description is not None:
+            body["description"] = description
+        if free_upload is not None:
+            body["free_upload"] = bool(free_upload)
+        return self._request("POST", "/api/groups/settings", body=body)["group"]
+
+    def delete_group(self, name: str, files: bool = False) -> None:
+        """Deletes the group. With `files`, its folder on the server goes too."""
+        self._request("POST", "/api/groups/delete", body={"name": name, "files": files})
+
+    def set_member(self, group: str, username: str, member: bool = True,
+                   role: str = "member") -> List[Dict[str, str]]:
+        return self._request("POST", "/api/groups/members",
+                             body={"group": group, "username": username, "member": member,
+                                   "role": role})["members"]
+
+    def set_group_role(self, group: str, username: str, role: str) -> List[Dict[str, str]]:
+        """Promotes a member to administrator of the group, or puts them back to plain member."""
+        return self._request("POST", "/api/groups/role",
+                             body={"group": group, "username": username, "role": role})["members"]
+
+    def leave_group(self, name: str) -> List[Dict[str, str]]:
+        return self._request("POST", "/api/groups/leave", body={"name": name})["members"]
+
+    def group_pending(self, group: str) -> List[Dict[str, Any]]:
+        """What the members sent and is waiting for an administrator of the group."""
+        return self._request("GET", "/api/groups/pending", params={"group": group}).get("waiting", [])
+
+    def approve_group_upload(self, path: str) -> List[str]:
+        """Moves a waiting file (or a whole folder) into the group's folder."""
+        return self._request("POST", "/api/groups/approve", body={"path": path}).get("paths", [])
+
+    def reject_group_upload(self, path: str) -> None:
+        self._request("POST", "/api/groups/reject", body={"path": path})
+
+    def submit_dataset(self, name: str, group: str = "") -> Dict[str, Any]:
+        return self._request("POST", "/api/datasets/submit", body={"name": name, "group": group})
+
+    def submit_model(self, species: str, file: str, group: str = "") -> Dict[str, Any]:
+        return self._request("POST", "/api/models/submit",
+                             body={"species": species, "file": file, "group": group})
 
     def catalog(self, kind: str) -> List[Dict[str, Any]]:
         """The approved items of a kind ("photos", "stereo", "video", "stereo_video", "model", "dataset") with who uploaded,

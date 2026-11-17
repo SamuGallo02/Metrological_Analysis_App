@@ -4,8 +4,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
+from common.image_enhance import find_enhanced
 from common.label_store import sidecars
-from common.params import AREA_PHOTOS, AREA_STEREO, AREA_STEREO_VIDEOS, AREA_VIDEOS, IMAGE_SUFFIXES, STEREO_SIDES, VIDEO_SUFFIXES
+from common.params import AREA_PHOTOS, ENHANCED_DIR, AREA_STEREO, AREA_STEREO_VIDEOS, AREA_VIDEOS, IMAGE_SUFFIXES, STEREO_SIDES, VIDEO_SUFFIXES
 
 Pairs = List[Tuple[Path, str]]
 
@@ -17,8 +18,12 @@ def kind_of(path: Path) -> Optional[str]:
 
 
 def _with_labels(media: Path, remote_dir: str, classes_sent: set) -> Pairs:
-    """The media file, its label file and (once per folder) the class names, with their remote names."""
+    """The media file, its improved copy, its label file and (once per folder) the class names, with their
+    remote names."""
     out: Pairs = [(media, f"{remote_dir}/{media.name}")]
+    better = find_enhanced(media)
+    if better is not None:                        # the improved copy travels in `enhanced/`, beside the original
+        out.append((better, f"{remote_dir}/{ENHANCED_DIR}/{media.name}"))
     label, classes = sidecars(media)
     if label is not None:
         out.append((label, f"{remote_dir}/{media.with_suffix('.txt').name}"))      # the label has the media's name

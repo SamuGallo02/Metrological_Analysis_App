@@ -9,6 +9,7 @@ from .label_shapes import Shape, format_labels
 
 Point = Tuple[float, float]
 MIN_SIDE = 0.002                     # a box thinner than this (fraction of the image) is dropped
+MAX_POINTS = 200                     # a polygon beyond this is unreadable, and YOLO does not need it
 
 
 def _clamp(v: float) -> float:
@@ -178,6 +179,45 @@ class LabelModel:
         pts.insert(best[1] + 1, best[2])
         self.shapes[si] = Shape(s.cls, tuple(pts))
         return best[1] + 1
+
+    def to_polygon(self, si: int) -> bool:
+        """Turns a box into a polygon of four points, so that it too can be shaped point by point."""
+        s = self.shapes[si]
+        if not s.is_box:
+            return False
+        (x1, y1), (x2, y2) = s.points
+        self.shapes[si] = Shape(s.cls, ((x1, y1), (x2, y1), (x2, y2), (x1, y2)))
+        return True
+
+    def subdivide(self, si: int) -> int:
+        """Adds a point in the middle of every edge: the outline keeps its shape and becomes easier to mould.
+        Returns how many points were added (0 when there is no room left, or on a box)."""
+        s = self.shapes[si]
+        if s.is_box:
+            return 0
+        pts = list(s.points)
+        if len(pts) * 2 > MAX_POINTS:
+            return 0
+        out: List[Point] = []
+        for i, p in enumerate(pts):
+            q = pts[(i + 1) % len(pts)]
+            out.append(p)
+            out.append(((p[0] + q[0]) / 2, (p[1] + q[1]) / 2))
+        self.shapes[si] = Shape(s.cls, tuple(out))
+        return len(pts)
+
+    def edge_point(self, si: int, x: float, y: float, tol: float) -> Optional[Point]:
+        """Where a new point would land if it were added now: for the mark that follows the pointer."""
+        s = self.shapes[si]
+        if s.is_box:
+            return None
+        pts = list(s.points)
+        best: Optional[Tuple[float, Point]] = None
+        for i in range(len(pts)):
+            d, q = _dist_to_segment((x, y), pts[i], pts[(i + 1) % len(pts)])
+            if d <= tol and (best is None or d < best[0]):
+                best = (d, q)
+        return best[1] if best else None
 
     def remove_vertex(self, si: int, hi: int) -> bool:
         s = self.shapes[si]

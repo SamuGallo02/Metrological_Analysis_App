@@ -13,9 +13,12 @@ PERMISSIONS = {
     "training.run": (ROLE_USER, ROLE_SERVER),
     "analysis.run": (ROLE_USER, ROLE_SERVER),
     "mine.manage": (ROLE_USER, ROLE_SERVER),          # personal folder on the server
+    "groups.use": (ROLE_USER, ROLE_SERVER),           # shared folder of the groups one belongs to
+    "groups.create": (ROLE_USER, ROLE_SERVER),        # anybody can make a group and then looks after it
+    "groups.manage": (ROLE_SERVER,),                  # look after every group of the server
     "species.review": (ROLE_SERVER,),
 }
-SERVER_SIDE_PREFIXES = ("files.", "models.", "users.", "mine.", "species.")
+SERVER_SIDE_PREFIXES = ("files.", "models.", "users.", "mine.", "species.", "groups.")
 
 # local folders the user can choose from the profile: key -> (English label)
 LOCAL_FOLDERS = ("photos", "models", "datasets", "results")

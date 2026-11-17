@@ -23,6 +23,7 @@ from corpse.functions.analysis.camera_utils import list_available_cameras
 from corpse.gui.analysis.analysis_page_base import MODELS_DIR, scan_models
 
 from common.paths import PROJECT_ROOT  # noqa: E402
+from common.ui.layout import fit_to_screen
 MODE_MONO, MODE_STEREO = "mono", "stereo"        # internal values (not translated)
 
 
@@ -37,7 +38,7 @@ class WebcamDemoDialog(QDialog):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle(tr("Webcam demo — settings"))
-        self.resize(400, 260)
+        fit_to_screen(self, 400, 260)
         self.selected_model_path: str | None = None
         self.selected_class: str | None = None  # None = all objects
         self.selected_mode: str = MODE_MONO

@@ -34,6 +34,7 @@ LOCAL_FOLDER_NAMES = {                                  # area -> folder name in
 VENV_PARENT = "librery"                                 # container of the virtual environments
 
 NET_TIMEOUT = 20.0                             # seconds
+GOODBYE_TIMEOUT = 2.0                          # saying goodbye to the server on sign-out: never make the user wait
 CHUNK = 1 << 20                                # bytes per block in transfers
 
 
@@ -52,8 +53,12 @@ AREA_PHOTOS, AREA_STEREO, AREA_VIDEOS = "photos", "stereo", "videos"
 AREA_STEREO_VIDEOS = "stereo_videos"
 AREAS_MEDIA = (AREA_PHOTOS, AREA_STEREO, AREA_VIDEOS, AREA_STEREO_VIDEOS)         # one folder per species, then one per approved upload
 AREAS_SHARED = AREAS_MEDIA + ("models", "datasets")           # common folders: everyone reads and adds, the admin edits
+# inside a group: whoever made it looks after it, and can promote the others
+GROUP_ADMIN, GROUP_MEMBER = "admin", "member"
+GROUP_ROLES = (GROUP_ADMIN, GROUP_MEMBER)
+AREA_GROUPS = "groups"                                        # shared folder of a work group: its members only
 AREA_MINE = "mine"                                            # personal folder on the server: the owner can do everything
-AREAS = AREAS_SHARED + (AREA_MINE,)
+AREAS = AREAS_SHARED + (AREA_GROUPS, AREA_MINE)
 
 # what a submission is about -> the area that holds it once approved
 KIND_PHOTOS, KIND_STEREO, KIND_VIDEO, KIND_DATASET, KIND_MODEL = "photos", "stereo", "video", "dataset", "model"
@@ -67,6 +72,13 @@ KINDS_VIDEO = (KIND_VIDEO, KIND_STEREO_VIDEO)             # the media are videos
 
 IMAGE_SUFFIXES = (".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp")
 VIDEO_SUFFIXES = (".mp4", ".avi", ".mov", ".mkv", ".webm")
+# training asked of the server: a worker with a GPU takes the jobs one at a time
+JOB_QUEUED, JOB_RUNNING, JOB_DONE, JOB_FAILED, JOB_CANCELLED = "queued", "running", "done", "failed", "cancelled"
+JOB_STATES = (JOB_QUEUED, JOB_RUNNING, JOB_DONE, JOB_FAILED, JOB_CANCELLED)
+JOB_OPEN = (JOB_QUEUED, JOB_RUNNING)
+ENHANCED_DIR = "enhanced"                                     # improved copy of a photo or video, beside the original
+ORIGINALS_DIR = "originals"                                   # where the original goes when an improved copy takes its place
+ENHANCE_INBOX = "improve"                                     # personal folder on the server where a file waits to be improved
 LABEL_SUFFIX = ".txt"                                         # YOLO labels sit next to the media with the same name
 STEREO_SIDES = ("lx", "rx")
 

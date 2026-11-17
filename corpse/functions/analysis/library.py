@@ -1,45 +1,32 @@
-"""Index of the photos and videos the user works with, kept like a small server database (SQLite).
+"""Index of the photos and videos the user works with: the register of folders (see `common.media_library`) plus
+what only an image library can tell - resolution, number of frames, thumbnails.
 
 Folders are *registered*, never copied: the index stores where they are (path), what they are (kind) and, on
 request, facts about their files (size, resolution, frames...). Views and analyses read the original files.
 Thumbnails are produced in memory on demand, so a preview never leaves a copy on disk.
 
 Kinds: photo (flat folder of images), photo_stereo (rx/lx folders), video (one video), video_stereo (rx/lx videos).
-Folders that already live in the default data folders (older installations) are registered in place.
+Folders that already live in the default data folders (older installations) are registered in place. The same
+register is what "Folders > Local" shows, so a folder added there can be analysed straight away.
 """
 from __future__ import annotations
 
-import sqlite3
 import threading
-import time
 from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Optional, Tuple
 
 import cv2
 import numpy as np
 
-from common.paths import LOCAL_DIR, PHOTO_DIR, STEREO_PHOTO_DIR, STEREO_VIDEO_DIR, VIDEO_DIR
+from common.media_library import (KINDS, LEGACY_DIRS, LIBRARY_DB, Registry, Source,  # noqa: F401 - kept for the callers
+                                  media_suffixes)
+from common.params import IMAGE_SUFFIXES as _IMAGE_SUFFIXES, VIDEO_SUFFIXES as _VIDEO_SUFFIXES
 
-IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"}
-VIDEO_SUFFIXES = {".mp4", ".avi", ".mov", ".mkv", ".wmv", ".m4v", ".mpg", ".mpeg"}
-LEGACY_DIRS = {"photo": PHOTO_DIR, "photo_stereo": STEREO_PHOTO_DIR,
-               "video": VIDEO_DIR, "video_stereo": STEREO_VIDEO_DIR}
-KINDS = tuple(LEGACY_DIRS)
+IMAGE_SUFFIXES = set(_IMAGE_SUFFIXES)
+VIDEO_SUFFIXES = set(_VIDEO_SUFFIXES)
 THUMB_CACHE_ITEMS = 256          # thumbnails kept in memory (never on disk)
-
-
-@dataclass(frozen=True)
-class Source:
-    id: int
-    kind: str
-    name: str
-    path: Path
-
-    @property
-    def exists(self) -> bool:
-        return self.path.is_dir()
 
 
 @dataclass(frozen=True)
@@ -58,86 +45,12 @@ class MediaInfo:
         return self.frames / self.fps if self.fps else 0.0
 
 
-class Library:
+class Library(Registry):
+    """The register of folders, able to read the media too."""
+
     def __init__(self, db_path: Path):
-        self.db_path = Path(db_path)
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._lock = threading.RLock()
-        self._db = sqlite3.connect(str(self.db_path), check_same_thread=False)
-        self._db.row_factory = sqlite3.Row
-        with self._lock, self._db:
-            self._db.executescript("""
-                CREATE TABLE IF NOT EXISTS sources (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, name TEXT NOT NULL,
-                    path TEXT NOT NULL, added REAL NOT NULL, UNIQUE (kind, path), UNIQUE (kind, name));
-                CREATE TABLE IF NOT EXISTS media (
-                    path TEXT PRIMARY KEY, size INTEGER NOT NULL, mtime REAL NOT NULL, kind TEXT NOT NULL,
-                    width INTEGER, height INTEGER, frames INTEGER, fps REAL);
-            """)
+        super().__init__(db_path)
         self._thumbs: "OrderedDict[Tuple[str, int, float, int], bytes]" = OrderedDict()
-
-    def close(self) -> None:
-        with self._lock:
-            self._db.close()
-
-    # ---- sources ------------------------------------------------------------------
-    @staticmethod
-    def _row(r: sqlite3.Row) -> Source:
-        return Source(r["id"], r["kind"], r["name"], Path(r["path"]))
-
-    def add_source(self, kind: str, folder: Path, name: Optional[str] = None) -> Source:
-        """Registers `folder` (not copied). Registering the same folder twice returns the existing entry."""
-        if kind not in KINDS:
-            raise ValueError(f"Unknown kind: {kind}")
-        folder = Path(folder).resolve()
-        if not folder.is_dir():
-            raise FileNotFoundError(f"Not a folder: {folder}")
-        with self._lock, self._db:
-            row = self._db.execute("SELECT * FROM sources WHERE kind=? AND path=?", (kind, str(folder))).fetchone()
-            if row:
-                return self._row(row)
-            base = name or folder.name
-            label, n = base, 2
-            while self._db.execute("SELECT 1 FROM sources WHERE kind=? AND name=?", (kind, label)).fetchone():
-                label, n = f"{base} ({n})", n + 1          # two different folders with the same name
-            cur = self._db.execute("INSERT INTO sources (kind, name, path, added) VALUES (?,?,?,?)",
-                                   (kind, label, str(folder), time.time()))
-            return Source(cur.lastrowid, kind, label, folder)
-
-    def sources(self, kind: str) -> List[Source]:
-        """The registered folders of a kind (the default data folder is scanned first, in place)."""
-        self.sync_legacy(kind)
-        with self._lock:
-            rows = self._db.execute("SELECT * FROM sources WHERE kind=? ORDER BY lower(name)", (kind,)).fetchall()
-        return [self._row(r) for r in rows]
-
-    def source(self, kind: str, name: str) -> Optional[Source]:
-        with self._lock:
-            row = self._db.execute("SELECT * FROM sources WHERE kind=? AND name=?", (kind, name)).fetchone()
-        return self._row(row) if row else None
-
-    def remove_source(self, source_id: int) -> None:
-        """Forgets a folder. The files are never touched."""
-        with self._lock, self._db:
-            self._db.execute("DELETE FROM sources WHERE id=?", (source_id,))
-
-    def sync_legacy(self, kind: str) -> None:
-        """Registers, in place, the folders already inside the default data folder of this kind."""
-        root = LEGACY_DIRS[kind]
-        if not root.is_dir():
-            return
-        for f in sorted(root.iterdir()):
-            if f.is_dir() and not f.name.startswith("."):
-                self.add_source(kind, f)
-
-    # ---- files -------------------------------------------------------------------------
-    def files(self, source: Source) -> List[Path]:
-        """Images or videos of a source, read from disk now (the folder is the truth, the index is a map)."""
-        suffixes = IMAGE_SUFFIXES if source.kind.startswith("photo") else VIDEO_SUFFIXES
-        if not source.path.is_dir():
-            return []
-        return sorted((p for p in source.path.rglob("*") if p.is_file() and p.suffix.lower() in suffixes),
-                      key=lambda p: str(p).lower())
 
     def info(self, path: Path) -> MediaInfo:
         """Size, resolution and (videos) frames/fps of a file; cached by size+mtime, no pixel data is kept."""
@@ -230,5 +143,5 @@ def default_library() -> Library:
     global _default
     with _default_lock:
         if _default is None:
-            _default = Library(LOCAL_DIR / "library.sqlite")
+            _default = Library(LIBRARY_DB)
         return _default

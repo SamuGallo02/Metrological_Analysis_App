@@ -22,6 +22,10 @@ except Exception:
 # Preemptively disabling the dynamic introspection hooks
 os.environ["SHIBOKEN_DISABLE_IMPORTHOOK"] = "1"
 
+# Before anything else starts a process (updater, installer, libraries): no console window must ever appear.
+from common.ambient.no_console import silence_console  # noqa: E402
+silence_console()
+
 
 def self_repair(deep: bool = False) -> None:
     """Checks the files of the virtual environment and, if some are damaged, repairs them (with a progress window)."""
@@ -73,6 +77,7 @@ def bootstrap() -> None:
 
     from pathlib import Path
 
+    from PySide6.QtCore import QEventLoop
     from PySide6.QtWidgets import QApplication, QDialog
 
     app = QApplication.instance() or QApplication(sys.argv)
@@ -91,20 +96,31 @@ def bootstrap() -> None:
     session = Session(LocalStore(default_folders={
         "photos": STEREO_PHOTO_DIR, "models": MODELS_DIR, "datasets": TRAINING_DIR, "results": RESULTS_DIR,
     }))
-    if not session.resume():  # valid saved session, or server off with a previous session
-        dialog = LoginDialog(session)  # login, registration, admin key or "continue without logging in"
-        dialog.showMaximized()  # opens full screen; the user can restore and maximize it again
-        if dialog.exec() != QDialog.DialogCode.Accepted:
-            sys.exit(0)
+    # Signing in and signing out happen inside this loop: the application is never restarted, so the libraries
+    # (OpenCV, PyTorch...) stay loaded and going back to the home is immediate.
+    first_time = True
+    while True:
+        if not session.resume():  # valid saved session, or server off with a previous session
+            dialog = LoginDialog(session)  # login, registration, admin key or "continue without logging in"
+            dialog.show()           # at its own size (see LoginDialog), never full screen on a big monitor
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                sys.exit(0)
 
-    window = AppWindow(session)
-    window.showMaximized()  # Forced full-screen opening
+        window = AppWindow(session)
+        loop = QEventLoop()                  # this window's own loop: it ends even when the sign-out comes from
+        window.closing.connect(loop.quit)    # inside a dialog (QApplication.quit() would end only the dialog's)
+        window.showMaximized()  # Forced full-screen opening
 
-    if "--no-check" not in sys.argv and "--no-update" not in sys.argv:
-        from common.ambient.update_dialog import offer_update_later
-        offer_update_later(window, root)  # "ask" mode: at most once a day, never blocks the start
+        if first_time and "--no-check" not in sys.argv and "--no-update" not in sys.argv:
+            from common.ambient.update_dialog import offer_update_later
+            offer_update_later(window, root)  # "ask" mode: at most once a day, never blocks the start
+        first_time = False
 
-    sys.exit(app.exec())
+        code = loop.exec()
+        if not window.sign_out_requested:    # the user closed the window: that is the end
+            sys.exit(code)
+        window.deleteLater()
+        app.processEvents()
 
 
 if __name__ == "__main__":

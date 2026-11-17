@@ -6,7 +6,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from common.errors import AppError
-from server.media_tree import check_media_file, count_media, label_name, move_numbered, validate_media_dir
+from server.media_tree import (check_media_file, count_enhanced, count_labelled, count_media, label_name,
+                               move_numbered, validate_media_dir)
 
 SP = "Epinephelus marginatus"
 PH, ST, VI = "photos", "stereo", "video"
@@ -190,6 +191,58 @@ class TestMoveNumbered(unittest.TestCase):
 
     def test_label_name(self):
         self.assertEqual(label_name("a/b.JPG"), "a/b.txt")
+
+
+class EnhancedCopyTest(unittest.TestCase):
+    """The improved copy of a photo lives in `enhanced/`, beside its original and with the same name."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.src = Path(self.tmp.name) / "src"
+        self.dst = Path(self.tmp.name) / "dst"
+        (self.src / "enhanced").mkdir(parents=True)
+
+    def put(self, rel, data=b"x"):
+        p = self.src / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(data)
+
+    def test_the_path_of_an_improved_copy_is_accepted(self):
+        check_media_file("photos", "Pinna nobilis/enhanced/a.jpg")
+        check_media_file("stereo", "Pinna nobilis/lx/enhanced/a.jpg")
+        check_media_file("video", "Pinna nobilis/enhanced/a.mp4")
+
+    def test_labels_and_strange_folders_are_refused(self):
+        for rel in ("Pinna nobilis/enhanced/a.txt",            # the labels stay with the original
+                    "Pinna nobilis/enhanced/enhanced/a.jpg",
+                    "Pinna nobilis/other/a.jpg"):
+            with self.assertRaises(AppError, msg=rel):
+                check_media_file("photos", rel)
+
+    def test_an_improved_copy_without_its_original_is_a_problem(self):
+        self.put("a.jpg")
+        self.put("enhanced/b.jpg")
+        self.assertTrue(validate_media_dir(self.src, "photos"))
+        (self.src / "enhanced" / "b.jpg").rename(self.src / "enhanced" / "a.jpg")
+        self.assertEqual(validate_media_dir(self.src, "photos"), [])
+
+    def test_the_copies_are_not_counted_as_more_photos(self):
+        self.put("a.jpg")
+        self.put("a.txt")
+        self.put("enhanced/a.jpg")
+        self.assertEqual(count_media(self.src, "photos"), 1)
+        self.assertEqual(count_labelled(self.src), 1)
+        self.assertEqual(count_enhanced(self.src, "photos"), 1)
+
+    def test_approval_gives_the_copy_the_same_number(self):
+        self.put("b.jpg", b"second")
+        self.put("a.jpg", b"first")
+        self.put("enhanced/a.jpg", b"first improved")
+        self.assertEqual(move_numbered(self.src, self.dst, "photos"), 2)
+        self.assertEqual(sorted(p.name for p in self.dst.iterdir() if p.is_file()), ["IMG_0001.jpg", "IMG_0002.jpg"])
+        self.assertEqual((self.dst / "enhanced" / "IMG_0001.jpg").read_bytes(), b"first improved")
+        self.assertFalse((self.dst / "enhanced" / "IMG_0002.jpg").exists())
 
 
 if __name__ == "__main__":

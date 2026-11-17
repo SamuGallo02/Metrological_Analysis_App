@@ -11,6 +11,7 @@ from common.ambient.update_dialog import UpdatesPanel
 from common.i18n import tr, tr_error
 from common.ui.language import LanguageWidget
 from common.ui.qt_utils import run_async
+from common.ui.layout import fit_to_screen
 
 from corpse.functions.users.api import ApiClient, ApiError, normalize_url
 from corpse.functions.users.session import Session
@@ -80,7 +81,8 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.session = session
         self.setWindowTitle(tr("Settings"))
-        self.setMinimumSize(640, 480)
+        self.setMinimumSize(620, 480)
+        fit_to_screen(self, 760, 560)
         lay = QVBoxLayout(self)
         self.tabs = QTabWidget()
         self.language = LanguageWidget()

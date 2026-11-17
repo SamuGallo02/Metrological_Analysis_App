@@ -8,16 +8,12 @@ Autore: Samuele Gallo
 
 from __future__ import annotations
 
-import shutil
-from pathlib import Path
-
 from PySide6.QtCore import QThread, Signal
 
-from corpse.functions.training.config import MODELS_DIR, RUN_NAME, RUNS_DIR
+from corpse.functions.training.run import train_model
 
 from typing import Dict
 
-from common.model_metadata import metrics_from_results, model_filename
 
 
 class TrainingWorker(QThread):
@@ -38,34 +34,8 @@ class TrainingWorker(QThread):
 
     def run(self) -> None:
         try:
-            from ultralytics import YOLO
-
-            self.log_signal.emit(f"Caricamento modello base: {self.base_model}...")
-            model = YOLO(self.base_model)
-
-            self.log_signal.emit(f"Avvio addestramento su device '{self.device}' per {self.epochs} epoche...")
-            results = model.train(
-                data=self.data_yaml,
-                epochs=self.epochs,
-                imgsz=self.imgsz,
-                batch=self.batch,
-                device=self.device,
-                project=str(RUNS_DIR),
-                name=RUN_NAME,
-                exist_ok=True,
-            )
-
-            self.metrics = metrics_from_results(results)
-
-            best_model_path = Path(results.save_dir) / "weights" / "best.pt"
-            if best_model_path.exists():
-                MODELS_DIR.mkdir(parents=True, exist_ok=True)
-                dataset = Path(self.data_yaml).parent.name
-                dest_path = MODELS_DIR / model_filename(dataset, self.base_model)
-                shutil.copy2(best_model_path, dest_path)
-                self.finished_signal.emit(str(dest_path))
-            else:
-                self.error_signal.emit("Training terminato ma non è stato trovato il file dei pesi salvato.")
-
+            path, self.metrics = train_model(self.data_yaml, self.base_model, self.epochs, self.imgsz, self.batch,
+                                             self.device, log=self.log_signal.emit)
+            self.finished_signal.emit(str(path))
         except Exception as exc:
             self.error_signal.emit(str(exc))

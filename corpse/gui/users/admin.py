@@ -3,18 +3,22 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from PySide6.QtWidgets import (QAbstractItemView, QDialog, QDialogButtonBox, QFormLayout, QFrame, QHBoxLayout,
+from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QFrame, QHBoxLayout,
+                               QListWidget,
                                QHeaderView, QInputDialog, QLabel, QLineEdit, QMessageBox, QPushButton, QTabBar,
                                QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget)
 
 from common.format import fmt_time
 from common.i18n import tr, tr_error
-from common.params import AREAS_SHARED, ROLE_SERVER, ROLE_USER, SUBMISSION_PENDING
+from common.params import (AREAS_SHARED, KIND_AREA, KIND_DATASET, KIND_MODEL, KIND_PHOTOS, KIND_STEREO,
+                           KIND_STEREO_VIDEO, KIND_VIDEO, ROLE_SERVER, ROLE_USER, SUBMISSION_PENDING)
 from common.ui.qt_utils import run_async
 
 from corpse.functions.users.session import Session
 from .browser import ServerBrowserWidget
-from .labels import role_label, status_label
+from .catalog import CatalogWidget
+from .groups_page import GroupsPage
+from .labels import area_label, role_label, status_label
 from .preview_dialog import PreviewDialog
 
 
@@ -323,6 +327,29 @@ class ReviewWidget(QWidget):
         for w in (self.photos, self.stereo, self.videos, self.stereo_videos, self.datasets, self.models):
             w.refresh()
 
+class DatabaseWidget(QWidget):
+    """The administrator's Database: the same catalog the users see (species -> items, uploaded by, approved by,
+    date), one tab per kind, plus a last tab with the raw folders (where files can also be deleted)."""
+
+    KINDS = (KIND_PHOTOS, KIND_STEREO, KIND_VIDEO, KIND_STEREO_VIDEO, KIND_DATASET, KIND_MODEL)
+
+    def __init__(self, session: Session, parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        lay = QVBoxLayout(self)
+        self.tabs = QTabWidget()
+        self.catalogs = [CatalogWidget(session, k) for k in self.KINDS]
+        for kind, w in zip(self.KINDS, self.catalogs):
+            self.tabs.addTab(w, area_label(KIND_AREA[kind]))
+        self.folders = ServerBrowserWidget(session, AREAS_SHARED)
+        self.tabs.addTab(self.folders, tr("Folders"))
+        lay.addWidget(self.tabs)
+
+    def refresh(self) -> None:
+        for w in self.catalogs:
+            w.refresh()
+        self.folders.refresh()
+
+
 class AdminHome(QWidget):
     """Administrator's main panel: Users, Database, Training in the foreground; metrological analysis
     is a secondary row with a single button."""
@@ -340,7 +367,8 @@ class AdminHome(QWidget):
         lay.addWidget(self.banner)
         self.tabs = QTabWidget()
         self.users = UserAdminWidget(session)
-        self.db = ServerBrowserWidget(session, AREAS_SHARED)
+        self.groups = GroupsPage(session)          # the same page the users have, with every group of the server
+        self.db = DatabaseWidget(session)
         self.review = ReviewWidget(session)
         train = QWidget()
         tl = QVBoxLayout(train)
@@ -352,6 +380,7 @@ class AdminHome(QWidget):
         tl.addWidget(b)
         tl.addStretch(1)
         self.server_tabs = (self.tabs.addTab(self.users, tr("Users")),
+                            self.tabs.addTab(self.groups, tr("Work groups")),
                             self.tabs.addTab(self.db, tr("Database")),
                             self.tabs.addTab(self.review, tr("Review")))
         self.local_tab = self.tabs.addTab(train, tr("Training"))

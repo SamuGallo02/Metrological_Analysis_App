@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (QDialog, QFormLayout, QFrame, QHBoxLayout, QLabel
 from common.i18n import tr, tr_error
 from common.params import DEFAULT_SERVER_URL
 from common.ui.language import LanguageButton
+from common.ui.layout import Responsive, fit_to_screen, scrollable
 from common.ui.qt_utils import run_async
 
 from corpse.functions.users.api import OfflineError
@@ -34,15 +35,19 @@ class LoginDialog(QDialog):
         super().__init__(parent)
         self.session = session
         self.setWindowTitle(tr("Sign in"))
-        self.setMinimumSize(860, 540)
-        self.resize(1040, 640)              # size when restored from full screen
+        self.setMinimumSize(520, 470)       # the card alone: the window stays usable on a small screen
+        fit_to_screen(self, 1040, 640)      # size when restored from full screen, never bigger than the screen
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowMinMaxButtonsHint)   # maximize/restore button
         self.mode = "online"
         self._wait = 0                      # remaining lockout seconds
         self._wait_scope = ""
 
         # Opening page: introduction on the left, login card in the center-right
-        outer = QVBoxLayout(self)
+        shell = QVBoxLayout(self)
+        shell.setContentsMargins(0, 0, 0, 0)
+        body = QWidget()
+        shell.addWidget(scrollable(body))   # a small window scrolls instead of cutting the form off
+        outer = QVBoxLayout(body)
         outer.setContentsMargins(16, 12, 16, 0)
         top = QHBoxLayout()
         top.addStretch(1)
@@ -74,18 +79,19 @@ class LoginDialog(QDialog):
         hero.addStretch(1)
         hero_box = QWidget()
         hero_box.setLayout(hero)
-        hero_box.setMinimumWidth(380)
+        hero_box.setMinimumWidth(320)
         hero_box.setMaximumWidth(460)
         page.addWidget(hero_box, 1)
         card = QFrame()
         card.setObjectName("loginCard")
         card.setStyleSheet("#loginCard { border: 1px solid #3a4150; border-radius: 12px; }")
-        card.setMinimumWidth(420)
+        card.setMinimumWidth(360)
         card.setMaximumWidth(480)
         lay = QVBoxLayout(card)
         lay.setContentsMargins(24, 20, 24, 20)
         page.addWidget(card, 1, Qt.AlignmentFlag.AlignVCenter)
         page.addStretch(1)
+        Responsive(self, 880, [hero_box])            # narrow window: only the card, no presentation column
         self.tabs = QTabBar()
         self.tabs.addTab(tr("Sign in"))
         self.tabs.addTab(tr("Register"))

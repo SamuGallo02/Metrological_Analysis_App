@@ -17,7 +17,7 @@ Cancel = Optional[Callable[[], bool]]
 
 
 def publish_model(client: Any, model_path: Path, species: str, progress: Progress = None,
-                  cancel: Cancel = None) -> Dict[str, Any]:
+                  cancel: Cancel = None, group: str = "") -> Dict[str, Any]:
     """Carica il modello (e i suoi metadati, se ci sono) in models/<species>/.
 
     Restituisce {"remote", "pending", "metadata"}: `pending` è vero se il modello aspetta l'approvazione di un
@@ -44,5 +44,5 @@ def publish_model(client: Any, model_path: Path, species: str, progress: Progres
         done += f.stat().st_size
         if progress:
             progress(done, total)
-    sent = client.submit_model(species, model.name)                  # il server decide: admin → pubblico, utente → in attesa
+    sent = client.submit_model(species, model.name, group)                  # il server decide: admin → pubblico, utente → in attesa
     return {"remote": f"{species}/{model.name}", "pending": bool(sent.get("pending")), "metadata": meta_path is not None}

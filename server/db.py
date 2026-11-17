@@ -8,7 +8,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from common.errors import AppError
-from common.params import ROLE_SERVER, ROLE_USER, ROLES
+from common.params import (GROUP_ADMIN, GROUP_MEMBER, GROUP_ROLES, JOB_CANCELLED, JOB_DONE, JOB_FAILED, JOB_QUEUED, JOB_RUNNING, ROLE_SERVER,
+                           ROLE_USER, ROLES)
 from common.security import (hash_password, new_token, token_digest, validate_password, validate_username,
                              verify_password)
 
@@ -43,7 +44,29 @@ class Database:
               id INTEGER PRIMARY KEY AUTOINCREMENT,
               username TEXT NOT NULL, species TEXT NOT NULL, path TEXT NOT NULL,
               status TEXT NOT NULL, photos INTEGER NOT NULL DEFAULT 0,
-              created REAL NOT NULL, reviewed_by TEXT, reviewed REAL);
+              created REAL NOT NULL, reviewed_by TEXT, reviewed REAL,
+              group_name TEXT NOT NULL DEFAULT '');
+            CREATE TABLE IF NOT EXISTS training_jobs(
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              username TEXT NOT NULL, dataset TEXT NOT NULL, base_model TEXT NOT NULL,
+              epochs INTEGER NOT NULL, imgsz INTEGER NOT NULL, batch INTEGER NOT NULL,
+              species TEXT NOT NULL DEFAULT '', status TEXT NOT NULL,
+              created REAL NOT NULL, started REAL, finished REAL,
+              worker TEXT NOT NULL DEFAULT '', message TEXT NOT NULL DEFAULT '',
+              model TEXT NOT NULL DEFAULT '', metrics TEXT NOT NULL DEFAULT '');
+            CREATE TABLE IF NOT EXISTS enhance_jobs(
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              username TEXT NOT NULL, area TEXT NOT NULL, path TEXT NOT NULL,
+              method TEXT NOT NULL DEFAULT '', status TEXT NOT NULL,
+              created REAL NOT NULL, started REAL, finished REAL,
+              worker TEXT NOT NULL DEFAULT '', message TEXT NOT NULL DEFAULT '',
+              result TEXT NOT NULL DEFAULT '');
+            CREATE TABLE IF NOT EXISTS groups(
+              name TEXT PRIMARY KEY COLLATE NOCASE, created REAL NOT NULL, created_by TEXT NOT NULL DEFAULT '',
+              description TEXT NOT NULL DEFAULT '', free_upload INTEGER NOT NULL DEFAULT 0);
+            CREATE TABLE IF NOT EXISTS group_members(
+              group_name TEXT NOT NULL COLLATE NOCASE, username TEXT NOT NULL COLLATE NOCASE,
+              added REAL NOT NULL, role TEXT NOT NULL DEFAULT 'member', PRIMARY KEY(group_name, username));
             DROP INDEX IF EXISTS one_pending_per_folder;
             """)
             have = {r[1] for r in c.execute("PRAGMA table_info(users)")}
@@ -55,6 +78,28 @@ class Database:
                 c.execute(f"ALTER TABLE submissions ADD COLUMN kind TEXT NOT NULL DEFAULT '{KIND_PHOTOS}'")
             c.execute("CREATE UNIQUE INDEX IF NOT EXISTS one_pending_per_item "       # photos and stereo of a species can both wait
                       "ON submissions(kind, path) WHERE status='pending'")
+            self._add_missing_columns(c)
+
+    @staticmethod
+    def _add_missing_columns(c) -> None:
+        """Columns added to tables that a server has been using since before: CREATE TABLE IF NOT EXISTS leaves an
+        existing table as it is, so they are added here (an empty database already has them and nothing happens)."""
+        later = {"groups": (("description", "TEXT NOT NULL DEFAULT ''"),
+                            ("free_upload", "INTEGER NOT NULL DEFAULT 0")),
+                 "group_members": (("role", f"TEXT NOT NULL DEFAULT '{GROUP_MEMBER}'"),),
+                 "submissions": (("group_name", "TEXT NOT NULL DEFAULT ''"),)}
+        added = False
+        for table, columns in later.items():
+            have = {r[1] for r in c.execute(f"PRAGMA table_info({table})")}
+            for name, decl in columns:
+                if name not in have:
+                    c.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
+                    added = True
+        if added:        # groups made before the roles existed: whoever made one looks after it
+            c.execute("INSERT OR IGNORE INTO group_members(group_name, username, role, added)"
+                      " SELECT name, created_by, ?, created FROM groups WHERE created_by<>''", (GROUP_ADMIN,))
+            c.execute("UPDATE group_members SET role=? WHERE username="
+                      "(SELECT created_by FROM groups WHERE name=group_name)", (GROUP_ADMIN,))
 
     def _c(self) -> sqlite3.Connection:
         con = sqlite3.connect(str(self.path), timeout=15)
@@ -210,13 +255,14 @@ class Database:
         
     # ---- submissions: folders uploaded by users, waiting for review --------
     def add_submission(self, username: str, species: str, path: str, photos: int = 0,
-                       kind: str = KIND_PHOTOS) -> int:
+                       kind: str = KIND_PHOTOS, group: str = "") -> int:
+        """`group`: published on behalf of a work group the user belongs to (the group is then the author)."""
         try:
             with self._c() as c:
-                return c.execute("INSERT INTO submissions(username,species,path,status,photos,created,kind) "
-                                 "VALUES(?,?,?,?,?,?,?)",
+                return c.execute("INSERT INTO submissions(username,species,path,status,photos,created,kind,"
+                                 "group_name) VALUES(?,?,?,?,?,?,?,?)",
                                  (username, species, path, SUBMISSION_PENDING, photos, time.time(),
-                                  kind)).lastrowid
+                                  kind, group)).lastrowid
         except sqlite3.IntegrityError:
             raise AppError("You already have a pending submission for this species.", 409) from None
 
@@ -267,6 +313,287 @@ class Database:
                       "path=COALESCE(?, path), photos=COALESCE(?, photos) WHERE id=?",
                       (status, reviewer, time.time(), path, photos, sid))
             return dict(c.execute("SELECT * FROM submissions WHERE id=?", (sid,)).fetchone())
+
+    # ---- work groups ------------------------------------------------------
+    def create_group(self, name: str, created_by: str = "") -> Dict[str, Any]:
+        """A group shares a folder on the server. Anybody can make one: whoever makes it is its first administrator,
+        and the name is used as a folder name, so it is kept simple."""
+        name = (name or "").strip()
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 _-]{1,39}", name):
+            raise AppError("The name of a group has 2 to 40 characters: letters, digits, spaces, - and _.", 422)
+        with self._c() as c:
+            if c.execute("SELECT 1 FROM groups WHERE name=?", (name,)).fetchone():
+                raise AppError("A group with this name already exists.", 409)
+            c.execute("INSERT INTO groups(name, created, created_by) VALUES(?,?,?)", (name, time.time(), created_by))
+            if created_by:
+                c.execute("INSERT INTO group_members(group_name, username, role, added) VALUES(?,?,?,?)",
+                          (name, created_by, GROUP_ADMIN, time.time()))
+        return self.group(name)
+
+    def update_group(self, name: str, description: Optional[str] = None,
+                     free_upload: Optional[bool] = None) -> Dict[str, Any]:
+        """The settings of a group: what it is for, and whether the members may add files without waiting."""
+        sets, args = [], []
+        if description is not None:
+            sets.append("description=?")
+            args.append(description.strip()[:500])
+        if free_upload is not None:
+            sets.append("free_upload=?")
+            args.append(1 if free_upload else 0)
+        if sets:
+            args.append(name)
+            with self._c() as c:
+                if not c.execute(f"UPDATE groups SET {', '.join(sets)} WHERE name=?", args).rowcount:
+                    raise AppError("Group not found.", 404)
+        return self.group(name)
+
+    def group_free_upload(self, name: str) -> bool:
+        with self._c() as c:
+            row = c.execute("SELECT free_upload FROM groups WHERE name=?", (name,)).fetchone()
+        return bool(row and row[0])
+
+    def delete_group(self, name: str) -> None:
+        with self._c() as c:
+            if not c.execute("DELETE FROM groups WHERE name=?", (name,)).rowcount:
+                raise AppError("Group not found.", 404)
+            c.execute("DELETE FROM group_members WHERE group_name=?", (name,))
+
+    def _group_exists(self, c, group: str) -> None:
+        if not c.execute("SELECT 1 FROM groups WHERE name=?", (group,)).fetchone():
+            raise AppError("Group not found.", 404)
+
+    def set_member(self, group: str, username: str, member: bool = True,
+                   role: str = GROUP_MEMBER) -> List[Dict[str, str]]:
+        """Adds or removes a member; returns the members afterwards. The last administrator cannot be removed,
+        otherwise nobody could look after the group any more."""
+        if role not in GROUP_ROLES:
+            raise AppError("Unknown role in the group.", 422)
+        with self._c() as c:
+            self._group_exists(c, group)
+            if member:
+                if not c.execute("SELECT 1 FROM users WHERE username=?", (username,)).fetchone():
+                    raise AppError("User not found.", 404)
+                c.execute("INSERT OR IGNORE INTO group_members(group_name, username, role, added) VALUES(?,?,?,?)",
+                          (group, username, role, time.time()))
+            else:
+                self._keep_an_admin(c, group, username)
+                c.execute("DELETE FROM group_members WHERE group_name=? AND username=?", (group, username))
+        return self.group_members(group)
+
+    def set_group_role(self, group: str, username: str, role: str) -> List[Dict[str, str]]:
+        """Promotes a member to administrator of the group, or puts them back to member."""
+        if role not in GROUP_ROLES:
+            raise AppError("Unknown role in the group.", 422)
+        with self._c() as c:
+            self._group_exists(c, group)
+            if role != GROUP_ADMIN:
+                self._keep_an_admin(c, group, username)
+            if not c.execute("UPDATE group_members SET role=? WHERE group_name=? AND username=?",
+                             (role, group, username)).rowcount:
+                raise AppError("This user is not a member of the group.", 404)
+        return self.group_members(group)
+
+    @staticmethod
+    def _keep_an_admin(c, group: str, username: str) -> None:
+        row = c.execute("SELECT role FROM group_members WHERE group_name=? AND username=?",
+                        (group, username)).fetchone()
+        if row is None or row[0] != GROUP_ADMIN:
+            return
+        others = c.execute("SELECT COUNT(*) FROM group_members WHERE group_name=? AND role=? AND username<>?",
+                           (group, GROUP_ADMIN, username)).fetchone()[0]
+        if not others:
+            raise AppError("A group always needs one administrator: choose another one first.", 409)
+
+    def group_members(self, group: str) -> List[Dict[str, str]]:
+        with self._c() as c:
+            rows = c.execute("SELECT username, role FROM group_members WHERE group_name=?"
+                             " ORDER BY role, username", (group,))
+            return [{"username": r[0], "role": r[1]} for r in rows]
+
+    def group_role(self, group: str, username: str) -> str:
+        """The role of a user in a group: administrator, member, or nothing if they do not belong to it."""
+        with self._c() as c:
+            row = c.execute("SELECT role FROM group_members WHERE group_name=? AND username=?",
+                            (group, username)).fetchone()
+        return row[0] if row else ""
+
+    def is_group_admin(self, group: str, username: str) -> bool:
+        return self.group_role(group, username) == GROUP_ADMIN
+
+    def user_groups(self, username: str) -> List[str]:
+        """The groups a user belongs to (the folders they may open)."""
+        with self._c() as c:
+            return [r[0] for r in c.execute("SELECT group_name FROM group_members WHERE username=? ORDER BY group_name",
+                                            (username,))]
+
+    def admin_groups(self, username: str) -> List[str]:
+        """The groups a user looks after (where they approve what the others send)."""
+        with self._c() as c:
+            return [r[0] for r in c.execute("SELECT group_name FROM group_members WHERE username=? AND role=?"
+                                            " ORDER BY group_name", (username, GROUP_ADMIN))]
+
+    def group(self, name: str) -> Dict[str, Any]:
+        with self._c() as c:
+            row = c.execute("SELECT name, created, created_by, description, free_upload FROM groups WHERE name=?",
+                            (name,)).fetchone()
+        if row is None:
+            raise AppError("Group not found.", 404)
+        return {"name": row[0], "created": row[1], "created_by": row[2], "description": row[3],
+                "free_upload": bool(row[4]), "members": self.group_members(row[0])}
+
+    def list_groups(self, username: str = "", every: bool = False) -> List[Dict[str, Any]]:
+        """With `every` (server administrators) all the groups, otherwise only the user's own. Every group carries
+        its members and the role the user has in it."""
+        with self._c() as c:
+            names = [r[0] for r in c.execute("SELECT name, created_by FROM groups ORDER BY name")]
+        out = []
+        for n in names:
+            role = self.group_role(n, username) if username else ""
+            if every or role:
+                out.append(dict(self.group(n), role=role, mine=bool(role)))
+        return out
+
+    # ---- training asked of the server -------------------------------------
+    def add_training_job(self, username: str, dataset: str, base_model: str, epochs: int, imgsz: int, batch: int,
+                         species: str = "") -> Dict[str, Any]:
+        """Puts a training in the queue. The work is done by a worker with a GPU, not by the server."""
+        with self._c() as c:
+            cur = c.execute("INSERT INTO training_jobs(username, dataset, base_model, epochs, imgsz, batch, species,"
+                            " status, created) VALUES(?,?,?,?,?,?,?,?,?)",
+                            (username, dataset, base_model, epochs, imgsz, batch, species, JOB_QUEUED, time.time()))
+            job_id = cur.lastrowid
+        return self.training_job(job_id)
+
+    def training_job(self, job_id: int) -> Optional[Dict[str, Any]]:
+        with self._c() as c:
+            row = c.execute("SELECT * FROM training_jobs WHERE id=?", (job_id,)).fetchone()
+        return dict(row) if row else None
+
+    def training_jobs(self, username: str = "", status: str = "", limit: int = 200) -> List[Dict[str, Any]]:
+        """The jobs of a user (empty username: everybody's), newest first."""
+        where, args = [], []
+        if username:
+            where.append("username=?")
+            args.append(username)
+        if status:
+            where.append("status=?")
+            args.append(status)
+        sql = "SELECT * FROM training_jobs"
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        sql += " ORDER BY id DESC LIMIT ?"
+        args.append(int(limit))
+        with self._c() as c:
+            return [dict(r) for r in c.execute(sql, args)]
+
+    def claim_training_job(self, worker: str) -> Optional[Dict[str, Any]]:
+        """Gives the oldest waiting job to a worker, one at a time (nobody else can take the same one)."""
+        with self._c() as c:
+            row = c.execute("SELECT id FROM training_jobs WHERE status=? ORDER BY id LIMIT 1", (JOB_QUEUED,)).fetchone()
+            if row is None:
+                return None
+            taken = c.execute("UPDATE training_jobs SET status=?, worker=?, started=? WHERE id=? AND status=?",
+                              (JOB_RUNNING, worker, time.time(), row[0], JOB_QUEUED)).rowcount
+        return self.training_job(row[0]) if taken else None
+
+    def update_training_job(self, job_id: int, *, status: Optional[str] = None, message: Optional[str] = None,
+                            model: Optional[str] = None, metrics: Optional[str] = None) -> Dict[str, Any]:
+        sets, args = [], []
+        for name, value in (("status", status), ("message", message), ("model", model), ("metrics", metrics)):
+            if value is not None:
+                sets.append(f"{name}=?")
+                args.append(value)
+        if status in (JOB_DONE, JOB_FAILED, JOB_CANCELLED):
+            sets.append("finished=?")
+            args.append(time.time())
+        if not sets:
+            return self.training_job(job_id) or {}
+        args.append(job_id)
+        with self._c() as c:
+            if not c.execute(f"UPDATE training_jobs SET {', '.join(sets)} WHERE id=?", args).rowcount:
+                raise AppError("Training request not found.", 404)
+        return self.training_job(job_id) or {}
+
+    def cancel_training_job(self, job_id: int, username: str, admin: bool) -> Dict[str, Any]:
+        """Only the one who asked for it (or an administrator) cancels it, and only while it is still waiting."""
+        job = self.training_job(job_id)
+        if job is None:
+            raise AppError("Training request not found.", 404)
+        if not admin and job["username"] != username:
+            raise AppError("This training was asked for by somebody else.", 403)
+        if job["status"] != JOB_QUEUED:
+            raise AppError("Only a training that is still waiting can be cancelled.", 409)
+        return self.update_training_job(job_id, status=JOB_CANCELLED, message="")
+
+    # ---- improvement of a photo or a video asked of the server ------------
+    def add_enhance_job(self, username: str, area: str, path: str, method: str = "") -> Dict[str, Any]:
+        """Puts an improvement in the queue. As for the training, a worker does the work, not the server."""
+        with self._c() as c:
+            cur = c.execute("INSERT INTO enhance_jobs(username, area, path, method, status, created)"
+                            " VALUES(?,?,?,?,?,?)", (username, area, path, method, JOB_QUEUED, time.time()))
+            job_id = cur.lastrowid
+        return self.enhance_job(job_id)
+
+    def enhance_job(self, job_id: int) -> Optional[Dict[str, Any]]:
+        with self._c() as c:
+            row = c.execute("SELECT * FROM enhance_jobs WHERE id=?", (job_id,)).fetchone()
+        return dict(row) if row else None
+
+    def enhance_jobs(self, username: str = "", status: str = "", limit: int = 200) -> List[Dict[str, Any]]:
+        """The improvements asked for by a user (empty username: everybody's), newest first."""
+        where, args = [], []
+        if username:
+            where.append("username=?")
+            args.append(username)
+        if status:
+            where.append("status=?")
+            args.append(status)
+        sql = "SELECT * FROM enhance_jobs"
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        sql += " ORDER BY id DESC LIMIT ?"
+        args.append(int(limit))
+        with self._c() as c:
+            return [dict(r) for r in c.execute(sql, args)]
+
+    def claim_enhance_job(self, worker: str) -> Optional[Dict[str, Any]]:
+        """Gives the oldest waiting improvement to a worker, one at a time."""
+        with self._c() as c:
+            row = c.execute("SELECT id FROM enhance_jobs WHERE status=? ORDER BY id LIMIT 1", (JOB_QUEUED,)).fetchone()
+            if row is None:
+                return None
+            taken = c.execute("UPDATE enhance_jobs SET status=?, worker=?, started=? WHERE id=? AND status=?",
+                              (JOB_RUNNING, worker, time.time(), row[0], JOB_QUEUED)).rowcount
+        return self.enhance_job(row[0]) if taken else None
+
+    def update_enhance_job(self, job_id: int, *, status: Optional[str] = None, message: Optional[str] = None,
+                           result: Optional[str] = None) -> Dict[str, Any]:
+        sets, args = [], []
+        for name, value in (("status", status), ("message", message), ("result", result)):
+            if value is not None:
+                sets.append(f"{name}=?")
+                args.append(value)
+        if status in (JOB_DONE, JOB_FAILED, JOB_CANCELLED):
+            sets.append("finished=?")
+            args.append(time.time())
+        if not sets:
+            return self.enhance_job(job_id) or {}
+        args.append(job_id)
+        with self._c() as c:
+            if not c.execute(f"UPDATE enhance_jobs SET {', '.join(sets)} WHERE id=?", args).rowcount:
+                raise AppError("Improvement request not found.", 404)
+        return self.enhance_job(job_id) or {}
+
+    def cancel_enhance_job(self, job_id: int, username: str, admin: bool) -> Dict[str, Any]:
+        """Only the one who asked for it (or an administrator), and only while it is still waiting."""
+        job = self.enhance_job(job_id)
+        if job is None:
+            raise AppError("Improvement request not found.", 404)
+        if not admin and job["username"] != username:
+            raise AppError("This improvement was asked for by somebody else.", 403)
+        if job["status"] != JOB_QUEUED:
+            raise AppError("Only an improvement that is still waiting can be cancelled.", 409)
+        return self.update_enhance_job(job_id, status=JOB_CANCELLED, message="")
 
 
 class _Ctx:

@@ -14,6 +14,8 @@ from PySide6.QtWidgets import (QButtonGroup, QComboBox, QDialog, QHBoxLayout, QI
 from common.i18n import tr
 from common.label_edit import LabelModel
 from common.label_shapes import Shape, class_label
+from common.ui.label_style import LabelColorButton, color_for
+from common.ui.layout import fit_to_screen
 
 HANDLE_PX = 9                                   # pick distance of a handle, in screen pixels
 MODE_SELECT, MODE_BOX, MODE_POLYGON = "select", "box", "polygon"
@@ -21,7 +23,8 @@ SaveCallback = Callable[[Dict[int, List[Shape]], List[str]], None]
 
 
 def class_color(cls: int) -> QColor:
-    return QColor.fromHsv((cls * 67) % 360, 220, 255)
+    """The colour of a shape: the one the user chose for contrast, or the colour of its class."""
+    return color_for(cls)
 
 
 # ---- where the pictures come from -------------------------------------------------------------
@@ -83,9 +86,13 @@ class LabelCanvas(QWidget):
         self.mode = MODE_SELECT
         self.current_class = 0
         self.sel = -1
+        self.read_only = False                         # a viewer only shows the shapes: nothing can be changed
+        self.show_shapes = True                        # the "labels" button of the views turns the drawing off
         self._drag: Optional[Tuple] = None              # ("handle", si, hi) | ("shape", si, last) | ("box", start)
         self._draft: Optional[Tuple[float, float, float, float]] = None
         self._poly: List[Tuple[float, float]] = []
+        self._hover: Optional[int] = None               # shape under the pointer: its points are shown
+        self._new_point: Optional[Tuple[float, float]] = None   # where a point would be added, as a mark
         self.setMinimumSize(400, 300)
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -99,6 +106,11 @@ class LabelCanvas(QWidget):
         self.model = model
         self.select(-1)
         self._poly.clear()
+        self.update()
+
+    def set_shapes_visible(self, visible: bool) -> None:
+        """The "labels" button of the views: draw the shapes over the media, or only the media."""
+        self.show_shapes = bool(visible)
         self.update()
 
     def set_mode(self, mode: str) -> None:
@@ -144,6 +156,8 @@ class LabelCanvas(QWidget):
         if r.width() <= 0:
             return
         painter.drawImage(r, self.image)
+        if not self.show_shapes:                       # the labels are hidden: only the media is shown
+            return painter.end()
         for i, s in enumerate(self.model.shapes):
             color = class_color(s.cls)
             painter.setPen(QPen(color, 3 if i == self.sel else 2))
@@ -161,13 +175,19 @@ class LabelCanvas(QWidget):
             painter.fillRect(tag, color)
             painter.setPen(Qt.GlobalColor.black)
             painter.drawText(tag, Qt.AlignmentFlag.AlignCenter, text)
-            if i == self.sel:
+            if i == self.sel or i == self._hover:
                 painter.setPen(QPen(Qt.GlobalColor.white, 1))
-                painter.setBrush(color)
+                painter.setBrush(color if i == self.sel else Qt.BrushStyle.NoBrush)
+                size = 4.0 if i == self.sel else 3.0
                 for h in self.model.handles(s):
                     c = self.to_screen(h)
-                    painter.drawRect(QRectF(c.x() - 4, c.y() - 4, 8, 8))
+                    painter.drawRect(QRectF(c.x() - size, c.y() - size, size * 2, size * 2))
                 painter.setBrush(Qt.BrushStyle.NoBrush)
+        if self._new_point is not None:                 # the point that a click would add, under the pointer
+            c = self.to_screen(self._new_point)
+            painter.setPen(QPen(Qt.GlobalColor.white, 2))
+            painter.drawLine(c.x() - 5, c.y(), c.x() + 5, c.y())
+            painter.drawLine(c.x(), c.y() - 5, c.x(), c.y() + 5)
         if self._draft:
             painter.setPen(QPen(class_color(self.current_class), 2, Qt.PenStyle.DashLine))
             a, b = self.to_screen(self._draft[:2]), self.to_screen(self._draft[2:])
@@ -182,12 +202,16 @@ class LabelCanvas(QWidget):
 
     # -- mouse -----------------------------------------------------------------------------------------
     def mousePressEvent(self, e) -> None:
+        if self.read_only:
+            return
         self.setFocus()
         x, y = self.to_norm(e.position())
         if e.button() == Qt.MouseButton.RightButton:
             return self._right_click(x, y)
         if e.button() != Qt.MouseButton.LeftButton:
             return
+        if self.mode == MODE_SELECT and e.modifiers() & Qt.KeyboardModifier.AltModifier:
+            return self.add_point_here(x, y)
         if self.mode == MODE_BOX:
             self._drag = ("box", (x, y))
             self._draft = (x, y, x, y)
@@ -246,20 +270,19 @@ class LabelCanvas(QWidget):
             self.update()
 
     def mouseDoubleClickEvent(self, e) -> None:
+        if self.read_only:
+            return
         """Double click on an edge of the selected polygon adds a vertex there."""
         if self.mode != MODE_SELECT or self.sel < 0 or e.button() != Qt.MouseButton.LeftButton:
             return
         x, y = self.to_norm(e.position())
-        self.model.begin_change()
-        if self.model.insert_vertex(self.sel, x, y, self._tol()) is None:
-            self.model.undo()
-        else:
-            self.edited.emit()
-        self.update()
+        self.add_point_here(x, y)
 
     def mouseMoveEvent(self, e) -> None:
-        if not self._drag:
+        if self.read_only:
             return
+        if not self._drag:
+            return self._hover_at(e.position())
         x, y = self.to_norm(e.position())
         kind = self._drag[0]
         if kind == "handle":
@@ -273,7 +296,71 @@ class LabelCanvas(QWidget):
             self._draft = (sx, sy, x, y)
         self.update()
 
+    def _hover_at(self, pos) -> None:
+        """Nothing is pressed: show what is under the pointer and what a click would do there."""
+        if self.mode != MODE_SELECT:
+            return
+        x, y = self.to_norm(pos)
+        tol = self._tol()
+        hit = self.model.handle_at(x, y, tol)
+        shape = hit[0] if hit else self.model.shape_at(x, y)
+        point = None
+        if hit is None and self.sel >= 0:
+            point = self.model.edge_point(self.sel, x, y, tol * 1.5)     # a wider band: it is easier to catch
+        cursor = Qt.CursorShape.SizeAllCursor if hit else (
+            Qt.CursorShape.CrossCursor if point is not None else
+            Qt.CursorShape.OpenHandCursor if shape is not None else Qt.CursorShape.ArrowCursor)
+        if (shape, point, cursor) != (self._hover, self._new_point, self.cursor().shape()):
+            self._hover, self._new_point = shape, point
+            self.setCursor(cursor)
+            self.update()
+
+    def leaveEvent(self, event) -> None:
+        self._hover, self._new_point = None, None
+        self.update()
+        super().leaveEvent(event)
+
+    def add_point_here(self, x: float, y: float) -> bool:
+        """Adds a point on the edge of the selected polygon (double click, or Alt and a click)."""
+        if self.sel < 0:
+            return False
+        self.model.begin_change()
+        if self.model.insert_vertex(self.sel, x, y, self._tol() * 1.5) is None:
+            self.model.undo()
+            return False
+        self.edited.emit()
+        self._new_point = None
+        self.update()
+        return True
+
+    def subdivide_selected(self) -> int:
+        """Doubles the points of the selected polygon without changing its shape: more nodes to work with."""
+        if self.sel < 0:
+            return 0
+        self.model.begin_change()
+        added = self.model.subdivide(self.sel)
+        if not added:
+            self.model.undo()
+        else:
+            self.edited.emit()
+        self.update()
+        return added
+
+    def to_polygon_selected(self) -> bool:
+        """A box becomes a polygon of four points, so it can be shaped point by point as well."""
+        if self.sel < 0:
+            return False
+        self.model.begin_change()
+        if not self.model.to_polygon(self.sel):
+            self.model.undo()
+            return False
+        self.edited.emit()
+        self.update()
+        return True
+
     def mouseReleaseEvent(self, e) -> None:
+        if self.read_only:
+            return
         if not self._drag:
             return
         kind = self._drag[0]
@@ -293,6 +380,8 @@ class LabelCanvas(QWidget):
 
     # -- keyboard --------------------------------------------------------------------------------------
     def keyPressEvent(self, e) -> None:
+        if self.read_only:
+            return
         key = e.key()
         if key in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
             self.delete_selected()
@@ -332,8 +421,10 @@ class LabelEditorDialog(QDialog):
         self.classes: List[str] = list(classes)
         self.models: Dict[int, LabelModel] = {f: LabelModel(s) for f, s in labels.items()}
         self.frame = min(labels) if labels and frames.count > 1 else 0
-        self.setWindowTitle(title or tr("Edit labels"))
-        self.resize(1000, 700)
+        self.creating = not any(shapes for shapes in labels.values())   # nothing yet: this is a first drawing
+        what = tr("Create labels") if self.creating else tr("Edit labels")
+        self.setWindowTitle(f"{what} - {title}" if title else what)
+        fit_to_screen(self, 1000, 700)
         lay = QVBoxLayout(self)
 
         bar = QHBoxLayout()
@@ -347,6 +438,15 @@ class LabelEditorDialog(QDialog):
         self.btn_redo = QPushButton(tr("Redo"))
         for b in (self.btn_delete, self.btn_undo, self.btn_redo):
             bar.addWidget(b)
+        bar.addSpacing(12)
+        self.btn_more_points = QPushButton(tr("More points"))
+        self.btn_more_points.setToolTip(tr("Adds a point in the middle of every edge of the chosen shape."))
+        bar.addWidget(self.btn_more_points)
+        self.btn_to_polygon = QPushButton(tr("Box to polygon"))
+        self.btn_to_polygon.setToolTip(tr("Turns the chosen box into a polygon that can be shaped point by point."))
+        bar.addWidget(self.btn_to_polygon)
+        self.btn_color = LabelColorButton()
+        bar.addWidget(self.btn_color)
         bar.addSpacing(12)
         bar.addWidget(QLabel(tr("Class")))
         self.combo = QComboBox()
@@ -378,8 +478,9 @@ class LabelEditorDialog(QDialog):
         self.status = QLabel("")
         lay.addWidget(self.status)
         row = QHBoxLayout()
-        self.hint = QLabel(tr("Drag a corner or a point to correct it, drag inside to move. Double click a polygon edge "
-                              "to add a point, right click a point to remove it."))
+        self.hint = QLabel(tr("Drag a corner or a point to correct it, drag inside to move. Double click (or Alt and "
+                              "click) on an edge to add a point, right click a point to remove it, 'More points' "
+                              "to add one on every edge."))
         self.hint.setWordWrap(True)
         row.addWidget(self.hint, 1)
         self.btn_save = QPushButton(tr("Save"))
@@ -392,6 +493,9 @@ class LabelEditorDialog(QDialog):
         self.canvas.selected.connect(self._selected)
         self.group.idToggled.connect(lambda *_: None)
         self.btn_delete.clicked.connect(self.canvas.delete_selected)
+        self.btn_more_points.clicked.connect(self._more_points)
+        self.btn_to_polygon.clicked.connect(self._to_polygon)
+        self.btn_color.changed.connect(self.canvas.update)
         self.btn_undo.clicked.connect(lambda: self._history(True))
         self.btn_redo.clicked.connect(lambda: self._history(False))
         self.combo.currentIndexChanged.connect(self._class_chosen)
@@ -407,6 +511,10 @@ class LabelEditorDialog(QDialog):
         QShortcut(QKeySequence.StandardKey.Save, self, activated=self.save)
         self._fill_classes()
         self.goto(self.frame)
+        self._selected(self.canvas.sel)              # nothing chosen yet: the buttons that need a shape are off
+        if self.creating:                            # first labels of this file: start with a tool in hand
+            self.btn_box.setChecked(True)
+            self.canvas.set_mode(MODE_BOX)
 
     def _tool(self, text: str, mode: str, bar: QHBoxLayout) -> QPushButton:
         b = QPushButton(text)
@@ -433,7 +541,19 @@ class LabelEditorDialog(QDialog):
         self.canvas.current_class = max(0, index)
         self.canvas.set_class_of_selected(max(0, index))
 
+    def _more_points(self) -> None:
+        if not self.canvas.subdivide_selected():
+            self.status.setText(tr("Choose a polygon first ('Box to polygon' turns a box into one)."))
+
+    def _to_polygon(self) -> None:
+        if not self.canvas.to_polygon_selected():
+            self.status.setText(tr("Choose a box to turn into a polygon."))
+
     def _selected(self, si: int) -> None:
+        shapes = self.canvas.model.shapes
+        chosen = 0 <= si < len(shapes)
+        self.btn_more_points.setEnabled(chosen and not shapes[si].is_box)
+        self.btn_to_polygon.setEnabled(chosen and shapes[si].is_box)
         if 0 <= si < len(self.canvas.model.shapes):
             cls = self.canvas.model.shapes[si].cls
             if cls < self.combo.count():
@@ -509,7 +629,7 @@ class LabelEditorDialog(QDialog):
     def closeEvent(self, event) -> None:
         if self.dirty:
             box = QMessageBox(self)
-            box.setWindowTitle(tr("Edit labels"))
+            box.setWindowTitle(tr("Create labels") if self.creating else tr("Edit labels"))
             box.setText(tr("Save the changes to the labels?"))
             save = box.addButton(tr("Save"), QMessageBox.ButtonRole.AcceptRole)
             box.addButton(tr("Discard"), QMessageBox.ButtonRole.DestructiveRole)

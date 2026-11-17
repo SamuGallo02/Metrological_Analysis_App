@@ -59,6 +59,8 @@ VERSION_FILE = "librery/.code_version.json"
 MIN_PY = (3, 10)
 OS_LABELS = {"windows": "Windows", "macos": "macOS", "linux": "Linux"}   # only used in messages
 NOWIN = {"creationflags": 0x08000000} if os.name == "nt" else {}  # no console on Windows
+DETACHED = ({"creationflags": 0x00000008 | 0x00000200} if os.name == "nt"                 # on its own,
+            else {"start_new_session": True})                                             # pythonw: no console
 
 
 FROZEN = bool(getattr(sys, "frozen", False))   # True in the .exe/.app built with PyInstaller
@@ -412,9 +414,8 @@ class Pipeline:
 
     def launch(self) -> None:
         py = venv_python_path(self.dest, self.os_name)
-        kw = {"creationflags": 0x00000008 | 0x00000200} if os.name == "nt" else {"start_new_session": True}
-        subprocess.Popen([str(py), str(self.dest / "main.py")], cwd=str(self.dest),
-                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True, **kw)
+        subprocess.Popen([str(py), str(self.dest / "main.py")], cwd=str(self.dest), stdin=subprocess.DEVNULL,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True, **DETACHED)
 
 
 # --------------------------------------------------------------------------- #

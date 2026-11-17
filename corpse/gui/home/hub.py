@@ -49,6 +49,7 @@ class AnalysisHub(QWidget):
 
     requested = Signal(str)
     labels_requested = Signal()              # the user wants to correct the labels of a photo or video
+    performance_requested = Signal()         # how the models behave, and the test on real photos
 
     def __init__(self, on_home: Optional[Callable[[], None]] = None, demo: Optional[QWidget] = None,
                  parent: Optional[QWidget] = None):
@@ -66,6 +67,10 @@ class AnalysisHub(QWidget):
         self.btn_labels.setToolTip(tr("Correct the labels found by the model on a photo or video of this computer."))
         self.btn_labels.clicked.connect(self.labels_requested.emit)
         top.addWidget(self.btn_labels)
+        self.btn_performance = QPushButton(tr("Performance of the models..."))
+        self.btn_performance.setToolTip(tr("What the training measured and how the models do on real photos."))
+        self.btn_performance.clicked.connect(self.performance_requested.emit)
+        top.addWidget(self.btn_performance)
         self.demo = demo
         if demo is not None:
             top.addWidget(demo)                       # the demo lives only here, at the top

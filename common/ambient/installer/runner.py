@@ -577,6 +577,7 @@ class Installer:
                     return False
             damaged = integrity.scan(venv, deep)
             if not damaged:
+                integrity.mark_checked(venv)            # everything in place: the next starts skip the full scan
                 break
             say(f"[ATTENZIONE] Dopo la riparazione restano da sistemare: {', '.join(sorted(damaged))}"
                 + (" - riprovo." if round_ == 1 else ""))
@@ -660,6 +661,7 @@ class Installer:
                                  and not choice.label.startswith("cu")
                                  and not self.skipped_space and not self.disk_full and not self.gpu_declined,
                                  gpu_declined=self.gpu_declined)
+        integrity.mark_checked(state.venv_dir(self.os_name))   # just installed: no need to scan it at the first start
         self.report(100, "Installazione completata")
         say("[OK] Installazione dei componenti base completata.")
 
@@ -756,8 +758,9 @@ def relaunch_app(os_name: str) -> None:
     py = state.venv_gui_python(os_name)
     cmd = [str(py), str(ROOT / "main.py")]
     if os_name == OS_WINDOWS:
-        flags = 0x00000008 | 0x00000200  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
-        subprocess.Popen(cmd, cwd=str(ROOT), creationflags=flags, close_fds=True)
+        flags = 0x00000008 | 0x00000200  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP (pythonw: no console)
+        subprocess.Popen(cmd, cwd=str(ROOT), creationflags=flags, close_fds=True,
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     else:
         subprocess.Popen(cmd, cwd=str(ROOT), start_new_session=True, close_fds=True,
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -822,7 +825,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             args += ["--force"] if a.force else []
             args += ["--progress"] if a.progress else []
             args += ["--cpu-only"] if a.cpu_only else []
-            return subprocess.call(args, cwd=str(ROOT))
+            return subprocess.call(args, cwd=str(ROOT), **_NOWIN)
         elif a.component == "core":
             inst.install_core(a.force)
         else:

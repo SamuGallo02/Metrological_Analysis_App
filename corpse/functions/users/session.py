@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from common.params import PROFILE_FIELDS, ROLE_SERVER, ROLE_USER
+from common.params import GOODBYE_TIMEOUT, PROFILE_FIELDS, ROLE_SERVER, ROLE_USER
 
 from .api import ApiClient, ApiError, OfflineError, is_secure, normalize_url
 from .params import PERMISSIONS, SERVER_SIDE_PREFIXES
@@ -116,13 +116,17 @@ class Session:
         return True
 
     def logout(self) -> None:
-        if self.client and self.online:
-            try:
-                self.client.logout()
-            except ApiError:
-                pass
+        """Signs out at once. The local session goes first, then the server is told with a short timeout: a
+        server that does not answer (changed address, machine off) must never keep the window waiting."""
+        client, online = self.client, self.online
         self.store.clear_session()
         self.client, self.user, self.online = None, None, False
+        if client and online:
+            client.timeout = min(client.timeout, GOODBYE_TIMEOUT)
+            try:
+                client.logout()
+            except ApiError:
+                pass
 
     # ---- profile -----------------------------------------------------------
     def profile(self) -> Dict[str, Any]:

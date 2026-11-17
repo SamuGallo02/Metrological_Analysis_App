@@ -143,7 +143,7 @@ class LanguageDialog(QDialog):
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.setWindowTitle(tr("Language"))
-        self.setMinimumSize(520, 420)
+        self.setMinimumSize(420, 360)
         lay = QVBoxLayout(self)
         self.widget = LanguageWidget(parent=self)
         lay.addWidget(self.widget, 1)

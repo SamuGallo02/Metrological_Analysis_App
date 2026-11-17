@@ -75,6 +75,6 @@ class HardwareAccelerationWidget(QGroupBox):
         self.btn_install.setVisible(s["install_needed"] or s["extras_pending"])
 
     def start_training_installation(self, *_):
-        """Same flow as the Train button: confirmation, progress window, no console."""
-        from .setup_dialog import ensure_training_ready
-        ensure_training_ready(self)
+        """Same flow as the Train button: confirmation, progress window, no console, app not blocked."""
+        from .setup_dialog import ask_training_components
+        ask_training_components(self, when_ready=self.refresh_hardware_status)

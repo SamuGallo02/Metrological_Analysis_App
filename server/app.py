@@ -16,15 +16,15 @@ from typing import Any, Dict, Optional
 from urllib.parse import parse_qs, urlparse
 
 from common.errors import AppError
-from common.params import AREA_MINE, ROLE_SERVER, ROLE_USER
+from common.params import AREA_GROUPS, GROUP_MEMBER, AREA_MINE, ROLE_SERVER, ROLE_USER
 
 from .config import ServerConfig, key_matches, load_admin_key
 from .db import Database
 from .migrate import migrate_legacy
 from .ops import stats
-from .params import API_VERSION, KEY_LOCK_SECONDS, KEY_MAX_FAILS, MAX_JSON, RATE_LIMIT_PER_MIN, KIND_AREA
+from .params import API_VERSION, KEY_LOCK_SECONDS, KEY_MAX_FAILS, MAX_JSON, PENDING, RATE_LIMIT_PER_MIN, KIND_AREA
 from .ratelimit import RateLimiter
-from .storage import Storage, QUARANTINE_AREAS
+from .storage import Storage, QUARANTINE_AREAS, clean_rel
 from .throttle import Throttle
 from .submissions import approve_submission, reject_submission, submit_species, catalog, submit_dataset, submit_model
 
@@ -163,6 +163,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._species(path, method, q, user, admin)
             if path.startswith("/api/files"):
                 return self._files(path, method, q, user, admin)
+            if path.startswith("/api/groups"):
+                return self._groups(path, method, q, user, admin)
+            if path.startswith("/api/training"):
+                return self._training(path, method, q, user, admin)
+            if path.startswith("/api/enhance"):
+                return self._enhance(path, method, q, user, admin)
             if path.startswith("/api/users") or path in ("/api/events", "/api/stats"):
                 if not admin:
                     self._drain()
@@ -237,10 +243,156 @@ class Handler(BaseHTTPRequestHandler):
         self._drain()
         raise AppError("Resource not found.", 404)
 
+    # ---- training asked of the server ---------------------------------------
+    def _training(self, path: str, method: str, q: Dict[str, str], user: Dict[str, Any], admin: bool) -> None:
+        """The server only keeps the queue: the training itself is done by a worker with a GPU that takes the jobs
+        (see `training_worker.py`)."""
+        name = user["username"]
+        if path == "/api/training/jobs" and method == "GET":
+            mine = "" if (admin and q.get("all")) else name
+            return self._send(200, {"jobs": self.db.training_jobs(mine, q.get("status", ""))})
+        if path == "/api/training/jobs" and method == "POST":
+            d = self._json()
+            dataset = str(d.get("dataset", ""))
+            self.store.resolve("datasets", dataset, True)             # it must be a dataset of the server
+            if not (self.store.base("datasets", name) / dataset).is_dir():
+                raise AppError("Dataset not found.", 404)
+            job = self.db.add_training_job(name, dataset, str(d.get("base_model", "")), int(d.get("epochs", 50)),
+                                           int(d.get("imgsz", 640)), int(d.get("batch", 8)),
+                                           str(d.get("species", "")))
+            self.db.log(name, "training.request", "datasets", dataset)
+            return self._send(201, {"job": job})
+        if path == "/api/training/cancel" and method == "POST":
+            job = self.db.cancel_training_job(int(self._json().get("id", 0)), name, admin)
+            self.db.log(name, "training.cancel", "datasets", job["dataset"])
+            return self._send(200, {"job": job})
+        if not admin:                                                 # from here on: the worker's own calls
+            self._drain()
+            raise AppError("Reserved to administrators.", 403)
+        if path == "/api/training/next" and method == "POST":
+            job = self.db.claim_training_job(str(self._json().get("worker", "")) or name)
+            return self._send(200, {"job": job})
+        if path == "/api/training/update" and method == "POST":
+            d = self._json()
+            job = self.db.update_training_job(int(d.get("id", 0)), status=d.get("status"),
+                                              message=d.get("message"), model=d.get("model"),
+                                              metrics=json.dumps(d["metrics"]) if isinstance(d.get("metrics"), dict)
+                                              else None)
+            return self._send(200, {"job": job})
+        self._drain()
+        raise AppError("Resource not found.", 404)
+
+    def _enhance(self, path: str, method: str, q: Dict[str, str], user: Dict[str, Any], admin: bool) -> None:
+        """Improvement of a photo or a video: the server keeps the queue and the files, a worker does the work.
+        The file lives in the personal folder of whoever asks, and the improved copy is written beside it
+        (`enhanced/` with the same name), so the application can add it or put it in place of the original."""
+        name = user["username"]
+        if path == "/api/enhance/jobs" and method == "GET":
+            mine = "" if (admin and q.get("all")) else name
+            return self._send(200, {"jobs": self.db.enhance_jobs(mine, q.get("status", ""))})
+        if path == "/api/enhance/jobs" and method == "POST":
+            d = self._json()
+            rel = str(d.get("path", ""))
+            target, _ = self.store.resolve(AREA_MINE, rel, False, name)   # always the folder of whoever asks
+            if not target.is_file():
+                raise AppError("File not found.", 404)
+            job = self.db.add_enhance_job(name, AREA_MINE, clean_rel(rel), str(d.get("method", "")))
+            self.db.log(name, "enhance.request", AREA_MINE, clean_rel(rel))
+            return self._send(201, {"job": job})
+        if path == "/api/enhance/cancel" and method == "POST":
+            job = self.db.cancel_enhance_job(int(self._json().get("id", 0)), name, admin)
+            return self._send(200, {"job": job})
+        if not admin:                                                 # from here on: the worker's own calls
+            self._drain()
+            raise AppError("Reserved to administrators.", 403)
+        if path == "/api/enhance/next" and method == "POST":
+            job = self.db.claim_enhance_job(str(self._json().get("worker", "")) or name)
+            return self._send(200, {"job": job})
+        if path == "/api/enhance/update" and method == "POST":
+            d = self._json()
+            job = self.db.update_enhance_job(int(d.get("id", 0)), status=d.get("status"),
+                                             message=d.get("message"), result=d.get("result"))
+            return self._send(200, {"job": job})
+        self._drain()
+        raise AppError("Resource not found.", 404)
+
+    def _groups(self, path: str, method: str, q: Dict[str, str], user: Dict[str, Any], admin: bool) -> None:
+        """Work groups. Anybody can make one and is then its administrator; the administrators of a group choose
+        the members, promote them and approve what the others send. A server administrator can do all of it."""
+        me = user["username"]
+
+        def looks_after(group: str) -> None:
+            if not admin and not self.db.is_group_admin(group, me):
+                raise AppError("Only an administrator of the group can do this.", 403)
+
+        if path == "/api/groups" and method == "GET":
+            return self._send(200, {"groups": self.db.list_groups(me, every=bool(admin and q.get("all")))})
+        if path == "/api/groups" and method == "POST":
+            group = self.db.create_group(str(self._json().get("name", "")), me)
+            self.store.mkdir(AREA_GROUPS, group["name"], True, me)
+            self.db.log(me, "group.create", AREA_GROUPS, group["name"])
+            return self._send(201, {"group": group})
+        if path == "/api/groups/members" and method == "POST":
+            d = self._json()
+            group, who = str(d.get("group", "")), str(d.get("username", ""))
+            looks_after(group)
+            members = self.db.set_member(group, who, bool(d.get("member", True)), str(d.get("role", GROUP_MEMBER)))
+            self.db.log(me, "group.member", AREA_GROUPS, f"{group}: {who}")
+            return self._send(200, {"group": group, "members": members})
+        if path == "/api/groups/role" and method == "POST":
+            d = self._json()
+            group, who, role = str(d.get("group", "")), str(d.get("username", "")), str(d.get("role", GROUP_MEMBER))
+            looks_after(group)
+            members = self.db.set_group_role(group, who, role)
+            self.db.log(me, "group.role", AREA_GROUPS, f"{group}: {who} {role}")
+            return self._send(200, {"group": group, "members": members})
+        if path == "/api/groups/leave" and method == "POST":
+            group = str(self._json().get("name", ""))
+            members = self.db.set_member(group, me, False)       # the last administrator cannot leave alone
+            self.db.log(me, "group.leave", AREA_GROUPS, group)
+            return self._send(200, {"group": group, "members": members})
+        if path == "/api/groups/settings" and method == "POST":
+            d = self._json()
+            group = str(d.get("name", ""))
+            looks_after(group)
+            free = d.get("free_upload")
+            updated = self.db.update_group(group, d.get("description"),
+                                           None if free is None else bool(free))
+            self.db.log(me, "group.settings", AREA_GROUPS, group)
+            return self._send(200, {"group": updated})
+        if path == "/api/groups/delete" and method == "POST":
+            d = self._json()
+            name = str(d.get("name", ""))
+            looks_after(name)
+            self.db.delete_group(name)
+            if d.get("files"):                                  # otherwise the folder stays on the server
+                self.store.delete_group_folder(name)
+            self.db.log(me, "group.delete", AREA_GROUPS, f"{name} (files: {bool(d.get('files'))})")
+            return self._send(200, {"ok": True})
+        if path == "/api/groups/pending" and method == "GET":
+            group = q.get("group", "")
+            looks_after(group)
+            return self._send(200, {"waiting": self.store.group_pending(group)})
+        if path in ("/api/groups/approve", "/api/groups/reject") and method == "POST":
+            rel = str(self._json().get("path", ""))
+            parts = rel.split("/")
+            if len(parts) < 3 or parts[0] != PENDING:
+                raise AppError("This upload is not waiting for approval.", 409)
+            looks_after(parts[1])
+            if path.endswith("approve"):
+                moved = self.store.approve_group_upload(rel)
+                self.db.log(me, "group.approve", AREA_GROUPS, rel)
+                return self._send(200, {"paths": moved})
+            self.store.reject_group_upload(rel)
+            self.db.log(me, "group.reject", AREA_GROUPS, rel)
+            return self._send(200, {"ok": True})
+        self._drain()
+        raise AppError("Resource not found.", 404)
+
     # ---- files --------------------------------------------------------------
     def _files(self, path: str, method: str, q: Dict[str, str], user: Dict[str, Any], admin: bool) -> None:
         area, rel, name = q.get("area", ""), q.get("path", ""), user["username"]
-        mine = area == AREA_MINE
+        mine = area == AREA_MINE or area == AREA_GROUPS       # own folder, or a group this user belongs to
         if path == "/api/files" and method == "GET":
             return self._send(200, self.store.list_dir(area, rel, admin, name))
         if path == "/api/files/download" and method in ("GET", "HEAD"):
@@ -258,12 +410,12 @@ class Handler(BaseHTTPRequestHandler):
                 raise AppError("Users cannot modify or delete the server's shared files.", 403)
             if method == "DELETE":
                 self._drain()
-                self.store.delete(area, rel, name)
+                self.store.delete(area, rel, name, admin=admin)
                 self.db.log(name, "delete", area, rel)
                 return self._send(200, {"ok": True})
             d = self._json()
             if path == "/api/files/move":
-                dst = self.store.move(area, rel, str(d.get("to", "")), name)
+                dst = self.store.move(area, rel, str(d.get("to", "")), name, admin=admin)
                 self.db.log(name, "move", area, f"{rel} -> {dst}")
                 return self._send(200, {"path": dst})
             dst = self.store.approve_model(rel, d.get("name"))
@@ -274,10 +426,18 @@ class Handler(BaseHTTPRequestHandler):
     
     def _species(self, path: str, method: str, q: Dict[str, str], user: Dict[str, Any], admin: bool) -> None:
         name = user["username"]
+        def on_behalf_of(d: Dict[str, Any]) -> str:
+            """The work group an upload is published for: only a group the user belongs to."""
+            group = str(d.get("group", ""))
+            if group and not self.db.group_role(group, name):
+                raise AppError("You are not a member of this group.", 403)
+            return group
+
         if path == "/api/species/submit" and method == "POST":
             d = self._json()
             kind = str(d.get("kind") or "photos")
-            result = submit_species(self.store, self.db, name, str(d.get("species", "")), kind, admin=admin)
+            result = submit_species(self.store, self.db, name, str(d.get("species", "")), kind, admin=admin,
+                                    group=on_behalf_of(d))
             self.db.log(name, "species.submit", KIND_AREA[kind], result["path"])
             return self._send(201, result)
         if path == "/api/labels" and method == "POST":                  # an administrator corrects the labels of a photo
@@ -290,12 +450,15 @@ class Handler(BaseHTTPRequestHandler):
             self.db.log(name, "labels.edit", str(d.get("area", "")), saved)
             return self._send(200, {"path": saved})
         if path == "/api/datasets/submit" and method == "POST":
-            result = submit_dataset(self.store, self.db, name, str(self._json().get("name", "")), admin = admin)
+            d = self._json()
+            result = submit_dataset(self.store, self.db, name, str(d.get("name", "")), admin=admin,
+                                    group=on_behalf_of(d))
             self.db.log(name, "dataset.submit", "datasets", result["path"])
             return self._send(201, result)
         if path == "/api/models/submit" and method == "POST":
             d = self._json()
-            result = submit_model(self.store, self.db, name, str(d.get("species", "")), str(d.get("file", "")), admin = admin)
+            result = submit_model(self.store, self.db, name, str(d.get("species", "")), str(d.get("file", "")),
+                                  admin=admin, group=on_behalf_of(d))
             self.db.log(name, "model.submit", "models", result["path"])
             return self._send(201, result)
         if path == "/api/catalog" and method == "GET":
@@ -368,7 +531,7 @@ class Handler(BaseHTTPRequestHandler):
         owner = user["username"]
         try:
             dest, eff = self.store.check_new_file(area, rel, admin, owner, size, user["quota_mb"])
-            if dest.exists() and not (admin or area == AREA_MINE):
+            if dest.exists() and not (admin or area in (AREA_MINE, AREA_GROUPS)):
                 raise AppError("A file with this name already exists (you cannot overwrite it).", 409)
         except AppError:
             self.close_connection = True      # the body is not read: the connection is closed
@@ -410,11 +573,15 @@ def make_server(data_dir: Path, host: str = "127.0.0.1", port: int = 8765, allow
     # one subclass per server: several servers in the same process (tests) do not share state
     db = Database(data_dir / "server.db")
     migrate_legacy(data_dir, db)                      # files of the previous layout move into store/ (idempotent)
+    store = Storage(data_dir)
+    store.groups_of = db.user_groups                  # who may open which group folder
+    store.group_admin_of = db.admin_groups            # and who approves what the others send there
+    store.group_free_upload = db.group_free_upload    # unless the group lets its members write freely
     handler = type("BoundHandler", (Handler,), {
         "key_throttle": Throttle(KEY_MAX_FAILS, KEY_LOCK_SECONDS),
         "limiter": RateLimiter(RATE_LIMIT_PER_MIN if rate_limit is None else rate_limit),
         "started": time.time(), "counter": [0], "db": db,
-        "store": Storage(data_dir), "cfg": cfg})
+        "store": store, "cfg": cfg})
     httpd = _Server((host, port), handler)
     httpd.handler = handler
     httpd.daemon_threads = True

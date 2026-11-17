@@ -89,5 +89,16 @@ class UploadPlanTest(unittest.TestCase):
         self.assertEqual([kind_of(Path(n)) for n in ("a.JPG", "b.mov", "c.txt")], ["photos", "videos", None])
 
 
+    def test_the_improved_copy_travels_with_its_original(self):
+        photo = self.touch("a.jpg")
+        self.touch("enhanced/a.jpg", b"better")
+        remote = [r for _l, r in plan_media([photo], "Pinna nobilis")["photos"]]
+        self.assertEqual(remote, ["Pinna nobilis/a.jpg", "Pinna nobilis/enhanced/a.jpg"])
+
+    def test_an_improved_copy_alone_is_not_sent_as_a_photo(self):
+        plan = plan_media([self.touch("enhanced/a.jpg")], "Pinna nobilis")
+        self.assertEqual([r for _l, r in plan["photos"]], ["Pinna nobilis/a.jpg"])   # chosen by hand: it is a photo
+
+
 if __name__ == "__main__":
     unittest.main()

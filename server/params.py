@@ -1,7 +1,7 @@
 """Server parameters (limits, times, extensions). A single place to edit."""
 from common.paths import LOCAL_DIR
 from common.params import (AREAS_MEDIA, IMAGE_SUFFIXES, KIND_AREA, KIND_DATASET, KIND_MODEL, KIND_PHOTOS,  # noqa: F401
-                           KIND_STEREO, KIND_STEREO_VIDEO, KIND_VIDEO, KINDS_MEDIA, KINDS_STEREO, KINDS_VIDEO, LABEL_SUFFIX, PROFILE_FIELDS, SPECIES_EXAMPLE,
+                           ENHANCED_DIR, KIND_STEREO, KIND_STEREO_VIDEO, KIND_VIDEO, KINDS_MEDIA, KINDS_STEREO, KINDS_VIDEO, LABEL_SUFFIX, PROFILE_FIELDS, SPECIES_EXAMPLE,
                            SPECIES_RE, STEREO_SIDES, VIDEO_SUFFIXES,
                             SUBMISSION_APPROVED, SUBMISSION_PENDING, SUBMISSION_REJECTED, SUBMISSION_STATUSES)  # noqa: F401  (defined in common: also used by the client)
 
@@ -28,9 +28,9 @@ EXTENSIONS = {
     "models": {".pt", ".onnx", ".json"},
     "datasets": _IMAGES | {".txt", ".yaml", ".yml", ".json", ".csv", ".zip"},
 }
-EXTENSIONS["mine"] = EXTENSIONS["datasets"] | EXTENSIONS["models"] | _VIDEOS | {".pdf", ".md", ".xlsx", ".docx"}
+EXTENSIONS["groups"] = EXTENSIONS["mine"] = EXTENSIONS["datasets"] | EXTENSIONS["models"] | _VIDEOS | {".pdf", ".md", ".xlsx", ".docx"}
 MAX_BYTES = {"photos": 64 << 20, "stereo": 64 << 20, "videos": 4 << 30, "stereo_videos": 4 << 30, "models": 2 << 30, "datasets": 4 << 30,
-             "mine": 4 << 30}
+             "mine": 4 << 30, "groups": 4 << 30}
 MAX_BYTES_EXT = {("models", ".json"): 1 << 20,            # model metadata is small: 1 MB
                  ("photos", ".txt"): 1 << 20, ("stereo", ".txt"): 1 << 20, ("videos", ".txt"): 64 << 20, ("stereo_videos", ".txt"): 64 << 20}
 
@@ -40,6 +40,7 @@ MAX_BYTES_EXT = {("models", ".json"): 1 << 20,            # model metadata is sm
 #   store/mine/<user>/...           personal folders
 # The logical path "_pending/..." of an area is what the API shows for its waiting uploads.
 STORE_DIR, LIBRARY_DIR, PENDING_DIR_NAME, MINE_DIR = "store", "library", "pending", "mine"
+GROUPS_DIR = "groups"                # store/groups/<group>/...: one folder per work group
 
 PENDING = "_pending"                 # logical name of the waiting uploads inside an area (administrators only)
 TMP = ".uploads_tmp"

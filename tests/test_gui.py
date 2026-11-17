@@ -215,10 +215,11 @@ class GuiTest(unittest.TestCase):
         calls = []
         home = ui.AdminHome(s, on_training=lambda: calls.append("t"), on_analysis=lambda: calls.append("a"))
         self.assertTrue(pump(lambda: home.users.table.rowCount() >= 1))
-        self.assertTrue(home.db.btn_delete.isVisibleTo(home.db))
-        self.assertEqual(home.tabs.count(), 4)
-        self.assertEqual(home.tabs.tabText(2), "Review")
-        self.assertIn("stereo", home.db.areas)                                  # the admin also browses the stereo photos and videos
+        self.assertTrue(home.db.folders.btn_delete.isVisibleTo(home.db.folders))
+        self.assertEqual(home.tabs.count(), 5)
+        self.assertEqual(home.tabs.tabText(1), "Work groups")
+        self.assertEqual(home.tabs.tabText(3), "Review")
+        self.assertIn("stereo", home.db.folders.areas)                          # the admin also browses the stereo photos and videos
         self.assertTrue(pump(lambda: home.users.events.rowCount() >= 1))
         self.assertTrue(s.store.users_snapshot()["users"])
         home.users.table.selectRow(0); self.assertEqual(home.users._current()["username"], "admin")
@@ -358,7 +359,9 @@ class GuiTest(unittest.TestCase):
         s = self._user_session("sf1", "sfuser1")
         w = ui.ServerFoldersWidget(s)
         self.assertNotIsInstance(w, QDialog)                              # the home shows it inside its own window
-        self.assertEqual([w.tabs.tabText(i) for i in range(w.tabs.count())], ["Photos", "Stereo photos", "Videos", "Stereo videos", "YOLO models", "Uploads"])
+        self.assertEqual([w.tabs.tabText(i) for i in range(w.tabs.count())],
+                         ["Photos", "Stereo photos", "Videos", "Stereo videos", "YOLO models", "Work groups",
+                          "Uploads"])
         settle(w)
 
     def test_preview_shows_the_photos_of_a_submission(self):
@@ -689,9 +692,11 @@ class GuiTest(unittest.TestCase):
         s = self.sess("sk1"); d = self.login_dialog(s, "admin", pw="adminpass1"); pump(lambda: d.result() == 1)
         home = ui.AdminHome(s, lambda: None, lambda: None)
         self.assertTrue(settle(home))
-        self.assertEqual(home.db.areas, ("photos", "stereo", "videos", "stereo_videos", "models", "datasets"))
-        self.assertEqual([home.db.tabs.tabText(i) for i in range(6)],
-                         ["Photos", "Stereo photos", "Videos", "Stereo videos", "YOLO models", "Datasets"])
+        self.assertEqual([w.kind for w in home.db.catalogs],                     # the catalog, kind by kind
+                         ["photos", "stereo", "video", "stereo_video", "dataset", "model"])
+        self.assertEqual([home.db.tabs.tabText(i) for i in range(home.db.tabs.count())],
+                         ["Photos", "Stereo photos", "Videos", "Stereo videos", "Datasets", "YOLO models", "Folders"])
+        self.assertEqual(home.db.folders.areas, ("photos", "stereo", "videos", "stereo_videos", "models", "datasets"))
 
     def test_skeleton_admin_review_has_photos_datasets_and_models(self):
         i18n.set_language("en")
@@ -707,8 +712,9 @@ class GuiTest(unittest.TestCase):
         s = self.sess("sk3"); d = self.login_dialog(s, "skeleton1", register=True); pump(lambda: d.result() == 1)
         dlg = ui.ServerFoldersWidget(s)
         self.assertTrue(settle(dlg))
-        self.assertEqual([dlg.tabs.tabText(i) for i in range(6)],
-                         ["Photos", "Stereo photos", "Videos", "Stereo videos", "YOLO models", "Uploads"])
+        self.assertEqual([dlg.tabs.tabText(i) for i in range(dlg.tabs.count())],
+                         ["Photos", "Stereo photos", "Videos", "Stereo videos", "YOLO models", "Work groups",
+                          "Uploads"])
         for catalog in (dlg.photos, dlg.stereo, dlg.videos, dlg.stereo_videos, dlg.models):                                # only download: no way to change anything
             self.assertTrue(catalog.btn_download.isVisibleTo(catalog))
             for name in ("btn_up_files", "btn_up_dir", "btn_mkdir", "btn_rename", "btn_delete", "btn_approve"):

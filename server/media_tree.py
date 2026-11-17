@@ -9,7 +9,7 @@ from typing import Dict, List, Set, Tuple
 
 from common.errors import AppError
 
-from .params import (KIND_PHOTOS, KIND_STEREO, KIND_STEREO_VIDEO, KIND_VIDEO, KINDS_STEREO, KINDS_VIDEO, LABEL_SUFFIX,
+from .params import (ENHANCED_DIR, KIND_PHOTOS, KIND_STEREO, KIND_STEREO_VIDEO, KIND_VIDEO, KINDS_STEREO, KINDS_VIDEO, LABEL_SUFFIX,
                      SPECIES_EXAMPLE, SPECIES_IMAGE_EXT, SPECIES_MONO_EXAMPLE, SPECIES_RE, SPECIES_STEREO_EXAMPLE,
                      SPECIES_STEREO_VIDEO_EXAMPLE, SPECIES_VIDEO_EXAMPLE, SPECIES_VIDEO_EXT, STEREO_SIDES)
 
@@ -20,6 +20,7 @@ def _example(kind: str) -> str:
     return {KIND_STEREO: SPECIES_STEREO_EXAMPLE, KIND_STEREO_VIDEO: SPECIES_STEREO_VIDEO_EXAMPLE,
             KIND_VIDEO: SPECIES_VIDEO_EXAMPLE}.get(kind, SPECIES_MONO_EXAMPLE)
 CLASSES_FILE = "classes.txt"             # the class names the label numbers refer to: one per line, in the media folder
+ENHANCED = ENHANCED_DIR                  # `<folder>/enhanced/<same name>`: the improved copy, beside its original
 
 
 def media_suffixes(kind: str) -> Set[str]:
@@ -37,13 +38,16 @@ def check_media_file(kind: str, rel: str) -> Tuple[str, ...]:
     if not parts or not re.fullmatch(SPECIES_RE, parts[0]):
         raise AppError("The first folder must be named after the scientific name (Genus species), "
                        "for example {example}.", 422, example=SPECIES_EXAMPLE)
+    depth = 3 if kind in KINDS_STEREO else 2                           # <Species>[/<lx|rx>]/<file>
+    enhanced = len(parts) == depth + 1 and parts[-2] == ENHANCED        # ...or .../enhanced/<file>
+    ok = len(parts) == depth or enhanced
     if kind in KINDS_STEREO:
-        ok = len(parts) == 3 and parts[1] in STEREO_SIDES              # <Species>/<lx|rx>/<file>
-    else:
-        ok = len(parts) == 2                                           # <Species>/<file>
+        ok = ok and parts[1] in STEREO_SIDES
     if not ok:
         raise AppError("Wrong folder structure: use for example {example}.", 422, example=_example(kind))
     ext = PurePosixPath(parts[-1]).suffix.lower()
+    if enhanced and ext not in media_suffixes(kind):                    # labels belong to the original, never here
+        raise AppError("The folder '{name}' only holds the improved copy of a photo or video.", 422, name=ENHANCED)
     if ext != LABEL_SUFFIX and ext not in media_suffixes(kind):
         raise AppError("Extension {ext} is not allowed in this area.", 415, ext=ext or "(none)")
     return parts
@@ -60,15 +64,27 @@ def _media_names(folder: Path, kind: str) -> Set[str]:
     return {p.name for p in _files(folder) if p.suffix.lower() in ok}
 
 
+def _outside_enhanced(folder: Path) -> List[Path]:
+    """Every file of the folder except the improved copies, which are counted with their original."""
+    return [p for p in Path(folder).rglob("*") if p.is_file() and ENHANCED not in p.relative_to(folder).parts]
+
+
 def count_media(folder: Path, kind: str) -> int:
-    """Number of media files (labels not counted) at any depth."""
+    """Number of media files (labels and improved copies not counted) at any depth."""
     ok = media_suffixes(kind)
-    return sum(1 for p in Path(folder).rglob("*") if p.is_file() and p.suffix.lower() in ok)
+    return sum(1 for p in _outside_enhanced(Path(folder)) if p.suffix.lower() in ok)
 
 
 def count_labelled(folder: Path) -> int:
+    return sum(1 for p in _outside_enhanced(Path(folder))
+               if p.suffix.lower() == LABEL_SUFFIX and p.name != CLASSES_FILE)
+
+
+def count_enhanced(folder: Path, kind: str) -> int:
+    """How many media files of this upload already have an improved copy."""
+    ok = media_suffixes(kind)
     return sum(1 for p in Path(folder).rglob("*")
-               if p.is_file() and p.suffix.lower() == LABEL_SUFFIX and p.name != CLASSES_FILE)
+               if p.is_file() and p.suffix.lower() in ok and ENHANCED in p.relative_to(Path(folder)).parts)
 
 
 def validate_media_dir(folder: Path, kind: str) -> List[AppError]:
@@ -101,6 +117,11 @@ def validate_media_dir(folder: Path, kind: str) -> List[AppError]:
             if p.suffix.lower() == LABEL_SUFFIX and p.name != CLASSES_FILE and p.stem not in media_stems:
                 problems.append(AppError("The label file '{name}' has no matching photo or video.", 422, name=p.name))
                 break
+        for p in _files(group / ENHANCED):                             # the improved copy keeps the original's name
+            if p.stem not in media_stems:
+                problems.append(AppError("The improved copy '{name}' has no original photo or video.", 422,
+                                         name=p.name))
+                break
     return problems
 
 
@@ -124,6 +145,12 @@ def move_numbered(src: Path, dst: Path, kind: str) -> int:
                 for old in (source / name, source / label_name(name)):
                     if old.is_file():
                         new = target / (stem + old.suffix.lower())
+                        os.replace(old, new)
+                        done.append((old, new))
+                for old in _files(source / ENHANCED):                  # the improved copy keeps the same number
+                    if old.stem == PurePosixPath(name).stem:
+                        (target / ENHANCED).mkdir(parents=True, exist_ok=True)
+                        new = target / ENHANCED / (stem + old.suffix.lower())
                         os.replace(old, new)
                         done.append((old, new))
         for source, target in zip(sources, targets):                   # the class names stay with the labels

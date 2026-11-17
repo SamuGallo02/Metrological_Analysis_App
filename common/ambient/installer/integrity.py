@@ -5,23 +5,32 @@ Every package installed by pip lists its files in `<name>-<version>.dist-info/RE
 SHA-256 of each one. Comparing the disk with that list finds truncated, corrupted or deleted files
 (e.g. a `torch_cuda.dll` cut short by a full disk) without importing anything.
 
-  quick scan: existence + size of every file (only `stat`, about a second)
-  deep scan:  also the SHA-256 of every file (reads all the data, tens of seconds)
+  quick scan: existence + size of every file (only `stat`)
+  deep scan:  also the SHA-256 of every file (reads all the data)
+
+Even the quick scan touches every file of every package (25.000 of them with PyTorch), which on a synced folder
+such as OneDrive takes more than a minute. So at startup it runs only when it is worth it - when the installed
+packages changed, or when it has not run for a fortnight (`check_due`). A library damaged in the meantime is
+caught all the same by the import that follows, and main.py then asks for a deep check.
 """
 from __future__ import annotations
 
 import base64
 import csv
 import hashlib
+import json
 import os
 import subprocess
 import sys
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
 _SKIP_SUFFIXES = (".pyc", ".pyo")
 _CHUNK = 1 << 20
+_STAMP = ".integrity.json"                              # in the venv: when the last full scan was, and on what
+_MAX_AGE = 14 * 24 * 3600                               # a fortnight between two full scans
 
 
 @dataclass
@@ -142,19 +151,57 @@ def launch_repair(project_root: Path, os_name: str, deep: bool = False) -> bool:
         return False
 
 
+def fingerprint(venv: Path) -> List[List]:
+    """Cheap signature of what is installed: one `stat` per package instead of one per file."""
+    out: List[List] = []
+    for sp in site_packages(venv):
+        for info in sorted(sp.glob("*.dist-info")):
+            try:
+                st = (info / "RECORD").stat()
+            except OSError:
+                continue
+            out.append([info.name, st.st_mtime_ns, st.st_size])
+    return out
+
+
+def check_due(venv: Path, max_age: float = _MAX_AGE) -> bool:
+    """True when the full scan is worth its time: never done, packages changed, or done too long ago."""
+    try:
+        data = json.loads((venv / _STAMP).read_text(encoding="utf-8"))
+        if time.time() - float(data.get("checked", 0)) > max_age:
+            return True
+        return data.get("packages") != fingerprint(venv)
+    except (OSError, ValueError, TypeError):
+        return True
+
+
+def mark_checked(venv: Path) -> None:
+    """Remembers that everything was in place, so the next starts are immediate."""
+    try:
+        (venv / _STAMP).write_text(json.dumps({"checked": time.time(), "packages": fingerprint(venv)}),
+                                   encoding="utf-8")
+    except OSError:
+        pass
+
+
 def startup_check(deep: bool = False) -> Dict[str, Damage]:
-    """Quick check of the project's virtual environment before the app loads its libraries.
-    Returns the damaged packages ({} if all is well, or if the app does not run in the project venv,
-    e.g. during development, or if the check itself fails: it must never block the app)."""
+    """Check of the project's virtual environment before the app loads its libraries. Returns the damaged
+    packages ({} if all is well, if the scan is not due, if the app does not run in the project venv - e.g.
+    during development - or if the check itself fails: it must never block the app)."""
     from . import state
     from .sysinfo import detect_os
     venv = state.venv_dir(detect_os())
     if not venv_is_project(current_venv(), venv):
         return {}
     try:
-        return scan(venv, deep)
+        if not deep and not check_due(venv):
+            return {}                                   # nothing changed since the last full scan
+        damaged = scan(venv, deep)
     except Exception:
         return {}
+    if not damaged:
+        mark_checked(venv)
+    return damaged
 
 
 def touches_qt(damaged: Dict[str, Damage]) -> bool:

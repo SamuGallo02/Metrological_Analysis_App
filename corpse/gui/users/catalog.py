@@ -14,6 +14,8 @@ from common.i18n import tr, tr_error
 from common.params import KIND_AREA, KINDS_VIDEO, VIDEO_SUFFIXES
 from common.remote_tree import walk_remote
 from common.ui.qt_utils import run_async, fit_columns
+from common.ui.server_state import server_note, server_ready
+from common.ui.widgets import open_performance, performance_available
 
 from corpse.functions.users.preview import IMAGE_SUFFIXES
 from corpse.functions.users.session import Session
@@ -95,6 +97,10 @@ class CatalogWidget(QWidget):
         self.btn_download.setEnabled(False)
         self.btn_collapse = QPushButton(tr("Collapse all"))
         row.addWidget(self.btn_download)
+        self.btn_performance = QPushButton(tr("Performance..."))      # the showcase of the models: how good they are
+        self.btn_performance.setVisible(kind == "model" and performance_available())
+        self.btn_performance.clicked.connect(lambda: open_performance(self))
+        row.addWidget(self.btn_performance)
         row.addWidget(self.btn_collapse)
         row.addStretch(1)
         lay.addLayout(row)
@@ -110,9 +116,9 @@ class CatalogWidget(QWidget):
 
     # ---- species ----------------------------------------------------------
     def refresh(self) -> None:
-        if not self.session.online:
+        if not server_ready(self.session):
             self._fill([])
-            self.status.setText(tr("Offline."))
+            self.status.setText(server_note(self.session))
             return
         self.status.setText(tr("Loading..."))
         run_async(self, lambda: self.session.client.catalog(self.kind), self._loaded,
@@ -229,7 +235,7 @@ class CatalogWidget(QWidget):
 
     def _open(self, item: QTreeWidgetItem, _column: int = 0) -> None:
         rec = item.data(0, RECORD)
-        if rec is None or not self.session.online:
+        if rec is None or not server_ready(self.session):
             return
         if self.kind in KINDS_VIDEO:
             self.status.setText(tr("Download the video to watch it."))

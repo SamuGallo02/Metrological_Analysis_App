@@ -4,54 +4,31 @@ from __future__ import annotations
 from pathlib import PurePosixPath
 from typing import Any, List, Optional, Tuple
 
-from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QImage, QPainter, QPen, QPixmap, QPolygonF
-from PySide6.QtWidgets import (QDialog, QDialogButtonBox, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QVBoxLayout,
-                               QWidget)
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor, QImage, QPixmap
+from PySide6.QtWidgets import (QCheckBox, QDialog, QDialogButtonBox, QHBoxLayout, QLabel, QPushButton,
+                               QSizePolicy, QVBoxLayout, QWidget)
 
 from common.i18n import tr, tr_error
 from common.label_shapes import format_labels
 from common.remote_tree import walk_remote
 from common.ui.label_editor import ImageSource, LabelEditorDialog
+from common.ui.label_overlay import draw_shapes
+from common.ui.label_style import LabelColorButton, color_for
 from common.ui.qt_utils import run_async
+from common.ui.layout import fit_to_screen
 from corpse.functions.users.yolo_labels import (Shape, class_label, class_names, label_candidates, names_candidates,
                                                 parse_labels)
 
 
 def label_color(cls: int) -> QColor:
-    """A distinct, stable colour for each class."""
-    return QColor.fromHsv((cls * 67) % 360, 220, 255)
+    """The colour of a class: the one chosen for contrast, or the one of the class."""
+    return color_for(cls)
 
 
 def draw_labels(image: QImage, shapes: List[Shape], names: Optional[List[str]] = None) -> QImage:
     """A copy of `image` with the boxes / polygons (and class names) drawn on it."""
-    out = image.convertToFormat(QImage.Format.Format_ARGB32)
-    w, h = out.width(), out.height()
-    painter = QPainter(out)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    width = max(2.0, min(w, h) / 200)
-    font = painter.font()
-    font.setPixelSize(max(12, int(min(w, h) / 35)))
-    painter.setFont(font)
-    for s in shapes:
-        color = label_color(s.cls)
-        painter.setPen(QPen(color, width))
-        pts = [QPointF(x * w, y * h) for x, y in s.points]
-        if s.is_box:
-            rect = QRectF(pts[0], pts[1])
-            painter.drawRect(rect)
-            anchor = rect.topLeft()
-        else:
-            painter.drawPolygon(QPolygonF(pts))
-            anchor = min(pts, key=lambda p: (p.y(), p.x()))
-        text = class_label(names, s.cls)
-        box = painter.fontMetrics().boundingRect(text)
-        tag = QRectF(anchor.x(), max(0.0, anchor.y() - box.height() - 4), box.width() + 8, box.height() + 4)
-        painter.fillRect(tag, color)
-        painter.setPen(Qt.GlobalColor.black)
-        painter.drawText(tag, Qt.AlignmentFlag.AlignCenter, text)
-    painter.end()
-    return out
+    return draw_shapes(image, shapes, names)
 
 
 class _Pane(QLabel):
@@ -61,7 +38,7 @@ class _Pane(QLabel):
         super().__init__(parent)
         self._pix: Optional[QPixmap] = None
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.setMinimumSize(200, 150)
+        self.setMinimumSize(620, 420)
         self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
 
     def set_image(self, image: QImage) -> None:
@@ -93,7 +70,7 @@ class ImageViewerDialog(QDialog):
         self.original: Optional[QImage] = None
         self.labelled: Optional[QImage] = None
         self.setWindowTitle(rel)
-        self.resize(1000, 560)
+        fit_to_screen(self, 1000, 560)
         lay = QVBoxLayout(self)
         self.note = QLabel(tr("Loading..."))
         self.note.setTextFormat(Qt.TextFormat.PlainText)
@@ -106,6 +83,13 @@ class ImageViewerDialog(QDialog):
         lay.addLayout(row, 1)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         buttons.rejected.connect(self.reject)
+        self.labels_on = QCheckBox(tr("Show labels"))            # the labelled copy, or only the photo
+        self.labels_on.setChecked(True)
+        self.labels_on.toggled.connect(lambda *_: self._update_panes())
+        buttons.addButton(self.labels_on, QDialogButtonBox.ButtonRole.ResetRole)
+        self.colour = LabelColorButton()                         # better contrast on a difficult photo
+        self.colour.changed.connect(self._redraw)
+        buttons.addButton(self.colour, QDialogButtonBox.ButtonRole.ResetRole)
         self.btn_edit = QPushButton(tr("Edit labels..."))
         self.btn_edit.setVisible(editable)
         self.btn_edit.setEnabled(False)                          # until the photo is loaded
@@ -164,15 +148,23 @@ class ImageViewerDialog(QDialog):
         self.shapes, self.names = shapes, names
         self.btn_edit.setEnabled(True)
         self.left.set_image(image)
-        if shapes:
-            self.labelled = draw_labels(image, shapes, names)
+        self.labelled = draw_labels(image, shapes, names) if shapes else None
+        if self.labelled is not None:
             self.right.set_image(self.labelled)
-            self.right.setVisible(True)
-            self.note.setText(tr("{n} labelled objects", n=len(shapes)))
-        else:
-            self.labelled = None
-            self.right.setVisible(False)
-            self.note.setText(tr("No labels found for this photo."))
+        self.note.setText(tr("{n} labelled objects", n=len(shapes)) if shapes
+                          else tr("No labels found for this photo."))
+        self.btn_edit.setText(tr("Edit labels...") if shapes else tr("Create labels..."))
+        self._update_panes()
+
+    def _redraw(self) -> None:
+        """The colour of the labels changed: draw them again with it."""
+        if self.original is not None and self.shapes:
+            self.labelled = draw_labels(self.original, self.shapes, self.names)
+            self.right.set_image(self.labelled)
+
+    def _update_panes(self) -> None:
+        """The "labels" button: the photo with the labels beside it, or the photo alone."""
+        self.right.setVisible(self.labelled is not None and self.labels_on.isChecked())
 
     def _edit(self) -> None:
         """Opens the label editor; what is saved replaces the labels of this photo on the server."""

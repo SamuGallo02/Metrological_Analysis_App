@@ -13,8 +13,9 @@ from typing import Optional
 import cv2
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QImage, QPixmap
-from PySide6.QtWidgets import QDialog, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QDialog, QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
+from common.format import darker
 from common.i18n import tr
 
 
@@ -34,6 +35,25 @@ def set_manual_opener(opener) -> None:
     """Registers the function `opener(parent)` that opens the manual (set by the app: common does not know the pages)."""
     global _manual_opener
     _manual_opener = opener
+
+
+_performance_opener = None
+
+
+def set_performance_opener(opener) -> None:
+    """Registers `opener(parent)`: the window with the performance of the models. The home sets it, so any view
+    - the showcase of the server included - can offer it without reaching into another section."""
+    global _performance_opener
+    _performance_opener = opener
+
+
+def performance_available() -> bool:
+    return _performance_opener is not None
+
+
+def open_performance(parent: QWidget) -> None:
+    if _performance_opener is not None:
+        _performance_opener(parent)
 
 
 def build_top_bar(parent: QWidget, on_home) -> QHBoxLayout:
@@ -111,3 +131,41 @@ def open_zoom_dialog(parent: QWidget, image) -> None:
 
     dialog.resize(pixmap.width() + 16, pixmap.height() + 32)
     dialog.exec()
+
+
+# Colour of each section, used by the home and by the pages that offer a choice.
+ANALYSIS_COLOR, TRAINING_COLOR, SERVER_COLOR = "#1565c0", "#d84315", "#2e7d32"
+LOCAL_COLOR, GROUP_COLOR = "#00695c", "#4527a0"
+
+
+class MenuCard(QFrame):
+    """Card for each section, with a title and an automatically wrapping description."""
+
+    def __init__(self, title: str, description: str, color: str, onClick=None, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.onClick = onClick
+        self.setMinimumSize(280, 160)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setStyleSheet(f"""
+            QFrame {{ background-color: {color}; border-radius: 10px; }}
+            QFrame:hover {{ background-color: {darker(color)}; }}
+        """)
+        card_layout = QVBoxLayout(self)
+        card_layout.setContentsMargins(15, 15, 15, 15)
+        card_layout.setSpacing(8)
+        card_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        lbl_title = QLabel(title)
+        lbl_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lbl_title.setStyleSheet("font-size: 15px; font-weight: bold; color: white; background: transparent;")
+        lbl_desc = QLabel(description)
+        lbl_desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lbl_desc.setWordWrap(True)
+        lbl_desc.setStyleSheet("font-size: 12px; color: #f0f0f0; background: transparent;")
+        card_layout.addWidget(lbl_title)
+        card_layout.addWidget(lbl_desc)
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton and self.onClick:
+            self.onClick()
+        super().mousePressEvent(event)

@@ -2,13 +2,15 @@
 from __future__ import annotations
 import re
 from pathlib import Path
-from typing import Any, Callable, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from PySide6.QtWidgets import QFileDialog, QInputDialog, QLabel, QMessageBox, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (QComboBox, QFileDialog, QHBoxLayout, QInputDialog, QLabel, QMessageBox, QPushButton,
+                               QVBoxLayout, QWidget)
 
 from common.i18n import tr, tr_error
 from common.params import AREA_STEREO, AREA_STEREO_VIDEOS, AREA_VIDEOS, IMAGE_SUFFIXES, SPECIES_EXAMPLE, SPECIES_RE, VIDEO_SUFFIXES
 from common.ui.qt_utils import run_async
+from common.ui.server_state import server_note, server_ready
 from corpse.functions.users.session import Session
 from corpse.functions.users.upload_plan import has_stereo_folders, plan_media, plan_stereo
 from .transfer import TransferDialog
@@ -29,12 +31,36 @@ class UploadsWidget(QWidget):
         hint = QLabel(tr("Everything you send is checked by an administrator before it is published."))
         hint.setWordWrap(True)
         lay.addWidget(hint)
+        row = QHBoxLayout()                                   # who signs what is published
+        row.addWidget(QLabel(tr("Publish as:")))
+        self.author = QComboBox()
+        self.author.addItem(tr("Myself"), "")
+        self.author.setToolTip(tr("Publishing for a work group: the group is the author in the catalog."))
+        row.addWidget(self.author, 1)
+        row.addStretch(1)
+        lay.addLayout(row)
+        self._load_groups()
         self.btn_photos = self._big(tr("Upload photos or videos of a species"), self._photos, lay)
         self.btn_stereo = self._big(tr("Upload stereo photos or videos"), self._stereo, lay)
         self.btn_dataset = self._big(tr("Upload a dataset"), self._dataset, lay)
         self.btn_model = self._big(tr("Upload a YOLO model"), self._model, lay)
         self.status = QLabel("")
         lay.addWidget(self.status)
+
+    def _load_groups(self) -> None:
+        """The work groups the user belongs to: they can publish in the name of the group."""
+        if not server_ready(self.session):
+            return
+
+        def done(groups: List[Dict[str, Any]]) -> None:
+            for g in groups:
+                self.author.addItem(tr("Group: {name}", name=g["name"]), g["name"])
+
+        run_async(self, self.session.client.groups, done, lambda _e: None)
+
+    def group(self) -> str:
+        """The group chosen to sign the upload ("" = the user themselves)."""
+        return self.author.currentData() or ""
 
     @staticmethod
     def _big(text: str, slot: Callable[[], None], lay: QVBoxLayout) -> QPushButton:
@@ -94,7 +120,8 @@ class UploadsWidget(QWidget):
             return
         for area, pairs in plan.items():                         # photos and videos are separate uploads
             kind = "video" if area == AREA_VIDEOS else "photos"
-            self._send(area, pairs, species, lambda k=kind: self.session.client.submit_species(species, k))
+            self._send(area, pairs, species,
+                       lambda k=kind: self.session.client.submit_species(species, k, self.group()))
 
     def _stereo(self) -> None:
         """A folder with an `lx` and an `rx` subfolder holding photos (or videos) of the same names."""
@@ -117,7 +144,8 @@ class UploadsWidget(QWidget):
             QMessageBox.warning(self, tr("Error"), tr("No photos or videos among the chosen files."))
             return
         kind = "stereo_video" if area == AREA_STEREO_VIDEOS else "stereo"
-        self._send(area, pairs, species, lambda: self.session.client.submit_species(species, kind))
+        self._send(area, pairs, species,
+                   lambda: self.session.client.submit_species(species, kind, self.group()))
 
     def _dataset(self) -> None:
         d = QFileDialog.getExistingDirectory(self, tr("Choose the folder to upload"))
@@ -125,7 +153,8 @@ class UploadsWidget(QWidget):
             return
         root = Path(d)
         pairs = [(p, f"{root.name}/{p.relative_to(root).as_posix()}") for p in _files(root, True)]
-        self._send("datasets", pairs, root.name, lambda: self.session.client.submit_dataset(root.name))
+        self._send("datasets", pairs, root.name,
+                   lambda: self.session.client.submit_dataset(root.name, self.group()))
 
     def _model(self) -> None:
         f, _ = QFileDialog.getOpenFileName(self, tr("Choose the files to upload"), "", "YOLO (*.pt)")
@@ -139,4 +168,5 @@ class UploadsWidget(QWidget):
         details = model.with_suffix(".json")                     # DA VERIFICARE con il grep qui sotto
         if details.is_file():
             pairs.append((details, f"{species}/{details.name}"))
-        self._send("models", pairs, species, lambda: self.session.client.submit_model(species, model.name))
+        self._send("models", pairs, species,
+                   lambda: self.session.client.submit_model(species, model.name, self.group()))

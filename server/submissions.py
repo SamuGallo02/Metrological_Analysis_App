@@ -15,9 +15,10 @@ from .dataset_tree import count_dataset_images, validate_dataset_dir
 
 
 def submit_species(store: Storage, db: Database, username: str, species: str, kind: str = KIND_PHOTOS,
-                   admin: bool = False) -> Dict[str, Any]:
+                   admin: bool = False, group: str = "") -> Dict[str, Any]:
     """Registers the photos / stereo photos / videos a user uploaded for a species. What an administrator
-    sends is approved at once, by the administrator."""
+    sends is approved at once, by the administrator. With `group`, the upload is published on behalf of a work
+    group: the group is then the author, in the catalog and in the name of the folder."""
     if kind not in KINDS_MEDIA:
         raise AppError("Unknown kind of upload.", 422)
     folder = store.pending_media_dir(username, species, kind)       # 404 if there is nothing waiting
@@ -27,8 +28,8 @@ def submit_species(store: Storage, db: Database, username: str, species: str, ki
     path = f"{PENDING}/{username}/{species}"
     _check_not_waiting(db, username, path, kind)
     items = count_media(folder, kind)
-    sid = db.add_submission(username, species, path, items, kind=kind)
-    result = {"id": sid, "kind": kind, "species": species, "path": path, "photos": items, "pending": not admin}
+    sid = db.add_submission(username, species, path, items, kind=kind, group=group)
+    result = {"id": sid, "kind": kind, "group": group, "species": species, "path": path, "photos": items, "pending": not admin}
     if admin:
         approve_submission(store, db, sid, username)
         result["pending"] = False
@@ -40,30 +41,39 @@ def _check_not_waiting(db: Database, username: str, path: str, kind: Optional[st
             raise AppError("You already have a pending submission for this item.", 409)
 
 
-def _record(db: Database, username: str, subject: str, path: str, items: int, kind: str, admin: bool) -> int:
+def _record(db: Database, username: str, subject: str, path: str, items: int, kind: str, admin: bool,
+            group: str = "") -> int:
     """Registers the submission. What an administrator publishes is approved at once, by the administrator."""
     _check_not_waiting(db, username, path, kind)
-    sid = db.add_submission(username, subject, path, items, kind=kind)
+    sid = db.add_submission(username, subject, path, items, kind=kind, group=group)
     if admin:
         db.review_submission(sid, SUBMISSION_APPROVED, username)
     return sid
 
 
-def submit_dataset(store: Storage, db: Database, username: str, name: str, admin: bool = False) -> Dict[str, Any]:
+def submit_dataset(store: Storage, db: Database, username: str, name: str, admin: bool = False,
+                   group: str = "") -> Dict[str, Any]:
     folder = store.pending_dataset_dir(username, name, admin)      # 404 se non c'è nulla da inviare
     errors = validate_dataset_dir(folder)
     if errors:
         raise errors[0]                                            # rifiuta: nessuna riga viene creata
     path = name if admin else f"{PENDING}/{username}/{name}"
     images = count_dataset_images(folder)
-    sid = _record(db, username, name, path, images, KIND_DATASET, admin)
-    return {"id": sid, "kind": KIND_DATASET, "name": name, "path": path, "images": images, "pending": not admin}
+    sid = _record(db, username, name, path, images, KIND_DATASET, admin, group)
+    return {"id": sid, "kind": KIND_DATASET, "name": name, "group": group, "path": path, "images": images, "pending": not admin}
 
 
-def submit_model(store: Storage, db: Database, username: str, species: str, file: str, admin: bool = False) -> Dict[str, Any]:
+def submit_model(store: Storage, db: Database, username: str, species: str, file: str, admin: bool = False,
+                 group: str = "") -> Dict[str, Any]:
     path = store.pending_model_path(username, species, file, admin)   # 404 se il file non è stato caricato
-    sid = _record(db, username, species, path, 1, KIND_MODEL, admin)
-    return {"id": sid, "kind": KIND_MODEL, "species": species, "file": file, "path": path, "pending": not admin}
+    sid = _record(db, username, species, path, 1, KIND_MODEL, admin, group)
+    return {"id": sid, "kind": KIND_MODEL, "species": species, "file": file, "path": path, "group": group,
+            "pending": not admin}
+
+def author_of(sub: Dict[str, Any]) -> str:
+    """Who signs an upload: the work group it was published for, or the person who sent it."""
+    return sub["group_name"] or sub["username"] if "group_name" in sub.keys() else sub["username"]
+
 
 def _pending_submission(db: Database, sid: int) -> Dict[str, Any]:
     sub = db.get_submission(sid)                                     # 404 se non esiste
@@ -77,7 +87,7 @@ def _dataset_final_name(store: Storage, sub: Dict[str, Any]) -> str:
     classes = store.dataset_classes(sub["species"], sub["username"])
     base = classes[0] if len(classes) == 1 and re.fullmatch(SPECIES_RE, classes[0]) else sub["species"]
     day = datetime.fromtimestamp(sub["created"]).date().isoformat()
-    return f"{base}/{base}_{sub['username']}_{day}"
+    return f"{base}/{base}_{author_of(sub)}_{day}"
 
 def approve_submission(store: Storage, db: Database, sid: int, reviewer: str) -> Dict[str, Any]:
     sub = _pending_submission(db, sid)
@@ -90,7 +100,7 @@ def approve_submission(store: Storage, db: Database, sid: int, reviewer: str) ->
         db.review_submission(sid, SUBMISSION_APPROVED, reviewer, path=final)
         return {"id": sid, "kind": KIND_MODEL, "path": final}
     day = datetime.fromtimestamp(sub["created"]).date()              # the date of the upload
-    folder, photos = store.approve_media(sub["username"], sub["species"], sub["kind"], day)
+    folder, photos = store.approve_media(sub["username"], sub["species"], sub["kind"], day, author_of(sub))
     db.review_submission(sid, SUBMISSION_APPROVED, reviewer,     # solo se i file sono andati a posto
                          path=f"{sub['species']}/{folder}", photos=photos)
     return {"id": sid, "kind": sub["kind"], "species": sub["species"], "folder": folder, "photos": photos}
@@ -113,7 +123,8 @@ def catalog(db: Database, kind: str, store: Optional[Storage] = None) -> List[Di
     """The approved items of a kind, for the catalogs: alphabetical by species, then by date.
     Only the date is given, never the time (privacy of the users). Datasets also say which species they contain."""
     rows = db.list_submissions(status=SUBMISSION_APPROVED, kind=kind)
-    items = [{"kind": kind, "species": r["species"], "uploader": r["username"], "approved_by": r["reviewed_by"],
+    items = [{"kind": kind, "species": r["species"], "uploader": author_of(r), "sent_by": r["username"],
+              "group": r["group_name"], "approved_by": r["reviewed_by"],
               "date": datetime.fromtimestamp(r["created"]).date().isoformat(), "path": r["path"],
               "items": r["photos"]} for r in rows]
     if kind == KIND_DATASET and store is not None:

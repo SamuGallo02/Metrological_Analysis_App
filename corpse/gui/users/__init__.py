@@ -1,6 +1,9 @@
 """PySide6 windows of the Users page."""
 from .account_bar import AccountBar
 from .browser import ServerFoldersWidget, ServerBrowserWidget
+from .folders_local import LocalFoldersWidget
+from .folders_page import FoldersPage
+from .groups_page import GroupsPage
 from .login import LoginDialog
 from .profile import ProfilePage
 from .transfer import TransferDialog
@@ -14,5 +17,5 @@ try:                                              # the administrator screens ar
 except ImportError:
     AdminHome = UserAdminWidget = SubmissionsWidget = ReviewWidget = None
 
-__all__ = ["AccountBar", "AdminHome", "UserAdminWidget", "SubmissionsWidget", "ReviewWidget", "ServerFoldersWidget", "ServerBrowserWidget",
+__all__ = ["AccountBar", "AdminHome", "UserAdminWidget", "SubmissionsWidget", "ReviewWidget", "ServerFoldersWidget", "FoldersPage", "LocalFoldersWidget", "GroupsPage", "ServerBrowserWidget",
            "LoginDialog", "ProfilePage", "TransferDialog", "UploadsWidget", "PreviewDialog", "CatalogWidget", "ImageViewerDialog"]

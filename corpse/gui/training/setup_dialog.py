@@ -1,9 +1,12 @@
 """"Train" button: warns that extensions are required and, if the user accepts, installs them automatically
 showing a progress bar.
 
-    from corpse.gui.training.setup_dialog import ensure_training_ready
-    if ensure_training_ready(self):      # True = training can proceed right away
-        ...open the training page...
+Everything the application can do without them stays available: the window is not modal, so while the download
+goes on the user can keep working (look at the folders, start an analysis, ask the server for a training).
+
+    from corpse.gui.training.setup_dialog import components_ready, ask_training_components
+    if not components_ready():
+        ask_training_components(self, when_ready=self.start)     # the small window stays open with the progress
 
 Two cases, decided by core.environment_manager.get_cuda_status():
   * light extras only (a few MB): full installation in the window, then proceed.
@@ -144,6 +147,47 @@ class TrainingSetupDialog(QDialog):
         if self.proc and self.proc.running:
             return self._cancel()
         super().reject()
+
+
+def components_ready() -> bool:
+    """True when training can start on this computer right now (nothing left to download)."""
+    from corpse.functions.training.environment_manager import get_cuda_status
+    status = get_cuda_status()
+    return not (status["install_needed"] or status["extras_pending"])
+
+
+def _after_install(dlg: "TrainingSetupDialog", parent: Optional[QWidget], when_ready) -> None:
+    """What happens when the small window closes: either we are ready, or the app restarts to replace PyTorch."""
+    from corpse.functions.training.environment_manager import launch_training_installer
+    if not dlg.ok:
+        return
+    if not dlg.heavy:
+        if when_ready:
+            when_ready()
+        return
+    if launch_training_installer():              # detached: waits for the app to close, installs, reopens it
+        QApplication.quit()
+    else:
+        QMessageBox.critical(parent, tr("Error"), tr("Could not complete the activation. Restart the "
+                                                     "application and try again from Training."))
+
+
+def ask_training_components(parent: Optional[QWidget] = None, when_ready=None) -> Optional["TrainingSetupDialog"]:
+    """Says what is missing and, if the user accepts, downloads it **without blocking the application**: the
+    small window stays open with the progress while everything else keeps working. `when_ready` is called when
+    the components are in place. Returns None (and calls `when_ready`) when there was nothing to install."""
+    from corpse.functions.training.environment_manager import get_cuda_status
+    status = get_cuda_status()
+    if not (status["install_needed"] or status["extras_pending"]):
+        if when_ready:
+            when_ready()
+        return None
+    dlg = TrainingSetupDialog(status, parent)
+    dlg.setModal(False)
+    dlg.setWindowModality(Qt.WindowModality.NonModal)
+    dlg.finished.connect(lambda _code: _after_install(dlg, parent, when_ready))
+    dlg.show()
+    return dlg
 
 
 def ensure_training_ready(parent: Optional[QWidget] = None) -> bool:

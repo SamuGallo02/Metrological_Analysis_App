@@ -13,7 +13,11 @@ from common.i18n import tr, tr_error
 from common.model_metadata import fetch_remote_metadata
 from common.params import KIND_AREA, KINDS_VIDEO, VIDEO_SUFFIXES
 from common.remote_tree import walk_remote
+from common.label_shapes import parse_labels
+from common.ui.label_overlay import draw_shapes
+from common.ui.label_style import labels_visible
 from common.ui.qt_utils import run_async
+from common.ui.layout import fit_to_screen
 from corpse.functions.users.preview import list_preview
 from .model_info import model_info_lines
 
@@ -28,7 +32,7 @@ class PreviewDialog(QDialog):
         super().__init__(parent)
         self.client, self.kind, self.sub = client, kind, sub
         self.setWindowTitle(tr("Preview"))
-        self.resize(720, 520)
+        fit_to_screen(self, 720, 520)
         lay = QVBoxLayout(self)
         self.info = QLabel(tr("Loading..."))
         self.info.setTextFormat(Qt.TextFormat.PlainText)         # testo preso dal server: mai interpretato come HTML
@@ -75,16 +79,28 @@ class PreviewDialog(QDialog):
         area, base = AREAS[self.kind], self.sub["path"]
         info = list_preview(self.client, area, base)
         thumbs: List[Tuple[str, QImage]] = []
+        show_labels = labels_visible()
         for rel in info["images"]:
             try:
                 img = QImage.fromData(self.client.read_bytes(area, rel))
             except Exception:                                    # an unreadable image must not block the others
                 continue
-            if not img.isNull():
-                thumbs.append((str(PurePosixPath(rel).relative_to(base)),
-                               img.scaled(THUMB, THUMB, Qt.AspectRatioMode.KeepAspectRatio,
-                                          Qt.TransformationMode.SmoothTransformation)))
+            if img.isNull():
+                continue
+            if show_labels:
+                img = draw_shapes(img, self._labels_of(area, rel), with_names=False)
+            thumbs.append((str(PurePosixPath(rel).relative_to(base)),
+                           img.scaled(THUMB, THUMB, Qt.AspectRatioMode.KeepAspectRatio,
+                                      Qt.TransformationMode.SmoothTransformation)))
         return info, thumbs
+
+    def _labels_of(self, area: str, rel: str) -> List:
+        """The labels of an image of the server, when the file is there beside it. A preview is worth one try."""
+        try:
+            return parse_labels(self.client.read_bytes(area, str(PurePosixPath(rel).with_suffix(".txt")))
+                                .decode("utf-8", "replace"))
+        except Exception:                                        # noqa: BLE001 - no labels for this image
+            return []
 
     def _show_images(self, result: Tuple[Dict[str, Any], List[Tuple[str, QImage]]]) -> None:
         info, thumbs = result

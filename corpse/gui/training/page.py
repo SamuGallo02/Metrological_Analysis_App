@@ -19,6 +19,7 @@ from typing import Any, Optional
 
 from PySide6.QtWidgets import (
     QComboBox,
+    QGroupBox,
     QFileDialog,
     QFormLayout,
     QHBoxLayout,
@@ -37,6 +38,7 @@ from common.params import SPECIES_EXAMPLE
 from common.ui.widgets import build_top_bar
 from common.ui.qt_utils import run_async
 from common.ui.layout import centered_content
+from corpse.gui.training.server_jobs import ServerTrainingWidget
 from corpse.gui.training.server_dialog import ServerDatasetDialog
 from common.model_metadata import build_metadata, classes_from_data_yaml, count_images, read_metadata, write_metadata
 from corpse.functions.training.hardware import check_internet_connection, get_hardware_info
@@ -96,6 +98,8 @@ class TrainingPage(QWidget):
 
     def showEvent(self, event) -> None:
         self._update_server_button()          # la connessione può cambiare mentre la pagina è chiusa
+        if getattr(self, "server_jobs", None) is not None:
+            self.server_jobs.refresh()        # e intanto il worker può aver finito un lavoro
         super().showEvent(event)
 
     def _open_server_datasets(self) -> None:
@@ -124,6 +128,20 @@ class TrainingPage(QWidget):
 
         title = QLabel("<h2>Addestramento Nuovo Modello YOLO</h2>")
         content.addWidget(title)
+
+        # The server is the way the application trains: nothing to install here, the work goes to a machine with
+        # a GPU. Training on this computer comes after, for whoever wants it and has downloaded the components.
+        content.addWidget(QLabel(f"<h3>{tr('Training on the server')}</h3>"))
+        self.server_jobs = ServerTrainingWidget(self.session)
+        content.addWidget(self.server_jobs, stretch=1)
+
+        local_box = QGroupBox(tr("Training on this computer"))
+        local = QVBoxLayout(local_box)
+        self.lbl_local_note = QLabel("")
+        self.lbl_local_note.setWordWrap(True)
+        local.addWidget(self.lbl_local_note)
+        content.addWidget(local_box, stretch=2)
+        content = local                                  # from here on everything goes in the local box
 
         hw_box = QWidget()
         hw_box.setStyleSheet("background-color: #2b2b2b; border-radius: 6px; padding: 10px;")
@@ -210,6 +228,7 @@ class TrainingPage(QWidget):
         self.btn_publish.clicked.connect(self._publish)
         content.addWidget(self.btn_publish)
         self._update_server_button()
+        self._update_local_note()
 
         layout.addLayout(centered_content(content, max_width=900), stretch=1)
 
@@ -291,7 +310,29 @@ class TrainingPage(QWidget):
     def _open_colab(self) -> None:
         webbrowser.open(COLAB_URL)
 
+    def _update_local_note(self) -> None:
+        """Says whether this computer can train right now, without hiding the button: pressing it explains."""
+        from corpse.gui.training.setup_dialog import components_ready
+        if components_ready():
+            self.lbl_local_note.setText(tr("This computer is ready: the training runs here, with your hardware."))
+        else:
+            self.lbl_local_note.setText(tr("To train here some components must be downloaded first (PyTorch and "
+                                           "the training extensions). Press 'Start local training': the download "
+                                           "runs in its own window and the application stays usable."))
+
     def _start_training(self) -> None:
+        from corpse.gui.training.setup_dialog import ask_training_components, components_ready
+        if not components_ready():               # all the buttons are there: this one explains what it needs
+            ask_training_components(self, when_ready=self._components_arrived)
+            return
+        self._run_training()
+
+    def _components_arrived(self) -> None:
+        self._update_local_note()
+        QMessageBox.information(self, tr("Components for training"),
+                                tr("The components are installed: you can start the local training."))
+
+    def _run_training(self) -> None:
         yaml_path = self.combo_tdatasets.currentData()
         if not yaml_path or not Path(yaml_path).is_file():
             QMessageBox.warning(self, "Dataset Invalido", "Seleziona un dataset contenente un file data.yaml valido.")

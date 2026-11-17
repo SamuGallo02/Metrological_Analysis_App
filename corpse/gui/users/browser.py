@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (QAbstractItemView, QFileDialog, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
                                QMessageBox, QProgressBar, QPushButton, QTabBar, QTreeWidget, QTreeWidgetItem,
                                QVBoxLayout, QWidget, QTabWidget)
@@ -14,10 +15,12 @@ from PySide6.QtWidgets import (QAbstractItemView, QFileDialog, QHBoxLayout, QHea
 from common.format import fmt_size, fmt_time
 from common.i18n import tr, tr_error
 
-from common.params import AREA_MINE, AREAS_SHARED, SPECIES_EXAMPLE, SPECIES_RE
+from common.params import AREA_GROUPS, AREA_MINE, AREAS_SHARED, SPECIES_EXAMPLE, SPECIES_RE
 from common.ui.qt_utils import run_async
+from common.ui.thumbnails import ThumbnailCache, can_preview
 from common.remote_tree import walk_remote
 from common.model_metadata import fetch_remote_metadata
+from common.ui.server_state import server_note, server_ready
 
 from corpse.functions.users.session import Session
 from .labels import PENDING_DIR, area_label, folder_label, path_label
@@ -35,6 +38,9 @@ class ServerBrowserWidget(QWidget):
         self.download_only = download_only            # only browse and download: no upload, no changes
         self.areas = tuple(areas)
         self.area, self.path = self.areas[0], ""
+        self.thumbs = ThumbnailCache(lambda key: self.session.client.read_bytes(*key.split("|", 1)))
+        self.thumbs.ready.connect(self._thumb_ready)
+        self._thumb_items: Dict[str, List[QTreeWidgetItem]] = {}      # key -> the rows waiting for that preview
         self._info_token = 0                          # numero dell'ultima richiesta dei dettagli: scarta le risposte in ritardo
         lay = QVBoxLayout(self)
 
@@ -56,6 +62,7 @@ class ServerBrowserWidget(QWidget):
         lay.addWidget(self.crumb)
 
         self.tree = QTreeWidget()
+        self.tree.setIconSize(self.thumbs.size_hint())        # room for the previews of the photos
         self.tree.setHeaderLabels([tr("Name"), tr("Type"), tr("Size"), tr("Modified")])
         self.tree.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.tree.setRootIsDecorated(True)                        # always a tree: folders open in place, on demand
@@ -95,7 +102,11 @@ class ServerBrowserWidget(QWidget):
 
     # ---- state -------------------------------------------------------------
     def _can_modify(self) -> bool:
-        return (self.area == AREA_MINE and self.session.can("mine.manage")) or self.session.can("files.modify")
+        if self.area == AREA_MINE:
+            return self.session.can("mine.manage")
+        if self.area == AREA_GROUPS:                      # inside their group, the members work freely
+            return self.session.can("groups.use")
+        return self.session.can("files.modify")
 
     def _apply_role(self) -> None:
         editing = not self.download_only
@@ -105,17 +116,20 @@ class ServerBrowserWidget(QWidget):
         self.btn_rename.setVisible(editing and self._can_modify())
         self.btn_delete.setVisible(editing and self._can_modify())
         self.btn_approve.setVisible(editing and self.session.can("models.approve") and self.area == "models")
-        self.btn_mkdir.setEnabled(self.session.online)
+        self.btn_mkdir.setEnabled(server_ready(self.session))
         self._update_note()
 
     def _update_note(self) -> None:
-        if not self.session.online:
-            text = f"<i>{tr('You are offline: the server folders are not available.')}</i>"
+        if not server_ready(self.session):
+            text = f"<i>{server_note(self.session)}</i>"
         elif self.download_only:
             text = tr("You can browse and download what the other users have shared.")
         elif self.area == AREA_MINE:
             text = tr("Your personal folder on the server: only you can see it. You can add, "
                       "rename, move and delete.")
+        elif self.area == AREA_GROUPS:
+            text = tr("The folders of your work groups: everything you put here is seen, and can be changed, by "
+                      "the other members. An administrator decides who belongs to a group.")
         elif self.session.is_admin:
             text = tr("As an administrator you can modify and delete.")
             if self.area == "models":
@@ -174,7 +188,7 @@ class ServerBrowserWidget(QWidget):
         return f"{folder}/{name}" if folder else name
 
     def _refresh_quota(self) -> None:
-        show = self.area == AREA_MINE and self.session.online
+        show = self.area == AREA_MINE and server_ready(self.session)
         self.quota.setVisible(show)
         if not show:
             return
@@ -190,8 +204,8 @@ class ServerBrowserWidget(QWidget):
     def refresh(self) -> None:
         self.crumb.setText(f"<b>{area_label(self.area)}</b> / {path_label(self.path)}")
         self.tree.clear()
-        if not self.session.online:
-            self.status.setText(tr("Offline."))
+        if not server_ready(self.session):
+            self.status.setText(server_note(self.session))
             return
         self.status.setText(tr("Loading..."))
         self._refresh_quota()
@@ -220,6 +234,8 @@ class ServerBrowserWidget(QWidget):
                                       tr("Folder") if is_dir else tr("File"),
                                       "" if is_dir else fmt_size(e["size"]), fmt_time(e["mtime"])])
                 it.setData(0, Qt.ItemDataRole.UserRole, entry)
+                if not is_dir and can_preview(e["name"]):
+                    self._want_thumb(it, entry["path"])
                 if is_dir:
                     it.addChild(QTreeWidgetItem([tr("Loading..."), "", "", ""]))      # placeholder: shows the arrow
                 if parent is None:
@@ -235,6 +251,23 @@ class ServerBrowserWidget(QWidget):
             self.status.setText(tr("Error: {msg}", msg=tr_error(e)))
 
         run_async(self, lambda: self.session.client.list(area, path), done, fail)
+
+    # ---- previews ---------------------------------------------------------
+    def _want_thumb(self, item: QTreeWidgetItem, rel: str) -> None:
+        """Shows the small preview of a photo as the icon of its row, as soon as it is there."""
+        key = f"{self.area}|{rel}"
+        icon = self.thumbs.icon(key)
+        if icon is not None:
+            item.setIcon(0, icon)
+        else:
+            self._thumb_items.setdefault(key, []).append(item)
+
+    def _thumb_ready(self, key: str, icon: QIcon) -> None:
+        for item in self._thumb_items.pop(key, []):
+            try:
+                item.setIcon(0, icon)
+            except RuntimeError:                       # the row was removed meanwhile (folder reloaded)
+                pass
 
     def _expanded(self, item: QTreeWidgetItem) -> None:
         entry = item.data(0, Qt.ItemDataRole.UserRole)
@@ -438,6 +471,7 @@ class ServerFoldersWidget(QWidget):
         self.videos = CatalogWidget(session, "video")
         self.stereo_videos = CatalogWidget(session, "stereo_video")
         self.models = CatalogWidget(session, "model")
+        self.groups = ServerBrowserWidget(session, (AREA_GROUPS,))
         self.uploads = UploadsWidget(session)                                 # filled in the next blocks
         self.tabs = QTabWidget()
         self.tabs.addTab(self.photos, tr("Photos"))
@@ -445,5 +479,6 @@ class ServerFoldersWidget(QWidget):
         self.tabs.addTab(self.videos, tr("Videos"))
         self.tabs.addTab(self.stereo_videos, tr("Stereo videos"))
         self.tabs.addTab(self.models, tr("YOLO models"))
+        self.tabs.addTab(self.groups, tr("Work groups"))
         self.tabs.addTab(self.uploads, tr("Uploads"))
         lay.addWidget(self.tabs)

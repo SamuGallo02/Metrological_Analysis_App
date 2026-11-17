@@ -17,16 +17,16 @@ import sys
 import threading
 import time
 from pathlib import Path, PurePosixPath
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 from datetime import date
 
 from common.errors import AppError
-from common.params import AREA_MINE, AREA_PHOTOS, AREA_STEREO, AREAS, AREAS_MEDIA, KIND_AREA
+from common.params import AREA_GROUPS, AREA_MINE, AREA_PHOTOS, AREA_STEREO, AREAS, AREAS_MEDIA, KIND_AREA
 
 KIND_OF_AREA = {area: kind for kind, area in KIND_AREA.items()}
 from common.model_metadata import classes_from_data_yaml
 
-from .params import (EXTENSIONS, LIBRARY_DIR, MAX_BYTES, MAX_BYTES_EXT, MINE_DIR, PENDING, PENDING_DIR_NAME, SPECIES_EXAMPLE,
+from .params import (EXTENSIONS, GROUPS_DIR, LIBRARY_DIR, MAX_BYTES, MAX_BYTES_EXT, MINE_DIR, PENDING, PENDING_DIR_NAME, SPECIES_EXAMPLE,
                      SPECIES_RE, STORE_DIR, TMP, DATASET_EXAMPLE, LABEL_SUFFIX, SPECIES_IMAGE_EXT)
 from .media_tree import CLASSES_FILE, check_media_file, count_media, move_numbered, validate_media_dir
 from .dataset_tree import count_dataset_images, validate_dataset_dir
@@ -36,7 +36,7 @@ _MAGIC = {".jpg": (b"\xff\xd8\xff",), ".jpeg": (b"\xff\xd8\xff",), ".png": (b"\x
 _WIN_RESERVED = {"con", "prn", "aux", "nul"} | {f"com{i}" for i in range(1, 10)} | {f"lpt{i}" for i in range(1, 10)}
 _lock = threading.Lock()
 
-QUARANTINE_AREAS = AREAS_MEDIA + ("models", "datasets")     # every shared area: uploads wait in store/pending/<area>
+QUARANTINE_AREAS = AREAS_MEDIA + ("models", "datasets", AREA_GROUPS)   # uploads wait in store/pending/<area>
 ADMIN_ONLY_AREAS = ()                                       # no area is closed for reading: only the pending uploads are
 
 
@@ -112,7 +112,15 @@ class Storage:
         for a in QUARANTINE_AREAS:
             self.library(a).mkdir(parents=True, exist_ok=True)
             self.pending_root(a).mkdir(parents=True, exist_ok=True)
-        (self.root / MINE_DIR).mkdir(parents=True, exist_ok=True)
+        for d in (MINE_DIR, GROUPS_DIR):
+            (self.root / d).mkdir(parents=True, exist_ok=True)
+        # Which work groups a user belongs to. The server sets it to the database method; alone, Storage knows
+        # nothing about groups and lets nobody in.
+        self.groups_of: Callable[[str], Sequence[str]] = lambda _user: ()
+        # Which groups a user looks after: there they approve what the other members send, and write directly.
+        self.group_admin_of: Callable[[str], Sequence[str]] = lambda _user: ()
+        # Groups where the members may add files without waiting for an administrator (a setting of the group).
+        self.group_free_upload: Callable[[str], bool] = lambda _group: False
 
     # ---- paths ----------------------------------------------------------
     def library(self, area: str) -> Path:
@@ -130,6 +138,8 @@ class Storage:
             if not owner:
                 raise AppError("Unknown area.", 404)
             return self.root / MINE_DIR / owner
+        if area == AREA_GROUPS:
+            return self.root / GROUPS_DIR
         return self.library(area)
 
     def pending_media_dir(self, username: str, species: str, kind: str) -> Path:
@@ -140,20 +150,121 @@ class Storage:
                 return folder
         raise AppError("No pending photos for this species.", 404)
 
+    def _may_touch_group_quarantine(self, sub: str, owner: str) -> bool:
+        """In the waiting folder of a group: your own uploads are yours, everything is the group administrators'."""
+        parts = [p for p in sub.split("/") if p]
+        if not parts:
+            return False
+        group = parts[0]
+        if group in set(self.group_admin_of(owner)):
+            return True
+        return len(parts) > 1 and parts[1] == owner and group in set(self.groups_of(owner))
+
+    def _checked(self, area: str, admin: bool) -> bool:
+        """Personal folders and group folders are always resolved as the user: the check on who may open them
+        lives in resolve() and must not be skipped, not even for an internal call."""
+        return admin and area not in (AREA_MINE, AREA_GROUPS)
+
     def resolve(self, area: str, rel: str, admin: bool, owner: str = "") -> Tuple[Path, str]:
         rel = clean_rel(rel)
-        if not admin and (area in ADMIN_ONLY_AREAS or is_quarantine(area, rel)):
+        if not admin and area in ADMIN_ONLY_AREAS:
             raise AppError("Area reserved to administrators.", 403)
         if is_quarantine(area, rel):                          # "_pending/..." is the waiting uploads of this area
             base, sub = self.pending_root(area), rel[len(PENDING) + 1:]
+            if not admin and not (area == AREA_GROUPS and self._may_touch_group_quarantine(sub, owner)):
+                raise AppError("Area reserved to administrators.", 403)
         else:
             base, sub = self.base(area, owner), rel
         if area == AREA_MINE:
             base.mkdir(parents=True, exist_ok=True)
+        if area == AREA_GROUPS and not admin:
+            group = sub.split("/", 1)[0]
+            if group and group not in set(self.groups_of(owner)):
+                raise AppError("You are not a member of this group.", 403)
         path = (base / sub).resolve() if sub else base.resolve()
         if path != base.resolve() and base.resolve() not in path.parents:
             raise AppError("Invalid path.")
         return path, rel
+
+    # ---- what the members of a group send -----------------------------------
+    def group_pending(self, group: str, user: str = "") -> List[Dict[str, Any]]:
+        """What is waiting in a group: one entry per file, with who sent it and its logical path."""
+        root = self.pending_root(AREA_GROUPS) / clean_rel(group)
+        out: List[Dict[str, Any]] = []
+        if not root.is_dir():
+            return out
+        for sender in sorted(p for p in root.iterdir() if p.is_dir()):
+            if user and sender.name != user:
+                continue
+            for f in sorted(sender.rglob("*")):
+                if f.is_file():
+                    rel = f.relative_to(sender).as_posix()
+                    out.append({"sender": sender.name, "name": f.name, "path": rel,
+                                "logical": f"{PENDING}/{group}/{sender.name}/{rel}",
+                                "size": f.stat().st_size, "sent": f.stat().st_mtime})
+        return out
+
+    def _free_name(self, dest: Path) -> Path:
+        """A name that is not taken yet: nothing already in the group is ever overwritten."""
+        if not dest.exists():
+            return dest
+        for n in range(2, 1000):
+            candidate = dest.with_name(f"{dest.stem} ({n}){dest.suffix}")
+            if not candidate.exists():
+                return candidate
+        raise AppError("A file with this name already exists (you cannot overwrite it).", 409)
+
+    def approve_group_upload(self, rel: str) -> List[str]:
+        """Moves a waiting file (or a whole folder of them) into the group's folder. Returns the new paths."""
+        rel = clean_rel(rel)
+        if not is_quarantine(AREA_GROUPS, rel):
+            raise AppError("This upload is not waiting for approval.", 409)
+        parts = rel[len(PENDING) + 1:].split("/")
+        if len(parts) < 2:
+            raise AppError("Invalid path.")
+        group, sender, inside = parts[0], parts[1], parts[2:]
+        src = self.pending_root(AREA_GROUPS) / group / sender / "/".join(inside)
+        if not src.exists():
+            raise AppError("Resource not found.", 404)
+        target_root = self.base(AREA_GROUPS, "") / group
+        moved: List[str] = []
+        files = [src] if src.is_file() else sorted(p for p in src.rglob("*") if p.is_file())
+        for f in files:
+            inside_rel = PurePosixPath(*(inside if src.is_file() else inside + list(f.relative_to(src).parts)))
+            dest = self._free_name(target_root / inside_rel)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            _replace(f, dest)
+            moved.append(dest.relative_to(target_root.parent).as_posix())
+        _remove_tree(src, strict=False) if src.is_dir() else None
+        self._prune_group_quarantine(group, sender)
+        return moved
+
+    def reject_group_upload(self, rel: str) -> None:
+        """Throws away what a member sent: nothing reaches the group's folder."""
+        rel = clean_rel(rel)
+        if not is_quarantine(AREA_GROUPS, rel):
+            raise AppError("This upload is not waiting for approval.", 409)
+        parts = rel[len(PENDING) + 1:].split("/")
+        if len(parts) < 2:
+            raise AppError("Invalid path.")
+        path = self.pending_root(AREA_GROUPS) / "/".join(parts)
+        if not path.exists():
+            raise AppError("Resource not found.", 404)
+        if path.is_dir():
+            _remove_tree(path, strict=True)
+        else:
+            path.unlink()
+        self._prune_group_quarantine(parts[0], parts[1])
+
+    def _prune_group_quarantine(self, group: str, sender: str) -> None:
+        """Removes the folders left empty, so a group with nothing waiting looks empty."""
+        root = self.pending_root(AREA_GROUPS)
+        for folder in (root / group / sender, root / group):
+            try:
+                if folder.is_dir() and not any(folder.iterdir()):
+                    folder.rmdir()
+            except OSError:
+                return
 
     # ---- labels of approved photos ----------------------------------------
     def save_labels(self, area: str, media_rel: str, text: str, classes: Optional[str] = None) -> str:
@@ -194,15 +305,20 @@ class Storage:
         if not path.is_dir():
             raise AppError("Folder not found.", 404)
         entries = []
+        # Inside the waiting folder of a group, resolve() has already said who may be there: what is below is theirs.
+        inside_group_quarantine = area == AREA_GROUPS and is_quarantine(area, rel)
         for p in sorted(path.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower())):
             if p.name.startswith(TMP) or p.is_symlink():
                 continue
             child = f"{rel}/{p.name}" if rel else p.name
-            if not admin and is_quarantine(area, child):
+            if not admin and is_quarantine(area, child) and not inside_group_quarantine:
                 continue
             st = p.stat()
             entries.append({"name": p.name, "type": "dir" if p.is_dir() else "file",
                             "size": 0 if p.is_dir() else st.st_size, "mtime": st.st_mtime})
+        if area == AREA_GROUPS and not rel and not admin:        # only the groups this user belongs to
+            allowed = set(self.groups_of(owner))
+            entries = [e for e in entries if e["name"] in allowed]
         if admin and not rel and area in QUARANTINE_AREAS and self.pending_root(area).is_dir() and any(self.pending_root(area).iterdir()):
             entries.insert(0, {"name": PENDING, "type": "dir", "size": 0, "mtime": 0})    # the waiting uploads
         return {"area": area, "path": rel, "entries": entries}
@@ -241,9 +357,13 @@ class Storage:
         elif area == "datasets" and not admin and "/" not in rel:
             raise AppError("A dataset goes in a folder with images, labels and data.yaml, "
                            "for example {example}.", 422, example=DATASET_EXAMPLE)
-        if area in AREAS_MEDIA or (area in QUARANTINE_AREAS and not admin):
+        if area == AREA_GROUPS and not admin:
+            group, _, rest = rel.partition("/")
+            if group not in set(self.group_admin_of(username)) and not self.group_free_upload(group):
+                rel = f"{PENDING}/{group}/{username}/{rest}"          # a member sends, an administrator approves
+        elif area in AREAS_MEDIA or (area in QUARANTINE_AREAS and not admin):
             rel = f"{PENDING}/{username}/{rel}"                      # waits until an administrator approves
-        path, rel = self.resolve(area, rel, True if area != AREA_MINE else False, username)
+        path, rel = self.resolve(area, rel, self._checked(area, True), username)
         if area == AREA_MINE:
             old = path.stat().st_size if path.is_file() else 0
             if self.usage(username) - old + size > quota_mb * (1 << 20):
@@ -264,7 +384,7 @@ class Storage:
             if not any(head.startswith(m) for m in _MAGIC[ext]):
                 raise AppError("The content does not match the declared image type.", 415)
         with _lock:
-            if dest.exists() and not (admin or area == AREA_MINE):
+            if dest.exists() and not (admin or area in (AREA_MINE, AREA_GROUPS)):
                 raise AppError("A file with this name already exists (you cannot overwrite it).", 409)
             if dest.is_dir():
                 raise AppError("A folder with this name already exists.", 409)
@@ -284,8 +404,17 @@ class Storage:
         return rel
 
     # ---- editing ----------------------------------------------------------
-    def delete(self, area: str, rel: str, owner: str = "") -> None:
-        path, rel = self.resolve(area, rel, True, owner)
+    def delete_group_folder(self, group: str) -> None:
+        """Throws away the folder of a group and everything waiting in it. Only used when the group is deleted."""
+        group = clean_rel(group)
+        if not group or "/" in group:
+            raise AppError("Invalid path.")
+        for path in (self.base(AREA_GROUPS, "") / group, self.pending_root(AREA_GROUPS) / group):
+            if path.is_dir():
+                _remove_tree(path, strict=False)
+
+    def delete(self, area: str, rel: str, owner: str = "", admin: bool = True) -> None:
+        path, rel = self.resolve(area, rel, self._checked(area, admin), owner)
         if not rel:
             raise AppError("The root of an area cannot be deleted.")
         if area in QUARANTINE_AREAS and rel == PENDING:
@@ -300,9 +429,9 @@ class Storage:
                 path.with_suffix(".json").unlink(missing_ok=True)       # i metadati seguono il modello
             self._prune_quarantine(area, path.parent)
 
-    def move(self, area: str, src: str, dst: str, owner: str = "") -> str:
-        s, src = self.resolve(area, src, True, owner)
-        d, dst = self.resolve(area, dst, True, owner)
+    def move(self, area: str, src: str, dst: str, owner: str = "", admin: bool = True) -> str:
+        s, src = self.resolve(area, src, self._checked(area, admin), owner)
+        d, dst = self.resolve(area, dst, self._checked(area, admin), owner)
         if not src or not dst:
             raise AppError("Missing paths.")
         if not s.exists():
@@ -362,9 +491,11 @@ class Storage:
         _remove_tree(src, strict=False)                 # the work is already done: a locked leftover must not undo it
         self._prune_quarantine(area, src.parent)
 
-    def approve_media(self, username: str, species: str, kind: str, day: date) -> Tuple[str, int]:
-        """Approves an upload: moves its files, numbered, to library/<area>/<species>/<species>_<user>_<day> and
-        removes what is left in the pending folder. Returns (folder name, number of media files)."""
+    def approve_media(self, username: str, species: str, kind: str, day: date,
+                      author: str = "") -> Tuple[str, int]:
+        """Approves an upload: moves its files, numbered, to library/<area>/<species>/<species>_<author>_<day> and
+        removes what is left in the pending folder. `author` is the work group when the upload was published on
+        behalf of one, otherwise the user. Returns (folder name, number of media files)."""
         area = KIND_AREA[kind]
         src = self.pending_media_dir(username, species, kind)
         errors = validate_media_dir(src, kind)              # after the upload the user may have changed the files
@@ -373,7 +504,7 @@ class Storage:
         parent = self.library(area) / species
         with _lock:
             parent.mkdir(exist_ok=True)
-            base = f"{species}_{username}_{day.isoformat()}"
+            base = f"{species}_{author or username}_{day.isoformat()}"
             final, n = parent / base, 2
             while final.exists():
                 final = parent / f"{base}_{n}"
