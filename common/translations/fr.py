@@ -616,7 +616,6 @@ STRINGS = {
     "Waiting for a computer that can do it...": "En attente d'un ordinateur capable de le faire...",
     "What do you want to do with the improved file?": "Que veux-tu faire du fichier amélioré ?",
     "Working on it...": "En cours...",
-    "Your files on this computer, by kind, as on the server. The folders you add here are the ones the analysis offers; the files keep the names they have.": "Tes fichiers sur cet ordinateur, par type, comme sur le serveur. Les dossiers que tu ajoutes ici sont ceux que l'analyse propose ; les fichiers gardent leurs noms.",
     "folder not found": "dossier introuvable",
     "improved": "améliorée",
     "labels": "étiquettes",
@@ -649,6 +648,16 @@ STRINGS = {
     "Turns the chosen box into a polygon that can be shaped point by point.": "Transforme la boîte choisie en polygone que l'on peut modeler point par point.",
     "White": "Blanc",
     "Yellow": "Jaune",
+    "A label covering the whole picture was added. Do you want to draw it properly now?": "Une étiquette couvrant toute l'image a été ajoutée. Veux-tu la dessiner correctement maintenant ?",
+    "File under a species...": "Classer dans une espèce...",
+    "No file yet: add the folders in 'Datasets'.": "Aucun fichier : ajoute les dossiers dans « Datasets ».",
+    "Photos and videos are shown by species, taken from their labels: a file with two animals is under both. 'Datasets' holds the folders as you added them - from there you file a file under a species, and those folders are the ones the analysis offers.": "Les photos et les vidéos sont montrées par espèce, tirée de leurs étiquettes : un fichier avec deux animaux est sous les deux. « Datasets » garde les dossiers tels que tu les as ajoutés — de là tu classes un fichier dans une espèce, et ce sont ces dossiers que l'analyse propose.",
+    "Species of these {n} files (a file can be under more than one):": "Espèce de ces {n} fichiers (un fichier peut être sous plusieurs) :",
+    "Training datasets": "Datasets d'entraînement",
+    "What do these files hold?": "Que contiennent ces fichiers ?",
+    "Without a species": "Sans espèce",
+    "{n} files filed under {name}": "{n} fichiers classés dans {name}",
+    "{n} species, {m} files": "{n} espèces, {m} fichiers",
 }
 
 MANUAL = """\

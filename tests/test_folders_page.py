@@ -87,31 +87,32 @@ class ChoiceTest(unittest.TestCase):
 
 
 class LocalFoldersTest(unittest.TestCase):
-    """The local section has the same shape as the server one: a tab per kind and the tree of that kind below."""
+    """The local section: the media by species, and the folders the user added under 'Datasets' (always last)."""
 
     def widget(self, tmp: Path):
         session = offline_session(tmp)
         return folders_local.LocalFoldersWidget(session), session
 
-    def test_a_tab_per_kind_in_the_same_order_as_the_server(self):
+    def test_datasets_is_always_the_last_tab(self):
         with tempfile.TemporaryDirectory() as tmp:
             w, _ = self.widget(Path(tmp))
             names = [w.tabs.tabText(i) for i in range(w.tabs.count())]
-            self.assertEqual(names, ["Photos", "Stereo photos", "Videos", "Stereo videos", "Datasets",
-                                     "YOLO models"])
-            self.assertEqual(names, [label for label, _kind, _folder in folders_local.tabs()])
+            self.assertEqual(names, ["Photos", "Stereo photos", "Videos", "Stereo videos", "YOLO models",
+                                     "Datasets"])
+            self.assertEqual(names, [label for label, _mode, _kind, _folder in folders_local.tabs()])
 
-    def test_the_media_tabs_are_the_kinds_of_the_library(self):
+    def test_the_media_tabs_show_the_species_and_the_last_one_the_added_folders(self):
         from common.media_library import KINDS
         from common.paths import MODELS_DIR, TRAINING_DIR
         with tempfile.TemporaryDirectory() as tmp:
             w, _ = self.widget(Path(tmp))
-            kinds = [kind for _label, kind, _folder in folders_local.tabs()]
-            self.assertEqual(kinds[:4], list(KINDS))                    # the folders the analysis offers
-            self.assertEqual([f for _l, _k, f in folders_local.tabs()][4:], [TRAINING_DIR, MODELS_DIR])
-            self.assertEqual(w.kind, KINDS[0])
+            kinds = [kind for _label, _mode, kind, _folder in folders_local.tabs()]
+            self.assertEqual(kinds[:4], list(KINDS))
+            self.assertEqual((w.mode, w.kind), (folders_local.BY_SPECIES, KINDS[0]))
+            w.tabs.setCurrentIndex(4)
+            self.assertEqual((w.mode, w.app_folder()), (folders_local.PLAIN_FOLDER, MODELS_DIR))
             w.tabs.setCurrentIndex(5)
-            self.assertEqual((w.kind, w.app_folder()), ("", MODELS_DIR))
+            self.assertEqual((w.mode, w.app_folder()), (folders_local.ADDED_FOLDERS, TRAINING_DIR))
             self.assertTrue(MODELS_DIR.is_dir())                        # shown empty, never missing
 
     def test_a_folder_added_here_is_the_one_the_analysis_offers(self):
@@ -122,8 +123,11 @@ class LocalFoldersTest(unittest.TestCase):
             folder.mkdir()
             src = w.library.add_source("photo", folder)
             try:
-                w.refresh()
-                names = [w.tree.topLevelItem(i).text(0) for i in range(w.tree.topLevelItemCount())]
+                w.tabs.setCurrentIndex(5)                               # the folders, as they were added
+                names = []
+                for i in range(w.tree.topLevelItemCount()):
+                    group = w.tree.topLevelItem(i)
+                    names += [group.child(c).text(0) for c in range(group.childCount())]
                 self.assertIn("dive-2026", names)
                 self.assertIn("dive-2026", [s.name for s in default_library().sources("photo")])
             finally:
@@ -146,12 +150,12 @@ class LocalFoldersTest(unittest.TestCase):
             w, _ = self.widget(Path(tmp))
             (MODELS_DIR / "example.json").write_text("{}")
             try:
-                w.tabs.setCurrentIndex(5)
+                w.tabs.setCurrentIndex(4)                               # the models of the application
                 names = [w.tree.topLevelItem(i).text(0) for i in range(w.tree.topLevelItemCount())]
                 self.assertIn("example.json", names)
                 w.tabs.setCurrentIndex(0)
                 names = [w.tree.topLevelItem(i).text(0) for i in range(w.tree.topLevelItemCount())]
-                self.assertNotIn("example.json", names)                 # the other kind, other files
+                self.assertNotIn("example.json", names)                 # the species, not the models
             finally:
                 (MODELS_DIR / "example.json").unlink()
 
@@ -159,7 +163,7 @@ class LocalFoldersTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             w, _ = self.widget(Path(tmp))
             self.assertIsNone(w.tree.currentItem())                     # nothing selected: the kind itself
-            w.tabs.setCurrentIndex(5)                                   # a folder of the application
+            w.tabs.setCurrentIndex(4)                                   # a folder of the application
             self.assertIsNone(w.tree.currentItem())
             self.assertFalse(w.btn_delete.isEnabled())
             self.assertFalse(w.btn_rename.isEnabled())

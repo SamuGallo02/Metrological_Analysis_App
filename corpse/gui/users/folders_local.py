@@ -1,13 +1,16 @@
 """The folders of this computer the application works with.
 
-They are the same kinds the server has - photos, stereo photos, videos, stereo videos, datasets and models - so
-what is here and what is on the server read the same way. The media folders are the very ones the analysis
-offers: a folder added here (with its files, and the labels that may already sit next to them - no naming
-convention is asked for) can be chosen straight away in the analysis pages, and it is never copied, only pointed
-at. Datasets and models live in the application's own folders.
+Two ways of looking at the same files, and nothing is ever copied from one to the other:
 
-Everything is done on the computer itself: open, add, rename, move, delete, look at the labels and correct them,
-ask the server for the improved image, and send a file or a whole folder to the server.
+  Photos, stereo photos, videos, stereo videos   the animals, by species. The species of a file are the classes
+                                                 of its labels, so a photo with two animals is under both.
+  Datasets                                       the folders the user added, exactly as they were added (plus
+                                                 the training datasets of the application). From here a file is
+                                                 filed under a species with a label of its own.
+  YOLO models                                    the models of the application.
+
+The folders registered in "Datasets" are the ones the analysis offers, so a folder added here can be analysed
+straight away; the files keep the names they have and no naming convention is asked for.
 """
 from __future__ import annotations
 
@@ -32,10 +35,11 @@ from common.label_store import find_labels
 from common.media_library import (KIND_PHOTO, KIND_PHOTO_STEREO, KIND_VIDEO, KIND_VIDEO_STEREO, LEGACY_DIRS,
                                   Source, default_registry, media_suffixes)
 from common.params import AREA_GROUPS, AREA_MINE, IMAGE_SUFFIXES, STEREO_SIDES, VIDEO_SUFFIXES
+from common.species import UNNAMED, assign_many, by_species, forget as forget_species, known_species
 from common.paths import MODELS_DIR, TRAINING_DIR
 from common.ui.label_editor import edit_local_labels
 from common.ui.label_overlay import with_labels
-from common.ui.label_style import LabelColorButton, labels_visible, set_labels_visible
+from common.ui.label_style import labels_visible, set_labels_visible
 from common.ui.media_viewer import view_media
 from common.ui.qt_utils import run_async
 from common.ui.thumbnails import ThumbnailCache, can_preview
@@ -46,17 +50,24 @@ from corpse.functions.users.session import Session
 from .enhance_dialog import improve_with_server
 
 SOURCE_ROLE = Qt.ItemDataRole.UserRole + 1                 # id of the registered folder, on its own row
+SPECIES_ROLE = Qt.ItemDataRole.UserRole + 2                # species of a row, in the views by species
+BY_SPECIES, PLAIN_FOLDER, ADDED_FOLDERS = "species", "folder", "sources"
 
 
-def tabs() -> List[Tuple[str, str, Optional[Path]]]:
-    """(name, kind of the library, folder of the application) of each tab, in the order of the server.
-    The media kinds come from the library (any folder of the computer); the last two are folders of the app."""
-    return [(tr("Photos"), KIND_PHOTO, None),
-            (tr("Stereo photos"), KIND_PHOTO_STEREO, None),
-            (tr("Videos"), KIND_VIDEO, None),
-            (tr("Stereo videos"), KIND_VIDEO_STEREO, None),
-            (tr("Datasets"), "", TRAINING_DIR),
-            (tr("YOLO models"), "", MODELS_DIR)]
+def tabs() -> List[Tuple[str, str, str, Optional[Path]]]:
+    """(name, what the tab shows, kind of the library, folder of the application).
+    The media are shown by species; "Datasets" - the folders as the user added them - is always the last one."""
+    return [(tr("Photos"), BY_SPECIES, KIND_PHOTO, None),
+            (tr("Stereo photos"), BY_SPECIES, KIND_PHOTO_STEREO, None),
+            (tr("Videos"), BY_SPECIES, KIND_VIDEO, None),
+            (tr("Stereo videos"), BY_SPECIES, KIND_VIDEO_STEREO, None),
+            (tr("YOLO models"), PLAIN_FOLDER, "", MODELS_DIR),
+            (tr("Datasets"), ADDED_FOLDERS, "", TRAINING_DIR)]
+
+
+def kind_label(kind: str) -> str:
+    return {KIND_PHOTO: tr("Photos"), KIND_PHOTO_STEREO: tr("Stereo photos"),
+            KIND_VIDEO: tr("Videos"), KIND_VIDEO_STEREO: tr("Stereo videos")}.get(kind, kind)
 
 
 def is_media(path: Path) -> bool:
@@ -127,15 +138,17 @@ class LocalFoldersWidget(QWidget):
                                      decorate=self._decorate, variant="labels" if labels_visible() else "")
         self.thumbs.ready.connect(self._thumb_ready)
         self._waiting: Dict[str, List[QTreeWidgetItem]] = {}
+        self._species_files: Dict[str, List[Path]] = {}     # the files of each species, filled on refresh
         lay = QVBoxLayout(self)
         lay.addWidget(QLabel(f"<h3>{tr('Local folders')}</h3>"))
-        hint = QLabel(tr("Your files on this computer, by kind, as on the server. The folders you add here are the "
-                         "ones the analysis offers; the files keep the names they have."))
+        hint = QLabel(tr("Photos and videos are shown by species, taken from their labels: a file with two animals "
+                         "is under both. 'Datasets' holds the folders as you added them - from there you file a "
+                         "file under a species, and those folders are the ones the analysis offers."))
         hint.setWordWrap(True)
         lay.addWidget(hint)
 
         self.tabs = QTabBar()
-        for label, _kind, _folder in tabs():
+        for label, _mode, _kind, _folder in tabs():
             self.tabs.addTab(label)
         self.tabs.currentChanged.connect(lambda *_: self.refresh())
         lay.addWidget(self.tabs)
@@ -147,9 +160,11 @@ class LocalFoldersWidget(QWidget):
         self.tree.setHeaderLabels([tr("Name"), tr("Size"), tr("Changed"), tr("Labels")])
         self.tree.setIconSize(self.thumbs.size_hint())
         self.tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.tree.setSelectionMode(QTreeWidget.SelectionMode.ExtendedSelection)   # several files at a time
         self.tree.itemExpanded.connect(self._expanded)
         self.tree.itemDoubleClicked.connect(lambda *_: self._open())
         self.tree.currentItemChanged.connect(lambda *_: self._update_buttons())
+        self.tree.itemSelectionChanged.connect(self._update_buttons)
         lay.addWidget(self.tree, 1)
 
         folders = QHBoxLayout()
@@ -170,10 +185,8 @@ class LocalFoldersWidget(QWidget):
         self.labels_on.setToolTip(tr("Show the labels over the photos and videos, previews included."))
         self.labels_on.toggled.connect(self._labels_toggled)
         files.addWidget(self.labels_on)
-        self.colour = LabelColorButton()
-        self.colour.changed.connect(self.refresh)
-        files.addWidget(self.colour)
         self.btn_labels = self._button(files, tr("Edit labels..."), self._edit_labels)
+        self.btn_species = self._button(files, tr("File under a species..."), self._assign_species)
         self.btn_improve = self._button(files, tr("Improve with the server..."), self._improve)
         self.btn_send = self._button(files, tr("Send to the server..."), self._send)
         files.addStretch(1)
@@ -201,42 +214,80 @@ class LocalFoldersWidget(QWidget):
         return b
 
     # ---- what the open tab is ------------------------------------------
-    def tab(self) -> Tuple[str, str, Optional[Path]]:
+    def tab(self) -> Tuple[str, str, str, Optional[Path]]:
         return tabs()[max(0, self.tabs.currentIndex())]
 
     @property
-    def kind(self) -> str:
-        """The kind of the library shown, or "" on the tabs of the application's own folders."""
+    def mode(self) -> str:
+        """What this tab shows: the species, a folder of the application, or the folders the user added."""
         return self.tab()[1]
 
-    def app_folder(self) -> Optional[Path]:
+    @property
+    def kind(self) -> str:
+        """The kind of the library shown, or "" where the tab is not about one kind."""
         return self.tab()[2]
 
-    def sources(self) -> List[Source]:
-        return self.library.sources(self.kind) if self.kind else []
+    def app_folder(self) -> Optional[Path]:
+        return self.tab()[3]
+
+    def sources(self, kind: str = "") -> List[Source]:
+        return self.library.sources(kind or self.kind) if (kind or self.kind) else []
+
+    def files_of_kind(self, kind: str) -> List[Path]:
+        """Every file of every folder registered for a kind, read from disk now."""
+        return [f for src in self.sources(kind) if src.exists for f in self.library.files(src)]
 
     # ---- the tree ------------------------------------------------------
     def refresh(self) -> None:
-        """Shows the registered folders of the kind, or the contents of the application's folder."""
+        """Fills the tree the way this tab asks for: by species, one folder, or the folders the user added."""
         self.tree.clear()
         self._waiting.clear()
+        self._species_files = {}
         self.tree.setColumnHidden(3, not self.labels_on.isChecked())
+        {BY_SPECIES: self._fill_species, PLAIN_FOLDER: self._fill_folder,
+         ADDED_FOLDERS: self._fill_sources}[self.mode]()
+        self._update_buttons()
+
+    def _fill_species(self) -> None:
+        """The animals of this kind, grouped by the species their labels carry."""
+        files = self.files_of_kind(self.kind)
+        groups = by_species(files)
+        self._species_files = groups
+        names = sorted((n for n in groups if n), key=str.lower) + ([UNNAMED] if UNNAMED in groups else [])
+        for name in names:
+            node = QTreeWidgetItem([name or tr("Without a species"),
+                                    tr("{n} files", n=len(groups[name])), "", ""])
+            node.setData(0, SPECIES_ROLE, name)
+            node.setChildIndicatorPolicy(QTreeWidgetItem.ChildIndicatorPolicy.ShowIndicator)
+            self.tree.addTopLevelItem(node)
+        self.crumb.setText(tr("{n} species, {m} files", n=len([n for n in names if n]), m=len(files)))
+        self.status.setText(tr("{n} species, {m} files", n=len([n for n in names if n]), m=len(files)) if files
+                            else tr("No file yet: add the folders in 'Datasets'."))
+
+    def _fill_folder(self) -> None:
+        """A folder of the application (the models), with what is inside it."""
         folder = self.app_folder()
-        if folder is not None:
-            try:
-                folder.mkdir(parents=True, exist_ok=True)   # a kind never used yet: show it empty, not missing
-            except OSError:
-                pass
-            self.crumb.setText(str(folder))
-            holder = QTreeWidgetItem()
-            holder.setData(0, Qt.ItemDataRole.UserRole, str(folder))
-            self._expanded(holder)
-            while holder.childCount():
-                self.tree.addTopLevelItem(holder.takeChild(0))
-            self.status.setText(tr("{n} files", n=self.tree.topLevelItemCount()))
-        else:
-            sources = self.sources()
-            self.crumb.setText(tr("{n} folders in the list", n=len(sources)))
+        try:
+            folder.mkdir(parents=True, exist_ok=True)       # a kind never used yet: show it empty, not missing
+        except OSError:
+            pass
+        self.crumb.setText(str(folder))
+        holder = QTreeWidgetItem()
+        holder.setData(0, Qt.ItemDataRole.UserRole, str(folder))
+        self._expanded(holder)
+        while holder.childCount():
+            self.tree.addTopLevelItem(holder.takeChild(0))
+        self.status.setText(tr("{n} files", n=self.tree.topLevelItemCount()))
+
+    def _fill_sources(self) -> None:
+        """The folders the user added, as they were added, by kind - and the datasets of the application."""
+        total = 0
+        for kind in (KIND_PHOTO, KIND_PHOTO_STEREO, KIND_VIDEO, KIND_VIDEO_STEREO):
+            sources = self.sources(kind)
+            total += len(sources)
+            group = QTreeWidgetItem([kind_label(kind), tr("{n} folders in the list", n=len(sources)), "", ""])
+            group.setData(0, Qt.ItemDataRole.UserRole + 3, kind)
+            self.tree.addTopLevelItem(group)
             for src in sources:
                 item = QTreeWidgetItem([src.name, "", "" if src.exists else tr("folder not found"), ""])
                 item.setData(0, Qt.ItemDataRole.UserRole, str(src.path))
@@ -244,14 +295,27 @@ class LocalFoldersWidget(QWidget):
                 item.setToolTip(0, str(src.path))
                 if src.exists:
                     item.setChildIndicatorPolicy(QTreeWidgetItem.ChildIndicatorPolicy.ShowIndicator)
-                self.tree.addTopLevelItem(item)
-            self.status.setText(tr("{n} folders in the list", n=len(sources)) if sources
-                                else tr("No folder yet: use 'Add folder...'."))
-        self._update_buttons()
+                group.addChild(item)
+            group.setExpanded(True)
+        datasets = self.app_folder()
+        try:
+            datasets.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            pass
+        built = QTreeWidgetItem([tr("Training datasets"), "", "", ""])
+        built.setData(0, Qt.ItemDataRole.UserRole, str(datasets))
+        built.setChildIndicatorPolicy(QTreeWidgetItem.ChildIndicatorPolicy.ShowIndicator)
+        self.tree.addTopLevelItem(built)
+        self.crumb.setText(str(datasets.parent))
+        self.status.setText(tr("{n} folders in the list", n=total) if total
+                            else tr("No folder yet: use 'Add folder...'."))
 
     def _expanded(self, item: QTreeWidgetItem) -> None:
         if item.childCount():
             return
+        species = item.data(0, SPECIES_ROLE)
+        if species is not None:
+            return self._fill_species_files(item, species)
         folder = Path(self.path_of(item) or "")
         try:
             children = sorted(folder.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower()))
@@ -276,6 +340,24 @@ class LocalFoldersWidget(QWidget):
                     self._waiting.setdefault(str(p), []).append(child)
             item.addChild(child)
 
+    def _fill_species_files(self, node: QTreeWidgetItem, species: str) -> None:
+        """The files filed under a species: they stay where they are, this is only a way of looking at them."""
+        for f in sorted(self._species_files.get(species, []), key=lambda p: str(p).lower()):
+            try:
+                st = f.stat()
+            except OSError:
+                continue
+            child = QTreeWidgetItem([f.name, fmt_size(st.st_size), fmt_time(st.st_mtime), self._label_mark(f)])
+            child.setData(0, Qt.ItemDataRole.UserRole, str(f))
+            child.setToolTip(0, str(f))                      # where the file really is
+            if can_preview(f.name):
+                icon = self.thumbs.icon(str(f))
+                if icon is not None:
+                    child.setIcon(0, icon)
+                else:
+                    self._waiting.setdefault(str(f), []).append(child)
+            node.addChild(child)
+
     def _label_mark(self, path: Path) -> str:
         """What the "Labels" column says about a file: whether it has labels, and whether it has been improved."""
         if not self.labels_on.isChecked() or path.is_dir() or not is_media(path):
@@ -299,9 +381,29 @@ class LocalFoldersWidget(QWidget):
         return item.data(0, Qt.ItemDataRole.UserRole) if item is not None else ""
 
     def current(self) -> Optional[Path]:
-        """What is selected, or the application's folder when nothing is on a tab that has one."""
+        """What is selected, or the folder of the tab when nothing is and the tab has one."""
         path = self.path_of(self.tree.currentItem())
-        return Path(path) if path else self.app_folder()
+        if path:
+            return Path(path)
+        return self.app_folder() if self.mode == PLAIN_FOLDER else None
+
+    def selected_files(self) -> List[Path]:
+        """Every media file chosen in the tree (a species node brings all of its files)."""
+        out: List[Path] = []
+        for item in self.tree.selectedItems():
+            species = item.data(0, SPECIES_ROLE)
+            if species is not None:
+                out.extend(self._species_files.get(species, []))
+                continue
+            path = self.path_of(item)
+            if path and Path(path).is_file() and is_media(Path(path)):
+                out.append(Path(path))
+        seen, unique = set(), []
+        for f in out:                                        # the same file can be under two species
+            if str(f) not in seen:
+                seen.add(str(f))
+                unique.append(f)
+        return unique
 
     def current_source(self) -> Optional[int]:
         """The id of the registered folder, when a registered folder itself is selected."""
@@ -320,17 +422,20 @@ class LocalFoldersWidget(QWidget):
     def _update_buttons(self) -> None:
         path = self.current()
         chosen = path is not None
+        folders_tab = self.mode in (ADDED_FOLDERS, PLAIN_FOLDER)
         source = self.current_source()
         media = chosen and path.is_file() and is_media(path)
-        self.btn_add_folder.setEnabled(bool(self.kind))
-        self.btn_add_files.setEnabled(chosen and path.is_dir())
+        self.btn_add_folder.setEnabled(self.mode == ADDED_FOLDERS)
+        self.btn_add_files.setEnabled(folders_tab and chosen and path.is_dir())
         self.btn_open.setEnabled(chosen)
-        self.btn_new.setEnabled(chosen and path.is_dir())
+        self.btn_new.setEnabled(folders_tab and chosen and path.is_dir())
         for b in (self.btn_rename, self.btn_move, self.btn_delete):
-            b.setEnabled(chosen and not self._is_root(path) and (source is None or self._in_app_folders(path)))
+            b.setEnabled(folders_tab and chosen and not self._is_root(path)
+                         and (source is None or self._in_app_folders(path)))
         self.btn_forget.setEnabled(source is not None and not self._in_app_folders(path))
         self.btn_labels.setEnabled(media)
         self.btn_labels.setText(tr("Edit labels...") if media and find_labels(path) else tr("Create labels..."))
+        self.btn_species.setEnabled(bool(self.selected_files()))
         self.btn_improve.setEnabled(media and server_ready(self.session))
         self.btn_send.setEnabled(chosen and server_ready(self.session))
 
@@ -344,6 +449,8 @@ class LocalFoldersWidget(QWidget):
             return
         if path.is_file() and is_media(path):
             view_media(self, path, self.labels_on.isChecked(), self._improve_file)
+            forget_species(path)                          # the viewer can open the editor: read them again
+            self.thumbs.forget(str(path))
             return self.refresh()
         try:
             open_in_system(path)
@@ -351,22 +458,36 @@ class LocalFoldersWidget(QWidget):
             self._fail(e)
 
     # ---- the folders of the library --------------------------------------
+    def chosen_kind(self) -> str:
+        """The kind a new folder goes under: the one of the group that is selected, or asked for."""
+        item = self.tree.currentItem()
+        while item is not None:
+            kind = item.data(0, Qt.ItemDataRole.UserRole + 3)
+            if kind:
+                return kind
+            item = item.parent()
+        kinds = [KIND_PHOTO, KIND_PHOTO_STEREO, KIND_VIDEO, KIND_VIDEO_STEREO]
+        label, ok = QInputDialog.getItem(self, tr("Add folder..."), tr("What do these files hold?"),
+                                         [kind_label(k) for k in kinds], 0, False)
+        return kinds[[kind_label(k) for k in kinds].index(label)] if ok else ""
+
     def _add_folder(self) -> None:
         """Registers a folder of the computer where it is: nothing is copied, and the analysis sees it at once."""
-        if not self.kind:
+        kind = self.kind or self.chosen_kind()
+        if not kind:
             return
-        start = self.sources()
+        start = self.sources(kind)
         initial = str(start[-1].path.parent) if start else str(Path.home())
         chosen = QFileDialog.getExistingDirectory(self, tr("Add folder..."), initial)
         if not chosen:
             return
         folder = Path(chosen)
-        warning = stereo_warning(self.kind, folder)
+        warning = stereo_warning(kind, folder)
         if warning and QMessageBox.question(self, tr("Add folder..."), warning + "\n\n" + tr("Add it anyway?")) \
                 != QMessageBox.StandardButton.Yes:
             return
         try:
-            self.library.add_source(self.kind, folder)
+            self.library.add_source(kind, folder)
         except (OSError, ValueError) as e:
             return self._fail(e)
         self.refresh()
@@ -476,12 +597,42 @@ class LocalFoldersWidget(QWidget):
             self.library.remove_source(source.id)
         self.refresh()
 
+    def _assign_species(self) -> None:
+        """Files one or more chosen files under a species: a label of that species is added to each of them, so
+        they appear in its view. The files are not moved, and a file can be under several species at once."""
+        files = self.selected_files()
+        if not files:
+            return
+        here = known_species(self.files_of_kind(self.kind) if self.kind
+                             else [f for k in (KIND_PHOTO, KIND_PHOTO_STEREO, KIND_VIDEO, KIND_VIDEO_STEREO)
+                                   for f in self.files_of_kind(k)])
+        name, ok = QInputDialog.getItem(self, tr("File under a species..."),
+                                        tr("Species of these {n} files (a file can be under more than one):",
+                                           n=len(files)), here, 0, True)
+        name = (name or "").strip()
+        if not ok or not name:
+            return
+        try:
+            changed = assign_many(files, name)
+        except OSError as e:
+            return self._fail(e)
+        self.status.setText(tr("{n} files filed under {name}", n=changed, name=name))
+        if changed == 1 and len(files) == 1 and QMessageBox.question(
+                self, tr("File under a species..."),
+                tr("A label covering the whole picture was added. Do you want to draw it properly now?")) \
+                == QMessageBox.StandardButton.Yes:
+            edit_local_labels(self, files[0])
+            forget_species(files[0])
+        self.refresh()
+
     # ---- the labels and the improvement ----------------------------------
     def _edit_labels(self) -> None:
         path = self.current()
         if path is None or not path.is_file():
             return
         edit_local_labels(self, path)
+        forget_species(path)                              # its species are read again: they may have changed
+        self.thumbs.forget(str(path))
         self.refresh()
 
     def _improve(self) -> None:

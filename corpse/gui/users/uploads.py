@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (QComboBox, QFileDialog, QHBoxLayout, QInputDialog
                                QVBoxLayout, QWidget)
 
 from common.i18n import tr, tr_error
+from common.species import common_species
 from common.params import AREA_STEREO, AREA_STEREO_VIDEOS, AREA_VIDEOS, IMAGE_SUFFIXES, SPECIES_EXAMPLE, SPECIES_RE, VIDEO_SUFFIXES
 from common.ui.qt_utils import run_async
 from common.ui.server_state import server_note, server_ready
@@ -89,9 +90,10 @@ class UploadsWidget(QWidget):
             return
         run_async(self, submit, lambda _r: self.status.setText(tr("Sent for review: {name}.", name=name)), self._fail)
 
-    def _ask_species(self) -> Optional[str]:
+    def _ask_species(self, suggested: str = "") -> Optional[str]:
+        """The species of what is being sent. The labels of the files already say it, when they agree."""
         text = tr("Enter the scientific name as 'Genus species', for example {example}.", example=SPECIES_EXAMPLE)
-        name, ok = QInputDialog.getText(self, tr("Scientific name"), text)
+        name, ok = QInputDialog.getText(self, tr("Scientific name"), text, text=suggested)
         name = name.strip()
         if not ok or not name:
             return None
@@ -111,7 +113,7 @@ class UploadsWidget(QWidget):
         chosen = [Path(f) for f in files]
         parent = chosen[0].parent.name
         species = parent if _is_species(parent) and all(c.parent == chosen[0].parent for c in chosen) \
-            else self._ask_species()
+            else self._ask_species(common_species(chosen))      # the labels of the files know it already
         if not species:
             return
         plan = plan_media(chosen, species)
@@ -132,7 +134,8 @@ class UploadsWidget(QWidget):
         if not has_stereo_folders(root):
             QMessageBox.warning(self, tr("Error"), tr("The folder must contain an lx and an rx subfolder."))
             return
-        species = root.name if _is_species(root.name) else self._ask_species()
+        species = root.name if _is_species(root.name) else \
+            self._ask_species(common_species(sorted(p for p in root.rglob("*") if p.is_file())))
         if not species:
             return
         try:

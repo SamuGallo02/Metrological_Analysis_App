@@ -616,7 +616,6 @@ STRINGS = {
     "Waiting for a computer that can do it...": "正在等待可以处理的计算机…",
     "What do you want to do with the improved file?": "改进后的文件要如何处理？",
     "Working on it...": "正在处理…",
-    "Your files on this computer, by kind, as on the server. The folders you add here are the ones the analysis offers; the files keep the names they have.": "本机上的文件按类型排列，与服务器一致。你在这里添加的文件夹就是分析页面可选的文件夹；文件保留原有名称。",
     "folder not found": "找不到文件夹",
     "improved": "已改进",
     "labels": "标签",
@@ -649,6 +648,16 @@ STRINGS = {
     "Turns the chosen box into a polygon that can be shaped point by point.": "把所选的框变成可逐点调整的多边形。",
     "White": "白色",
     "Yellow": "黄色",
+    "A label covering the whole picture was added. Do you want to draw it properly now?": "已添加一个覆盖整张图片的标签。现在要把它画准确吗？",
+    "File under a species...": "归入某个物种…",
+    "No file yet: add the folders in 'Datasets'.": "还没有文件：请在“数据集”中添加文件夹。",
+    "Photos and videos are shown by species, taken from their labels: a file with two animals is under both. 'Datasets' holds the folders as you added them - from there you file a file under a species, and those folders are the ones the analysis offers.": "照片和视频按物种显示，物种取自它们的标签：含两种动物的文件会同时出现在两处。“数据集”保留你添加时的文件夹原样——从那里把文件归入某个物种，分析页面提供的也正是这些文件夹。",
+    "Species of these {n} files (a file can be under more than one):": "这 {n} 个文件的物种（一个文件可以属于多个）：",
+    "Training datasets": "训练数据集",
+    "What do these files hold?": "这些文件包含什么？",
+    "Without a species": "未归入物种",
+    "{n} files filed under {name}": "已将 {n} 个文件归入 {name}",
+    "{n} species, {m} files": "{n} 个物种，{m} 个文件",
 }
 
 MANUAL = """\

@@ -621,7 +621,6 @@ STRINGS = {
     "Waiting for a computer that can do it...": "処理できるコンピューターを待っています…",
     "What do you want to do with the improved file?": "改善されたファイルをどうしますか？",
     "Working on it...": "処理中…",
-    "Your files on this computer, by kind, as on the server. The folders you add here are the ones the analysis offers; the files keep the names they have.": "このコンピューター上のファイルを、サーバーと同じ種類別に表示します。ここで追加したフォルダーが解析で選べるフォルダーです。ファイル名はそのままです。",
     "folder not found": "フォルダーが見つかりません",
     "improved": "改善済み",
     "labels": "ラベル",
@@ -654,6 +653,16 @@ STRINGS = {
     "Turns the chosen box into a polygon that can be shaped point by point.": "選んだボックスを、点ごとに形を整えられる多角形に変えます。",
     "White": "白",
     "Yellow": "黄",
+    "A label covering the whole picture was added. Do you want to draw it properly now?": "画像全体を覆うラベルを追加しました。今きちんと描き直しますか？",
+    "File under a species...": "種に振り分ける…",
+    "No file yet: add the folders in 'Datasets'.": "ファイルがありません：「データセット」でフォルダーを追加してください。",
+    "Photos and videos are shown by species, taken from their labels: a file with two animals is under both. 'Datasets' holds the folders as you added them - from there you file a file under a species, and those folders are the ones the analysis offers.": "写真と動画はラベルから取った種ごとに表示されます。2種が写っているファイルは両方に出ます。「データセット」は追加したままのフォルダーを保持します。そこからファイルを種に振り分け、解析で選べるのもそのフォルダーです。",
+    "Species of these {n} files (a file can be under more than one):": "これら {n} 件のファイルの種（1つのファイルが複数に属せます）：",
+    "Training datasets": "学習用データセット",
+    "What do these files hold?": "これらのファイルの中身は？",
+    "Without a species": "種なし",
+    "{n} files filed under {name}": "{n} 件のファイルを {name} に振り分けました",
+    "{n} species, {m} files": "{n} 種、{m} 件のファイル",
 }
 
 MANUAL = """\

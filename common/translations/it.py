@@ -616,7 +616,6 @@ STRINGS = {
     "Waiting for a computer that can do it...": "In attesa di un computer che possa farlo...",
     "What do you want to do with the improved file?": "Cosa vuoi fare con il file migliorato?",
     "Working on it...": "In lavorazione...",
-    "Your files on this computer, by kind, as on the server. The folders you add here are the ones the analysis offers; the files keep the names they have.": "I tuoi file su questo computer, per tipo, come sul server. Le cartelle che aggiungi qui sono quelle che l'analisi propone; i file mantengono i nomi che hanno.",
     "folder not found": "cartella non trovata",
     "improved": "migliorata",
     "labels": "etichette",
@@ -649,6 +648,16 @@ STRINGS = {
     "Turns the chosen box into a polygon that can be shaped point by point.": "Trasforma il box scelto in un poligono modellabile punto per punto.",
     "White": "Bianco",
     "Yellow": "Giallo",
+    "A label covering the whole picture was added. Do you want to draw it properly now?": "È stata aggiunta un'etichetta che copre tutta l'immagine. Vuoi disegnarla per bene adesso?",
+    "File under a species...": "Archivia in una specie...",
+    "No file yet: add the folders in 'Datasets'.": "Nessun file: aggiungi le cartelle in 'Dataset'.",
+    "Photos and videos are shown by species, taken from their labels: a file with two animals is under both. 'Datasets' holds the folders as you added them - from there you file a file under a species, and those folders are the ones the analysis offers.": "Foto e video sono mostrati per specie, presa dai loro label: un file con due animali sta sotto entrambe. 'Dataset' tiene le cartelle come le hai aggiunte: da lì archivi un file in una specie, e sono quelle le cartelle che l'analisi propone.",
+    "Species of these {n} files (a file can be under more than one):": "Specie di questi {n} file (un file può stare in più di una):",
+    "Training datasets": "Dataset di training",
+    "What do these files hold?": "Cosa contengono questi file?",
+    "Without a species": "Senza specie",
+    "{n} files filed under {name}": "{n} file archiviati in {name}",
+    "{n} species, {m} files": "{n} specie, {m} file",
 }
 
 MANUAL = """\
