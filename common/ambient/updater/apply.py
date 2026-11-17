@@ -1,4 +1,7 @@
-"""Repair (only the damaged files) and update (only the changed files) of the installed code."""
+"""Repair (only the damaged files) and update (only the changed files) of the installed code.
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 
 import os

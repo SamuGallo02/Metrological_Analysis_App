@@ -1,4 +1,7 @@
-"""Integrity check of the virtual environment (common/ambient/installer/integrity.py)."""
+"""Integrity check of the virtual environment (common/ambient/installer/integrity.py).
+
+Autore: Samuele Gallo
+"""
 import base64
 import hashlib
 import tempfile

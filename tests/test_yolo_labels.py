@@ -1,3 +1,4 @@
+# Autore: Samuele Gallo
 import unittest
 
 from corpse.functions.users.yolo_labels import (class_label, class_names, label_candidates, names_candidates,

@@ -4,6 +4,8 @@ Two things are shown side by side. The numbers of the training come from the mod
 did on its own validation images — useful, but every model was measured on different photos. So the same models can
 also be tried on the approved photos of a species that carry labels: the same photos for everybody, which is the
 only honest way of saying that one model is better than another.
+
+Autore: Samuele Gallo
 """
 from __future__ import annotations
 

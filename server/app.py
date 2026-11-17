@@ -3,6 +3,8 @@
 Authentication: header  Authorization: Bearer <token>  (obtained with /api/login).
 Errors have the form {"error": English text, "key": ..., "params": {...}, "retry_after": s}: the client
 translates them into the user's language.
+
+Autore: Samuele Gallo
 """
 from __future__ import annotations
 
@@ -16,7 +18,8 @@ from typing import Any, Dict, Optional
 from urllib.parse import parse_qs, urlparse
 
 from common.errors import AppError
-from common.params import AREA_GROUPS, GROUP_MEMBER, AREA_MINE, ROLE_SERVER, ROLE_USER
+from common.params import (AREA_GROUPS, AREA_MINE, AREA_PHOTOS, AREAS_SHARED, GROUP_MEMBER, ROLE_SERVER,
+                           ROLE_USER)
 
 from .config import ServerConfig, key_matches, load_admin_key
 from .db import Database
@@ -433,6 +436,15 @@ class Handler(BaseHTTPRequestHandler):
                 raise AppError("You are not a member of this group.", 403)
             return group
 
+        if path == "/api/species/index" and method == "GET":
+            # The media of an area seen by species: the species come from the labels, so a photo with two
+            # animals appears under both. Nothing is moved; the folders of the review stay as they are.
+            area = str(q.get("area") or AREA_PHOTOS)
+            if area in (AREA_MINE, AREA_GROUPS):
+                raise AppError("This view is for the common folders.", 400)
+            if area not in AREAS_SHARED:
+                raise AppError("Unknown area.", 404)
+            return self._send(200, {"area": area, "species": self.store.species_view(area, name)})
         if path == "/api/species/submit" and method == "POST":
             d = self._json()
             kind = str(d.get("kind") or "photos")

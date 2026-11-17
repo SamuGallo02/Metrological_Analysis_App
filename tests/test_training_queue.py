@@ -1,4 +1,7 @@
-"""Training asked of the server: the queue, who may do what, and the worker that takes the jobs."""
+"""Training asked of the server: the queue, who may do what, and the worker that takes the jobs.
+
+Autore: Samuele Gallo
+"""
 import tempfile
 import unittest
 from pathlib import Path

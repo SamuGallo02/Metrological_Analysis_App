@@ -12,6 +12,8 @@ Even the quick scan touches every file of every package (25.000 of them with PyT
 such as OneDrive takes more than a minute. So at startup it runs only when it is worth it - when the installed
 packages changed, or when it has not run for a fortnight (`check_due`). A library damaged in the meantime is
 caught all the same by the import that follows, and main.py then asks for a deep check.
+
+Autore: Samuele Gallo
 """
 from __future__ import annotations
 

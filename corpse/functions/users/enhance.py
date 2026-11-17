@@ -9,6 +9,8 @@ The server has neither the algorithm nor the libraries: it keeps the queue and t
     keep(media, improved)    it is added beside the original, or takes its place
 
 Qt-free: the interface only shows what happens here.
+
+Autore: Samuele Gallo
 """
 from __future__ import annotations
 

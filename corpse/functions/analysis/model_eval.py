@@ -6,6 +6,8 @@ it finds with what is in the label file: so two models can be compared on the sa
 comparison that means something.
 
 No Qt and no network here: the caller passes the photos already on disk.
+
+Autore: Samuele Gallo
 """
 from __future__ import annotations
 

@@ -1,4 +1,7 @@
-"""Each section depends only on `common` and its own files: no imports between sections (except the home, which connects them)."""
+"""Each section depends only on `common` and its own files: no imports between sections (except the home, which connects them).
+
+Autore: Samuele Gallo
+"""
 import ast, unittest
 from pathlib import Path
 

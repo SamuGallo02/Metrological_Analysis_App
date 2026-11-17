@@ -144,14 +144,7 @@ class AnalysisPageBase(QWidget):
         self.model_combo.setMinimumWidth(220)
         model_bar.addWidget(self.model_combo, stretch=1)
 
-        btn_add_model = QPushButton("Aggiungi modello...")
-        btn_add_model.clicked.connect(self._add_model)
-        model_bar.addWidget(btn_add_model)
-
-        btn_refresh_models = QPushButton("Aggiorna elenco")
-        btn_refresh_models.clicked.connect(self._refresh_models)
-        model_bar.addWidget(btn_refresh_models)
-
+        # The models are the ones in Folders > Local > YOLO models: nothing is added or refreshed from here.
         btn_show_classes = QPushButton("Vedi classi del modello")
         btn_show_classes.clicked.connect(self._show_model_classes)
         model_bar.addWidget(btn_show_classes)
@@ -171,13 +164,7 @@ class AnalysisPageBase(QWidget):
         )
         class_bar.addWidget(self.btn_class_select, stretch=1)
 
-        btn_add_class = QPushButton("Aggiungi oggetto...")
-        btn_add_class.clicked.connect(self._add_object_class)
-        class_bar.addWidget(btn_add_class)
-
-        btn_remove_class = QPushButton("Rimuovi oggetto")
-        btn_remove_class.clicked.connect(self._remove_object_class)
-        class_bar.addWidget(btn_remove_class)
+        # What can be found is decided by the chosen model: here one only picks among the classes it knows.
         root_layout.addLayout(class_bar)
 
         # --- start / export button bar (no training button here anymore) ---
@@ -444,32 +431,6 @@ class AnalysisPageBase(QWidget):
         self.btn_class_select.clear()
         self.btn_class_select.addItem(text)
 
-    def _add_object_class(self) -> None:
-        name, ok = QInputDialog.getText(
-            self, "Aggiungi oggetto",
-            "Nome della classe (deve corrispondere all'etichetta usata dal modello YOLO):"
-        )
-        if not ok or not name.strip():
-            return
-        add_class(name.strip())
-        self._refresh_object_classes()
-
-    def _remove_object_class(self) -> None:
-        selected = [name for name in self._get_selected_classes() if name != ALL_OBJECTS]
-        if not selected:
-            QMessageBox.information(self, "Nessuna selezione", "Seleziona/spunta almeno una classe specifica da rimuovere.")
-            return
-        reply = QMessageBox.question(
-            self, "Conferma rimozione",
-            f"Rimuovere le seguenti classi dall'elenco?\n\n{', '.join(selected)}",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if reply != QMessageBox.StandardButton.Yes:
-            return
-        for name in selected:
-            remove_class(name)
-        self._refresh_object_classes()
-
     # ------------------------------------------------------------------------------------------ model management
     def _show_model_classes(self) -> None:
         model_name = self.model_combo.currentText()
@@ -498,30 +459,6 @@ class AnalysisPageBase(QWidget):
         btn_close.clicked.connect(dialog.accept)
         layout.addWidget(btn_close)
         dialog.exec()
-
-    def _add_model(self) -> None:
-        MODELS_DIR.mkdir(parents=True, exist_ok=True)
-        source_path, _ = QFileDialog.getOpenFileName(
-            self, "Seleziona modello YOLO (.pt)", str(MODELS_DIR.resolve()), "Modelli YOLO (*.pt)"
-        )
-        if not source_path:
-            return
-        source = Path(source_path)
-        dest = MODELS_DIR / source.name
-        if dest.exists():
-            reply = QMessageBox.question(
-                self, "File esistente", f"Un modello denominato '{source.name}' è già presente. Sovrascrivere?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            )
-            if reply != QMessageBox.StandardButton.Yes:
-                return
-        try:
-            shutil.copy2(source, dest)
-        except OSError as exc:
-            QMessageBox.critical(self, "Errore di copia", f"Impossibile copiare il file:\n{exc}")
-            return
-        self._refresh_models()
-        self.model_combo.setCurrentText(source.name)
 
     def _refresh_models(self) -> None:
         current = self.model_combo.currentText()

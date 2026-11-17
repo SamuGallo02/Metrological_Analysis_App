@@ -1,4 +1,7 @@
-"""Finestra per scaricare un dataset di training dal server."""
+"""Finestra per scaricare un dataset di training dal server.
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 
 from pathlib import Path, PurePosixPath
@@ -16,7 +19,7 @@ from corpse.functions.training.server_data import DATASETS_AREA, group_datasets_
 
 class ServerDatasetDialog(QDialog):
     """Elenca i dataset del server e scarica quello scelto in `dest_dir/<nome>`.
-    `client` è l'ApiClient della sessione (questa sezione non importa gli utenti)."""
+    `client` is the ApiClient of the session (this section does not import the users)."""
 
     downloaded = Signal(str)             # nome del dataset scaricato
     progress = Signal(int, int)          # byte fatti, byte totali

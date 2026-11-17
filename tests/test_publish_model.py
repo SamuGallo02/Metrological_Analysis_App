@@ -1,4 +1,7 @@
-"""Pubblicazione di un modello allenato sul server (con un server vero e il client vero)."""
+"""Publishing a trained model on the server (with a real server and the real client).
+
+Autore: Samuele Gallo
+"""
 import json
 import sys
 import unittest
@@ -27,27 +30,32 @@ class PublishModelTest(Base):
 
     def test_a_user_publishes_into_quarantine(self):
         res = publish_model(self.user("pub1"), self.model("u1"), SPECIES)
-        self.assertEqual(res, {"remote": f"{SPECIES}/u1.pt", "pending": True, "metadata": True})
+        # The file is named after the species it recognises and the network it comes from, not as it was locally.
+        self.assertTrue(res["name"].startswith("Pinna_nobilis_yolo11n-seg"), res["name"])
+        self.assertEqual(res, {"remote": f"{SPECIES}/{res['name']}", "pending": True, "metadata": True,
+                               "name": res["name"]})
         folder = Path(self.data) / "store" / "pending" / "models" / "pub1" / SPECIES
-        self.assertTrue((folder / "u1.pt").is_file())
-        self.assertTrue((folder / "u1.json").is_file())
+        self.assertTrue((folder / res["name"]).is_file())
+        self.assertTrue((folder / Path(res["name"]).with_suffix(".json").name).is_file())
 
     def test_an_admin_publishes_directly(self):
         res = publish_model(self.admin(), self.model("a1"), SPECIES)
         self.assertFalse(res["pending"])
-        self.assertTrue((self.models_dir() / SPECIES / "a1.pt").is_file())
-        self.assertTrue((self.models_dir() / SPECIES / "a1.json").is_file())
+        self.assertTrue((self.models_dir() / SPECIES / res["name"]).is_file())
+        self.assertTrue((self.models_dir() / SPECIES / Path(res["name"]).with_suffix(".json").name).is_file())
 
     def test_the_chosen_species_is_written_in_the_metadata(self):
-        publish_model(self.admin(), self.model("a2"), SPECIES)
-        meta = json.loads((self.models_dir() / SPECIES / "a2.json").read_text(encoding="utf-8"))
+        res = publish_model(self.admin(), self.model("a2"), SPECIES)
+        meta = json.loads((self.models_dir() / SPECIES / Path(res["name"]).with_suffix(".json").name)
+                          .read_text(encoding="utf-8"))
         self.assertEqual(meta["species"], SPECIES)
         self.assertEqual(meta["dataset"]["name"], "ok")
 
     def test_a_model_without_metadata_is_published_alone(self):
         res = publish_model(self.admin(), self.model("a3", with_metadata=False), SPECIES)
         self.assertFalse(res["metadata"])
-        self.assertFalse((self.models_dir() / SPECIES / "a3.json").exists())
+        self.assertEqual(res["name"], "Pinna_nobilis_a3.pt")          # no metadata: the file name is what is left
+        self.assertFalse((self.models_dir() / SPECIES / "Pinna_nobilis_a3.json").exists())
 
     def test_a_wrong_species_name_is_refused_before_uploading(self):
         with self.assertRaises(AppError):
@@ -61,17 +69,15 @@ class PublishModelTest(Base):
         self.assertEqual(calls[-1][0], calls[-1][1])
 
     def test_a_user_model_is_sent_to_review(self):
-        model = self.model("u6")
-        publish_model(self.user("pub6"), model, SPECIES)
+        res = publish_model(self.user("pub6"), self.model("u6"), SPECIES)
         waiting = [s["path"] for s in self.admin().species_submissions(status="pending", kind="model")]
-        self.assertTrue(any(p.endswith(f"{SPECIES}/{model.name}") for p in waiting))
+        self.assertTrue(any(p.endswith(f"{SPECIES}/{res['name']}") for p in waiting))
 
     def test_an_admin_model_is_in_the_catalog_with_no_review(self):
-        model = self.model("a6")
-        res = publish_model(self.admin(), model, SPECIES)
+        res = publish_model(self.admin(), self.model("a6"), SPECIES)
         self.assertFalse(res["pending"])
         catalog = [i["path"] for i in self.admin().catalog("model")]
-        self.assertIn(f"{SPECIES}/{model.name}", catalog)
+        self.assertIn(f"{SPECIES}/{res['name']}", catalog)
 
 
 if __name__ == "__main__":

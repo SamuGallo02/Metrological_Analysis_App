@@ -1,4 +1,7 @@
-"""Folder structure required for a dataset ready for YOLO: images, labels and data.yaml."""
+"""Folder structure required for a dataset ready for YOLO: images, labels and data.yaml.
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 
 from pathlib import Path, PurePosixPath

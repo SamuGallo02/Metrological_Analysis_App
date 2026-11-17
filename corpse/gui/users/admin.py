@@ -1,4 +1,7 @@
-"""User management and the administrator's main panel (users, database, training; analysis in the background)."""
+"""User management and the administrator's main panel (users, database, training; analysis in the background).
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 
 from typing import Any, Callable, Dict, List, Optional, Tuple

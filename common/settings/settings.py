@@ -1,4 +1,7 @@
-"""User settings (settings.json) and atomic read/write of local JSON files."""
+"""User settings (settings.json) and atomic read/write of local JSON files.
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 
 import json

@@ -1,4 +1,7 @@
-"""Every window and page must stay usable on a small screen (a 1366x768 laptop, or a window made smaller)."""
+"""Every window and page must stay usable on a small screen (a 1366x768 laptop, or a window made smaller).
+
+Autore: Samuele Gallo
+"""
 import os
 import sys
 import unittest

@@ -11,6 +11,8 @@ Two ways of looking at the same files, and nothing is ever copied from one to th
 
 The folders registered in "Datasets" are the ones the analysis offers, so a folder added here can be analysed
 straight away; the files keep the names they have and no naming convention is asked for.
+
+Autore: Samuele Gallo
 """
 from __future__ import annotations
 
@@ -44,6 +46,7 @@ from common.ui.media_viewer import view_media
 from common.ui.qt_utils import run_async
 from common.ui.thumbnails import ThumbnailCache, can_preview
 from common.ui.server_state import server_note, server_ready
+from common.ui.places import desktop, managed
 
 from corpse.functions.users.session import Session
 
@@ -316,13 +319,18 @@ class LocalFoldersWidget(QWidget):
         species = item.data(0, SPECIES_ROLE)
         if species is not None:
             return self._fill_species_files(item, species)
-        folder = Path(self.path_of(item) or "")
+        where = self.path_of(item)
+        if not where:                                    # a group of the Datasets tab: it has no folder of its own
+            return
+        folder = Path(where)
         try:
             children = sorted(folder.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower()))
         except OSError as e:
             self.status.setText(tr("Error: {msg}", msg=str(e)))
             return
         for p in children:
+            if p.name.startswith((".", "_")):            # what the application keeps for itself (_pending...)
+                continue
             try:
                 st = p.stat()
             except OSError:
@@ -477,7 +485,7 @@ class LocalFoldersWidget(QWidget):
         if not kind:
             return
         start = self.sources(kind)
-        initial = str(start[-1].path.parent) if start else str(Path.home())
+        initial = str(start[-1].path.parent) if start else desktop()   # a folder of yours: the Desktop first
         chosen = QFileDialog.getExistingDirectory(self, tr("Add folder..."), initial)
         if not chosen:
             return
@@ -499,7 +507,7 @@ class LocalFoldersWidget(QWidget):
             return
         suffixes = sorted(media_suffixes(self.kind)) if self.kind else []
         pattern = tr("Files") + " (" + " ".join(f"*{s}" for s in suffixes) + ")" if suffixes else tr("All files (*)")
-        chosen, _ = QFileDialog.getOpenFileNames(self, tr("Add files..."), str(Path.home()), pattern)
+        chosen, _ = QFileDialog.getOpenFileNames(self, tr("Add files..."), desktop(), pattern)
         copied = 0
         for name in chosen:
             source = Path(name)
@@ -563,7 +571,8 @@ class LocalFoldersWidget(QWidget):
         path = self.current()
         if path is None or self._is_root(path):
             return
-        dest = QFileDialog.getExistingDirectory(self, tr("Move..."), str(path.parent))
+        dest = QFileDialog.getExistingDirectory(self, tr("Move..."),            # inside what the app manages
+                                                managed(self.kind, path.parent))
         if not dest:
             return
         target = Path(dest) / path.name

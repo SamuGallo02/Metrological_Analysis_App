@@ -8,4 +8,6 @@
 * __main__.py  : `python -m common.ambient.updater status|check|update|repair|mode`
 
 Nothing here imports Qt or the scientific libraries, so it also works when those are damaged.
+
+Autore: Samuele Gallo
 """

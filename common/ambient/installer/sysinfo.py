@@ -1,4 +1,7 @@
-"""Detection of operating system and hardware (standard library only)."""
+"""Detection of operating system and hardware (standard library only).
+
+Autore: Samuele Gallo
+"""
 
 from __future__ import annotations
 

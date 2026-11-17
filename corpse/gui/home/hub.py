@@ -1,5 +1,8 @@
 """Analysis selection screen: the demo at the top (if provided), the 4 analyses below. No separate
-Photo/Video buttons on the home page: you get here with the "Analysis" button."""
+Photo/Video buttons on the home page: you get here with the "Analysis" button.
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 
 from typing import Callable, Dict, Optional

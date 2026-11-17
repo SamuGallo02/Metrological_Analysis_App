@@ -1,4 +1,7 @@
-"""Opens a photo of the server catalog; if it has YOLO labels, the same photo with the labels drawn is shown on its right."""
+"""Opens a photo of the server catalog; if it has YOLO labels, the same photo with the labels drawn is shown on its right.
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 
 from pathlib import PurePosixPath

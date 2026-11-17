@@ -1,4 +1,7 @@
-"""Translated labels for roles and areas (functions: the language may change after import)."""
+"""Translated labels for roles and areas (functions: the language may change after import).
+
+Autore: Samuele Gallo
+"""
 from common.i18n import tr
 from common.params import AREA_MINE, ROLE_SERVER, SUBMISSION_APPROVED, SUBMISSION_PENDING, SUBMISSION_REJECTED
 

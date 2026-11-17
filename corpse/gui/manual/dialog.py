@@ -1,4 +1,7 @@
-"""User manual window: in the chosen language, with index and search."""
+"""User manual window: in the chosen language, with index and search.
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 
 from typing import Optional

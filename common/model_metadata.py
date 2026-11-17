@@ -1,6 +1,9 @@
-"""Metadati dei modelli allenati: un file .json accanto al modello che racconta come è stato prodotto.
+"""Metadata of a trained model: a .json file beside the model telling how it was produced.
 
-Funzioni senza interfaccia e senza YOLO: si possono provare con dei risultati finti."""
+Funzioni senza interfaccia e senza YOLO: si possono provare con dei risultati finti.
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 
 import hashlib
@@ -78,7 +81,7 @@ def _numbered(pairs: List[str]) -> List[str]:
 
 
 def _names_without_yaml(text: str) -> List[str]:
-    """Lettura minima della sezione `names:` quando PyYAML non c'è: lista o dizionario numerato, in riga o a blocchi."""
+    """Minimal reading of the `names:` section when PyYAML is missing: a list or a numbered map, inline or in blocks."""
     lines = text.splitlines()
     for n, line in enumerate(lines):
         if not line.startswith("names:"):
@@ -116,7 +119,7 @@ def suggest_species(classes: Iterable[str]) -> Optional[str]:
     return name if re.fullmatch(SPECIES_RE, name) else None
 
 def _basename(path: str) -> str:
-    """Il nome del file di un percorso, anche se scritto con le barre di Windows."""
+    """The file name of a path, even when it is written with Windows separators."""
     return str(path).replace("\\", "/").rsplit("/", 1)[-1]
 
 def build_metadata(*, base_model: str, dataset_name: str, dataset_source: str, epochs: int, imgsz: int,
@@ -150,7 +153,7 @@ def _sha256(path: Path) -> str:
 
 
 def write_metadata(model_path: Path, meta: Dict[str, Any]) -> Path:
-    """Scrive `<modello>.json` accanto al modello, aggiungendo nome, dimensione e impronta del file."""
+    """Writes `<model>.json` beside the model, adding the name, the size and the fingerprint of the file."""
     model = Path(model_path)
     data = dict(meta)                                          # l'originale non si modifica
     data["file"] = {"name": model.name, "size": model.stat().st_size, "sha256": _sha256(model)}
@@ -169,28 +172,40 @@ def _load_json(path: Path) -> Optional[Dict[str, Any]]:
 
 
 def read_metadata(model_path: Path) -> Optional[Dict[str, Any]]:
-    """Rilegge i metadati di un modello; None se il file manca o non è leggibile."""
+    """Reads back the metadata of a model; None when the file is missing or unreadable."""
     return _load_json(Path(model_path).with_suffix(".json"))
 
-def model_filename(dataset_name: str, base_model: str, when: Optional[datetime] = None) -> str:
-    """Il nome del file di un modello appena allenato: <dataset>_<modello base>_<data-ora>.pt.
-    Include data e ora, così un nuovo training non sovrascrive il precedente."""
+def model_filename(species: str, base_model: str) -> str:
+    """The name of a trained model: the species with underscores instead of spaces, then the base model it comes
+    from - "Pinna nobilis" + "yolo11l-seg.pt" gives "Pinna_nobilis_yolo11l-seg.pt". So the name says at a glance
+    which animal the model knows and which network it was built on."""
     base = _basename(base_model)
     stem = base[:-3] if base.lower().endswith(".pt") else base
-    stamp = (when or datetime.now()).strftime("%Y%m%d-%H%M")
-    name = re.sub(r"[^\w.-]+", "_", f"{dataset_name}_{stem}_{stamp}").strip("_")
+    name = re.sub(r"[^\w.-]+", "_", f"{species.strip()}_{stem}").strip("_")
     return f"{name}.pt"
 
 
+def free_name(folder: Path, name: str) -> Path:
+    """The same name in `folder`, or "name (2).pt" when one is already there: a new training never writes over
+    the model of a previous one."""
+    folder = Path(folder)
+    dest = folder / name
+    stem, suffix, n = dest.stem, dest.suffix, 2
+    while dest.exists():
+        dest = folder / f"{stem} ({n}){suffix}"
+        n += 1
+    return dest
+
+
 def count_images(folder: Path) -> int:
-    """Quante immagini ci sono in una cartella (e nelle sue sottocartelle): le etichette .txt non contano."""
+    """How many images a folder holds (subfolders included): the .txt labels do not count."""
     folder = Path(folder)
     if not folder.is_dir():
         return 0
     return sum(1 for p in folder.rglob("*") if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS)
 
 def fetch_remote_metadata(client: Any, area: str, rel: str) -> Optional[Dict[str, Any]]:
-    """Scarica il .json accanto a un modello del server (area/rel) e lo legge.
+    """Downloads the .json beside a model of the server (area/rel) and reads it.
 
     None in ogni caso in cui non si può: file mancante, rotto, server che non risponde.
     Chi la usa (il pannello del browser) non deve mai fallire per colpa dei metadati."""

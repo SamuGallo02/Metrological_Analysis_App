@@ -1,4 +1,7 @@
-"""Photos, stereo photos and videos through the server API: pending folder, review, catalog, labels."""
+"""Photos, stereo photos and videos through the server API: pending folder, review, catalog, labels.
+
+Autore: Samuele Gallo
+"""
 import tempfile
 import unittest
 from pathlib import Path

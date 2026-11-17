@@ -1,4 +1,7 @@
-"""Server parameters (limits, times, extensions). A single place to edit."""
+"""Server parameters (limits, times, extensions). A single place to edit.
+
+Autore: Samuele Gallo
+"""
 from common.paths import LOCAL_DIR
 from common.params import (AREAS_MEDIA, IMAGE_SUFFIXES, KIND_AREA, KIND_DATASET, KIND_MODEL, KIND_PHOTOS,  # noqa: F401
                            ENHANCED_DIR, KIND_STEREO, KIND_STEREO_VIDEO, KIND_VIDEO, KINDS_MEDIA, KINDS_STEREO, KINDS_VIDEO, LABEL_SUFFIX, PROFILE_FIELDS, SPECIES_EXAMPLE,

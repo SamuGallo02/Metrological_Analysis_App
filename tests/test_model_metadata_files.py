@@ -1,4 +1,7 @@
-"""I metadati dei modelli (.json) viaggiano accanto al modello: caricamento e approvazione."""
+"""The metadata of a model (.json) travels beside the model: upload and approval.
+
+Autore: Samuele Gallo
+"""
 import sys
 import tempfile
 import unittest
@@ -20,7 +23,7 @@ class ModelMetadataFilesTest(unittest.TestCase):
         self.models = self.store.library("models")
 
     def _quarantined(self, *names):
-        """Crea dei file direttamente in quarantena (come se un utente li avesse già caricati)."""
+        """Creates files straight in quarantine (as if a user had already uploaded them)."""
         folder = self.store.pending_root("models") / "francy" / SPECIES
         folder.mkdir(parents=True, exist_ok=True)
         for n in names:

@@ -1,5 +1,8 @@
 """The "Folders" page: first the choice between what is on this computer, what is on the server and the groups,
-then the chosen section with a way back to the choice."""
+then the chosen section with a way back to the choice.
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 
 from typing import Callable, Optional

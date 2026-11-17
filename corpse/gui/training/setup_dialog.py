@@ -13,6 +13,8 @@ Two cases, decided by core.environment_manager.get_cuda_status():
   * PyTorch with GPU support (a few GB): the window DOWNLOADS everything with the bar (the app stays open);
     then the app restarts by itself to replace PyTorch (files are locked while the app is open) and the
     detached install process finishes within moments thanks to the already downloaded files.
+
+Autore: Samuele Gallo
 """
 from __future__ import annotations
 

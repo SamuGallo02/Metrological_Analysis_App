@@ -1,4 +1,7 @@
-"""Conversion of the old data folder layout into store/ (history kept, the app's own folders untouched)."""
+"""Conversion of the old data folder layout into store/ (history kept, the app's own folders untouched).
+
+Autore: Samuele Gallo
+"""
 import tempfile
 import unittest
 from pathlib import Path

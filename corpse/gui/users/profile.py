@@ -1,4 +1,7 @@
-"""Own profile page: personal data, folders on the server and on the computer, language, password."""
+"""Own profile page: personal data, folders on the server and on the computer, language, password.
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 
 import os

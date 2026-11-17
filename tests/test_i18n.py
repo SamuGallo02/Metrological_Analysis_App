@@ -1,3 +1,4 @@
+# Autore: Samuele Gallo
 import http.server, json, os, sys, tempfile, threading, unittest
 from functools import partial
 from pathlib import Path

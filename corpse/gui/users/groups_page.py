@@ -3,6 +3,8 @@
 Anybody can make a group and is then its administrator. The administrators choose the members, promote them and
 approve what the others send; a member sees and downloads everything, and what they send waits in the group's
 quarantine until an administrator accepts it.
+
+Autore: Samuele Gallo
 """
 from __future__ import annotations
 

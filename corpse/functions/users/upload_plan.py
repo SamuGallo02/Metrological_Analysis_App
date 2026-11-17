@@ -1,4 +1,7 @@
-"""What an upload of photos, videos or stereo photos/videos sends (no Qt): the files with the names they get on the server."""
+"""What an upload of photos, videos or stereo photos/videos sends (no Qt): the files with the names they get on the server.
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 
 from pathlib import Path

@@ -1,4 +1,7 @@
-"""'User X (type) - online/offline   [Log out]' row to place at the top of the home."""
+"""'User X (type) - online/offline   [Log out]' row to place at the top of the home.
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 
 from typing import Optional

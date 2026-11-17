@@ -1,4 +1,7 @@
-"""What main.py does before importing the application: verify the code, repair it, install updates (auto mode)."""
+"""What main.py does before importing the application: verify the code, repair it, install updates (auto mode).
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 
 import subprocess

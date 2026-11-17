@@ -1,4 +1,7 @@
-"""The analysis pages register folders in the library instead of copying them."""
+"""The analysis pages register folders in the library instead of copying them.
+
+Autore: Samuele Gallo
+"""
 import os, sys, tempfile, unittest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from pathlib import Path
@@ -49,38 +52,40 @@ class AnalysisLibraryTest(unittest.TestCase):
     def choose(self, folder):
         return mock.patch.object(QFileDialog, "getExistingDirectory", staticmethod(lambda *a, **k: str(folder)))
 
+    def add(self, kind, folder):
+        """What "Folders > Local" does: the folder is registered where it is, and the analysis sees it."""
+        return self.lib.add_source(kind, folder)
+
     def test_photo_page_uses_the_folder_in_place(self):
-        page = PhotoAnalysisPage(lambda: None)
         before = snapshot(self.photos)
-        with self.choose(self.photos):
-            page._add_dataset()
+        self.add("photo", self.photos)
+        page = PhotoAnalysisPage(lambda: None)
         self.assertEqual(page.selected_folder, str(self.photos.resolve()))
         self.assertEqual(snapshot(self.photos), before)
         self.assertEqual(snapshot(self.root / "app") if (self.root / "app").exists() else [], [])   # no copy made
         self.assertEqual(page.folder_combo.currentText(), "dive")
 
-    def test_photo_page_rejects_a_stereo_folder(self):
+    def test_photo_page_refuses_a_stereo_folder(self):
+        """It is registered all the same (it is the user's folder), but this page says it cannot use it."""
         (self.photos / "rx").mkdir()
         (self.photos / "lx").mkdir()
-        page = PhotoAnalysisPage(lambda: None)
-        with self.choose(self.photos):
-            page._add_dataset()
+        self.add("photo", self.photos)
+        with mock.patch.object(QMessageBox, "warning", staticmethod(lambda *a, **k: None)) as warned:
+            page = PhotoAnalysisPage(lambda: None)
         self.assertIsNone(page.selected_folder)
-        self.assertEqual(self.lib.sources("photo"), [])
 
-    def test_remove_keeps_the_files(self):
+    def test_a_folder_taken_out_of_the_list_leaves_the_files_alone(self):
+        src = self.add("video", self.photos)
         page = VideoAnalysisPage(lambda: None)
-        with self.choose(self.photos):
-            page._add_dataset()
-        with mock.patch.object(QMessageBox, "question", staticmethod(lambda *a, **k: QMessageBox.StandardButton.Yes)):
-            page._remove_dataset()
+        self.assertEqual(page.selected_folder, str(self.photos.resolve()))
+        self.lib.remove_source(src.id)                 # as "Remove from the list" does in Folders > Local
+        page._refresh_datasets()
         self.assertIsNone(page.selected_folder)
         self.assertTrue((self.photos / "1.png").exists())
 
     def test_a_folder_that_disappeared_cannot_be_run(self):
+        self.add("photo_stereo", self.photos)
         page = StereoAnalysisPage(lambda: None)
-        with self.choose(self.photos):
-            page._add_dataset()
         (self.photos / "1.png").unlink()
         self.photos.rmdir()
         page._refresh_datasets()

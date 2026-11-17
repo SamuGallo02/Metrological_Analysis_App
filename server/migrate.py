@@ -3,7 +3,10 @@
 The history (submissions: who uploaded, who approved, when) stays in the database and is kept; only the files move.
 Everything is idempotent: running it again does nothing once the old folders are gone, and an interrupted run
 continues where it stopped. Only what the old server owned is moved: the folders of the app's own local data that
-happen to live in the same data folder are never touched."""
+happen to live in the same data folder are never touched.
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 
 import logging

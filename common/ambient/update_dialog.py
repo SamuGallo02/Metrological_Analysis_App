@@ -1,7 +1,10 @@
 """Updates window (check / update / repair the application's code) and the once-a-day offer at startup.
 
 The work itself is done by `python -m common.ambient.updater` (stdlib only, in a windowless process);
-this module only shows it."""
+this module only shows it.
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 
 import json

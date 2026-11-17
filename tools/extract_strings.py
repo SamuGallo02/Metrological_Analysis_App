@@ -2,6 +2,8 @@
 
     python -m tools.extract_strings            # prints the count and the texts
 Non-literals (tr(variable)) are reported: they must be made literal or passed to tr_dyn().
+
+Autore: Samuele Gallo
 """
 from __future__ import annotations
 

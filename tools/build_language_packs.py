@@ -5,6 +5,8 @@
 
 Each file common/translations/<code>.py contains:  VERSION = 1,  STRINGS = {"English text": "translation"},  MANUAL = "..."
 Increase VERSION when you change a translation: the app offers the update.
+
+Autore: Samuele Gallo
 """
 from __future__ import annotations
 

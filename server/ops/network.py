@@ -1,4 +1,7 @@
-"""Where the server can be reached from: LAN addresses, port check, hints for other devices."""
+"""Where the server can be reached from: LAN addresses, port check, hints for other devices.
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 
 import socket

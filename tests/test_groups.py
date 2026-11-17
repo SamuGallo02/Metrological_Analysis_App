@@ -1,4 +1,7 @@
-"""Work groups: anybody can make one and looks after it, the members send and the administrators approve."""
+"""Work groups: anybody can make one and looks after it, the members send and the administrators approve.
+
+Autore: Samuele Gallo
+"""
 import tempfile
 import unittest
 from pathlib import Path

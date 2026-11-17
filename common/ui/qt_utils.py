@@ -1,4 +1,7 @@
-"""Small shared Qt tools: running functions outside the GUI thread."""
+"""Small shared Qt tools: running functions outside the GUI thread.
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 
 import subprocess

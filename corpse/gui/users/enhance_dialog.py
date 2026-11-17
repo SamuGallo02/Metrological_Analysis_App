@@ -2,6 +2,8 @@
 
 The dialog sends the file, follows the queue and, when the improved copy comes back, asks the only question that
 is left: add it beside the original, or put it in its place.
+
+Autore: Samuele Gallo
 """
 from __future__ import annotations
 

@@ -1,4 +1,7 @@
-"""Parameters of the Users page."""
+"""Parameters of the Users page.
+
+Autore: Samuele Gallo
+"""
 from common.params import ROLE_SERVER, ROLE_USER
 
 # permissions by role (server operations also require the network: see Session.can)

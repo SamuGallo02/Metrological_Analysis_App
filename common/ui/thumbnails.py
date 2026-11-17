@@ -4,6 +4,8 @@ The server cannot make them — it has no image library — so the application m
 read, scaled down and kept in a cache folder, so opening the same folder again costs nothing. Requests are served a
 few at a time in the background and only for the rows the user is looking at, so a folder with a thousand photos
 does not download a thousand files.
+
+Autore: Samuele Gallo
 """
 from __future__ import annotations
 

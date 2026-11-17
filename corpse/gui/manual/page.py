@@ -1,4 +1,7 @@
-"""Manual page: index on the left, text on the right, search. Uses the manual of the current language."""
+"""Manual page: index on the left, text on the right, search. Uses the manual of the current language.
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 
 import re

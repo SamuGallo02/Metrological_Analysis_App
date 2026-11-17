@@ -1,4 +1,7 @@
-"""Store for users, sessions and activity log (SQLite)."""
+"""Store for users, sessions and activity log (SQLite).
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 
 import re

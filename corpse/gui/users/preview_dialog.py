@@ -1,4 +1,7 @@
-"""Anteprima di un invio nella Revisione: miniature per foto e dataset, dettagli per un modello."""
+"""Preview of a submission in the Review: thumbnails for photos and datasets, details for a model.
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 
 from pathlib import PurePosixPath
@@ -26,7 +29,7 @@ AREAS = KIND_AREA                                              # kind of submiss
 
 
 class PreviewDialog(QDialog):
-    """`sub` è una riga di invio (serve il suo `path`, relativo all'area del suo tipo)."""
+    """`sub` is a submission row (its `path` is needed, relative to the area of its kind)."""
 
     def __init__(self, client: Any, kind: str, sub: Dict[str, Any], parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -35,7 +38,7 @@ class PreviewDialog(QDialog):
         fit_to_screen(self, 720, 520)
         lay = QVBoxLayout(self)
         self.info = QLabel(tr("Loading..."))
-        self.info.setTextFormat(Qt.TextFormat.PlainText)         # testo preso dal server: mai interpretato come HTML
+        self.info.setTextFormat(Qt.TextFormat.PlainText)         # text from the server: never read as HTML
         self.info.setWordWrap(True)
         self.thumbs = QListWidget()
         self.thumbs.setViewMode(QListView.ViewMode.IconMode)
@@ -55,7 +58,7 @@ class PreviewDialog(QDialog):
         else:
             run_async(self, self._load_images, self._show_images, self._failed)
 
-    # ---- modello ----------------------------------------------------------
+    # ---- model -------------------------------------------------------------
     def _load_model(self) -> Optional[Dict[str, Any]]:
         return fetch_remote_metadata(self.client, AREAS["model"], self.sub["path"])
 

@@ -1,5 +1,8 @@
 """The editing logic of the label editor, without any user interface: which handle or shape is under a point,
-moving, resizing, adding and deleting shapes, changing classes, undo and redo. Coordinates are normalised (0..1)."""
+moving, resizing, adding and deleting shapes, changing classes, undo and redo. Coordinates are normalised (0..1).
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 
 import math

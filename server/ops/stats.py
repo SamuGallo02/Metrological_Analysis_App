@@ -1,4 +1,7 @@
-"""Server statistics (for `python -m server status` and /api/stats)."""
+"""Server statistics (for `python -m server status` and /api/stats).
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 
 import shutil

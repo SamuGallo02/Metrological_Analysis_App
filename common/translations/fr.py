@@ -1,3 +1,4 @@
+# Autore: Samuele Gallo
 VERSION = 2
 STRINGS = {
     "The server is unreachable: you are working locally only. Users and server folders are available again after you reconnect.": "Le serveur est injoignable : vous travaillez uniquement en local. Les utilisateurs et les dossiers du serveur seront de nouveau disponibles après la reconnexion.",
@@ -658,102 +659,150 @@ STRINGS = {
     "Without a species": "Sans espèce",
     "{n} files filed under {name}": "{n} fichiers classés dans {name}",
     "{n} species, {m} files": "{n} espèces, {m} fichiers",
+    "By species: taken from the labels, so a photo with two animals is under both. The files stay where they are.": "Par espèce : tirée des étiquettes, donc une photo avec deux animaux est sous les deux. Les fichiers ne bougent pas.",
+    "No labelled file in this folder.": "Aucun fichier étiqueté dans ce dossier.",
+    "This view is for the common folders.": "Cette vue est pour les dossiers communs.",
+    "View:": "Vue :",
+    "Choose the dataset folder to import": "Choisis le dossier du dataset à importer",
 }
 
 MANUAL = """\
-# Manuel d'utilisation
+# Manuel de l'utilisateur
 
-Analyse Métrologique est l'application de bureau du projet Nautilus (Université de Padoue) pour mesurer des objets réels, comme la faune sous-marine, dans des photos et des vidéos. Elle associe la détection d'objets YOLO et la géométrie stéréo pour transformer une paire d'images en longueurs, largeurs et distances réelles. Ce manuel explique chaque partie de l'application.
+Metrological Analysis est l'application de bureau du projet Nautilus (Université de Padoue) pour mesurer des objets réels, comme la faune sous-marine, dans des photos et des vidéos. Elle associe la détection d'objets YOLO à la géométrie stéréo pour transformer une paire d'images en longueurs, largeurs et distances réelles. Ce manuel explique chaque partie de l'application.
 
-## Premiers pas
+## Pour commencer
 
-Au démarrage de l'application, la page d'accueil s'affiche.
+Au démarrage de l'application, la page d'accueil apparaît.
 
-- **S'inscrire** : choisissez l'onglet *S'inscrire* et saisissez un nom d'utilisateur, votre e-mail et un mot de passe. La connexion au serveur Nautilus est automatique : vous ne saisissez jamais d'adresse. Les nouveaux comptes sont de type *Utilisateur*.
-- **Se connecter** : saisissez votre nom d'utilisateur et votre mot de passe. Après 5 mots de passe erronés, le compte est bloqué pendant 5 minutes.
-- **Clé d'accès** : réservée aux administrateurs. Appuyez sur *J'ai une clé d'accès* et saisissez-la ; si elle est correcte, le compte devient **administrateur permanent**. Après 5 clés erronées, la clé est bloquée pendant 5 minutes, mais vous pouvez toujours vous connecter sans elle.
-- **Continuer sans se connecter** : utilisez l'analyse et l'entraînement hors ligne, sans compte. Les dossiers du serveur et votre profil ne sont pas disponibles.
-- **Langue** : le bouton de langue, en haut à droite de la page d'accueil et de la barre du compte, change la langue à tout moment.
+- **S'inscrire** : choisis l'onglet *S'inscrire* et saisis un nom d'utilisateur, ton adresse e-mail et un mot de passe. La connexion au serveur Nautilus est automatique : tu n'écris jamais d'adresse. Les nouveaux comptes sont de type *Utilisateur*.
+- **Se connecter** : saisis ton nom d'utilisateur et ton mot de passe. Après 5 mots de passe erronés, le compte est bloqué 5 minutes.
+- **Clé d'accès** : réservée aux administrateurs. Appuie sur *J'ai une clé d'accès* et saisis-la ; si elle est correcte, le compte devient **administrateur permanent**. Après 5 clés erronées, la clé est bloquée 5 minutes, mais tu peux quand même te connecter sans elle.
+- **Continuer sans se connecter** : analyse et entraînement hors ligne, sans compte. Le serveur, les groupes de travail et ton profil ne sont pas disponibles.
+- **Langue** : le bouton de langue en haut à droite de la page d'accueil et de la barre de compte change la langue à tout moment.
 
-Si le serveur est injoignable, vous pouvez toujours vous connecter avec un compte déjà utilisé sur cet ordinateur : l'application fonctionne hors ligne et se reconnecte lorsque vous appuyez sur *Reconnecter*. Cela vaut aussi pour les administrateurs : tant que le serveur n'est pas revenu, la page Gestion ne propose que le travail local (entraînement et analyse).
+Si le serveur est injoignable, tu peux quand même te connecter avec un compte déjà utilisé sur cet ordinateur : l'application fonctionne hors ligne et se reconnecte quand tu appuies sur *Reconnecter*. Se déconnecter, ou changer de serveur, ne ferme jamais l'application pour la rouvrir : la page d'accueil revient aussitôt.
 
-## Vos données sur cet ordinateur
+## Comment se déroule une journée de travail
 
-Tout ce que l'application enregistre se trouve dans le dossier du projet *datasets/Dataset_Locale*, avec un dossier pour chaque type de donnée.
+L'application est construite autour d'un chemin, et chaque page en est une étape.
 
-- **dataset_Foto** et **dataset_Foto_Stereo** : photos simples et paires de photos gauche/droite.
-- **dataset_Video** et **dataset_Video_Stereo** : vidéos simples et vidéos stéréo.
+1. **Dossiers** : tu y mets les photos, les vidéos ou les dossiers avec lesquels tu es rentré, tels quels.
+2. **Analyse** : tu choisis l'un de ces dossiers et le modèle, et l'analyse écrit les étiquettes de ce qu'elle a trouvé.
+3. **Étiquettes** : les étiquettes restent avec les fichiers ; tu les regardes, tu les corriges à la main et tu ajoutes celles qui ont été manquées.
+4. **Espèces** : un fichier appartient aux espèces que ses étiquettes nomment, et dès lors tu le retrouves sous chacune d'elles.
+5. **Serveur** : tu envoies ce qui mérite d'être partagé, tu demandes une meilleure image, ou tu entraînes un modèle dessus.
+
+## Tes données sur cet ordinateur
+
+Tout ce que l'application enregistre se trouve dans le dossier du projet *datasets/Dataset_Locale*, avec un dossier par type de données.
+
+- **dataset_Foto** et **dataset_Foto_Stereo** : photos seules et paires de photos gauche/droite.
+- **dataset_Video** et **dataset_Video_Stereo** : vidéos seules et vidéos stéréo.
 - **dataset_Training** : jeux de données annotés utilisés pour l'entraînement.
-- **models** : modèles YOLO (.pt) ; ceux téléchargés depuis le serveur sont regroupés par espèce.
-- **results** : les mesures exportées en CSV.
+- **models** : modèles YOLO (.pt) ; ceux téléchargés du serveur sont regroupés par espèce.
+- **labels** : les étiquettes des fichiers qui n'en ont pas à côté d'eux, et les petits aperçus des photos.
+
+Les dossiers que tu ajoutes toi-même n'y sont **pas** copiés : ils restent là où ils sont sur ton disque et l'application se souvient seulement d'où les trouver. Quand cet ordinateur fait aussi serveur, les données du serveur vivent à part, dans *datasets/server_data*.
+
+## Dossiers
+
+Appuie sur **Dossiers** sur la page d'accueil et choisis où travailler : *Local*, *Serveur* ou *Groupes de travail*.
+
+Dans **Local** tu vois tes fichiers sur cet ordinateur, par type, avec les mêmes onglets que le serveur. Les photos et les vidéos sont montrées **par espèce** : les espèces d'un fichier sont les classes de ses étiquettes, donc une photo avec deux animaux est sous les deux, sans être copiée nulle part. Le dernier onglet, **Datasets**, garde les dossiers exactement comme tu les as ajoutés, et c'est là que tu travailles dessus :
+
+- **Ajouter un dossier...** : enregistre un dossier de ton disque là où il est. Les fichiers gardent leurs noms, les étiquettes déjà à côté d'eux sont conservées, et aucune nomenclature n'est demandée.
+- **Ajouter des fichiers...** : copie les fichiers choisis dans le dossier ouvert, fichier d'étiquettes compris.
+- **Classer dans une espèce...** : classe un ou plusieurs fichiers choisis dans une espèce, en y ajoutant une étiquette. Tu peux aussi le faire depuis une espèce, pour en ajouter une deuxième.
+- **Retirer de la liste** : l'application oublie un dossier ; les fichiers sur ton disque ne sont pas touchés.
+- **Envoyer au serveur...** : envoie un fichier ou un dossier entier dans ton dossier sur le serveur, ou dans l'un de tes groupes.
+
+Les dossiers enregistrés ici sont précisément ceux que l'analyse propose : un dossier ajouté le matin peut donc être analysé tout de suite.
+
+## Étiquettes
+
+Une étiquette est une boîte ou un polygone autour d'un animal, avec le nom de son espèce. L'analyse les écrit, et elles restent enregistrées avec la photo.
+
+- **Étiquettes** : le bouton des vues les affiche ou les cache par-dessus les photos et les vidéos, aperçus compris.
+- **Créer les étiquettes... / Modifier les étiquettes...** : ouvre l'éditeur. Il dit *Créer* quand le fichier n'en a pas encore.
+- **Dans l'éditeur** : fais glisser un coin ou un point pour le corriger, glisse à l'intérieur pour déplacer, double-clic (ou Alt et clic) sur un côté pour ajouter un point, clic droit sur un point pour l'enlever. *Plus de points* en ajoute un au milieu de chaque côté, *Boîte en polygone* transforme une boîte en une forme que tu peux modeler point par point.
+- **Couleur** : change la couleur des lignes, pour quand elles se voient mal sur l'image. Une seule couleur pour toutes, ou une par classe.
+- **Améliorer avec le serveur...** : demande au serveur une meilleure version d'une photo ou d'une vidéo ; quand elle revient, tu choisis de l'ajouter à côté de l'original ou de la mettre à sa place (l'original reste dans *originals*).
 
 ## Analyse
 
-Appuyez sur **Analyse** dans la page d'accueil. En haut se trouve le bouton **Démo webcam** ; en dessous, choisissez l'une des quatre analyses.
+Appuie sur **Analyse** sur la page d'accueil. En haut se trouve le bouton **Démo webcam** ; en dessous tu choisis l'une des quatre analyses.
 
-1. **Analyse de photos** : détection et segmentation sur une seule photo.
+1. **Analyse de photos** : détection et segmentation sur une photo seule.
 2. **Analyse de photos stéréo** : mesures réelles (longueur, largeur, distance) sur des paires de photos gauche/droite.
-3. **Analyse vidéo** : détection et suivi sur une seule vidéo.
+3. **Analyse vidéo** : détection et suivi sur une vidéo seule.
 4. **Analyse vidéo stéréo** : détection, suivi et mesures réelles sur une vidéo stéréo.
 
-Sur chaque page, les étapes sont les mêmes : choisissez le dossier d'entrée, choisissez le modèle YOLO, choisissez les objets à analyser (ou *Tous les objets* ; les noms ajoutés doivent correspondre aux étiquettes du modèle), appuyez sur *AVVIA ANALISI* et lisez les résultats. *ESPORTA CSV* enregistre les mesures dans le dossier *results* et *Mostra solo variazioni* masque les lignes répétées.
+Sur chaque page les étapes sont les mêmes : choisis le dossier, choisis le modèle YOLO, choisis quels objets analyser (ou *Tous les objets* : on peut trouver ce que le modèle connaît), appuie sur *AVVIA ANALISI* et lis les résultats. Les dossiers et les modèles sont ceux que tu gères dans *Dossiers* → *Local*, on n'ajoute donc rien depuis ici. *ESPORTA CSV* enregistre les mesures et *Mostra solo variazioni* masque les lignes répétées.
 
-L'analyse stéréo demande deux choses de plus. Le dossier d'entrée doit contenir les sous-dossiers *rx* (caméra droite) et *lx* (caméra gauche), tels que produits par les sensing rigs de Nautilus : les photos sont nommées avec l'heure de capture et chaque dossier vidéo contient un seul fichier. Vous devez aussi saisir l'étalonnage des caméras, la *ligne de base* (distance entre les deux caméras, en mm) et la *focale* (en pixels) : des valeurs erronées donnent des mesures erronées.
+L'analyse stéréo demande deux choses de plus. Le dossier de départ doit contenir les sous-dossiers *rx* (caméra droite) et *lx* (caméra gauche), tels que les produisent les systèmes d'acquisition Nautilus : les photos portent l'instant de prise de vue dans leur nom et chaque dossier vidéo contient un seul fichier. Tu dois aussi saisir la calibration des caméras, la *baseline* (distance entre les deux caméras, en mm) et la *focale* (en pixels) : de mauvaises valeurs donnent de mauvaises mesures.
 
 ## Démo webcam
 
-La démo webcam affiche la détection YOLO en direct dans une fenêtre séparée. Choisissez le mode (*Caméra unique* ou *Stéréo en direct (2 caméras)*), les caméras, le modèle et ce qu'il faut reconnaître, puis appuyez sur *Démarrer*. En mode stéréo, les deux caméras doivent être des appareils différents et au moins un modèle doit se trouver dans le dossier *models*.
+La démo webcam montre la détection YOLO en direct dans une fenêtre à part. Choisis le mode (*Caméra unique* ou *Stéréo en direct (2 caméras)*), les caméras, le modèle et ce qu'il faut reconnaître, puis appuie sur *Démarrer*. En stéréo, les deux caméras doivent être des appareils différents, et au moins un modèle doit se trouver dans le dossier *models*.
 
 ## Entraînement
 
-Appuyez sur **Entraînement** pour entraîner votre propre modèle YOLO sur un jeu de données annoté (un dossier contenant un fichier *data.yaml*). Choisissez le jeu de données et lancez l'entraînement local : la console affiche la progression. Pour les travaux plus lourds, la même page ouvre Google Colab.
+Appuie sur **Entraînement** pour faire entraîner un modèle YOLO sur un jeu de données annoté (un dossier avec un fichier *data.yaml*). La page s'ouvre sans rien installer, car la voie habituelle est la première.
 
-Les composants d'entraînement ne sont jamais installés tout seuls. La première fois, l'application demande votre confirmation et affiche une barre de progression. Avec une carte graphique NVIDIA, une version de PyTorch avec GPU (plusieurs Go) est téléchargée et l'application redémarre toute seule pour terminer l'activation.
+- **Sur le serveur** : tu demandes l'entraînement et un ordinateur avec une carte graphique fait le travail. Tu vois ta demande en attente, puis en cours, et le modèle entraîné est publié quand il est prêt.
+- **Sur cet ordinateur** : l'entraînement tourne ici, avec ton matériel. Les composants nécessaires (PyTorch et les extensions d'entraînement, plusieurs Go avec une carte NVIDIA) ne sont téléchargés que lorsque tu appuies sur le bouton, dans une petite fenêtre à part, et l'application reste utilisable pendant qu'ils arrivent.
 
-## Dossiers du serveur
+Un modèle entraîné porte le nom de l'espèce qu'il reconnaît et du réseau dont il vient, par exemple *Pinna_nobilis_yolo11l-seg.pt* : son nom à lui seul dit ce qu'il est.
 
-Lorsque vous êtes en ligne, **Dossiers du serveur** affiche les dossiers partagés par l'ordinateur du laboratoire.
+## Ce que vaut un modèle
 
-- **Photos** : consultez, téléchargez et ajoutez des photos. Nous vous demandons de donner les photos des objets que vous mesurez.
-- **Modèles YOLO** : téléchargez les modèles approuvés, regroupés par nom scientifique (par exemple *Pinna nobilis*). Les modèles que vous envoyez vont en quarantaine et ne sont publiés qu'après vérification par un administrateur, car un fichier de modèle peut contenir du code.
-- **Jeux de données** : ensembles d'images et d'étiquettes pour l'entraînement. Les jeux de données que vous envoyez sont ajoutés au jeu de données du serveur.
+**Performances des modèles** compare un modèle aux étiquettes vérifiées à la main : combien d'animaux il trouve, combien il en invente, à quel point les boîtes se superposent. Il y a une fiche par modèle, une comparaison espèce par espèce et un test sur de vraies photos à toi, pour voir où il marche et où il ne marche pas avant de faire confiance à une mesure.
 
-Les utilisateurs peuvent lire, télécharger et ajouter des fichiers, mais seuls les administrateurs peuvent modifier, renommer ou supprimer les fichiers existants. Les fichiers existants ne sont jamais écrasés et les téléchargements interrompus reprennent là où ils s'étaient arrêtés.
+## Le serveur et les groupes de travail
+
+Quand tu es en ligne, **Dossiers** → **Serveur** montre les dossiers partagés de l'ordinateur du laboratoire : photos, photos stéréo, vidéos, vidéos stéréo, modèles et jeux de données. Le bouton *Vue* passe des dossiers tels quels aux mêmes fichiers **par espèce**, tirée de leurs étiquettes.
+
+- **Photos** : regarde, télécharge et ajoute des photos. Donne les photos des objets que tu mesures.
+- **Modèles YOLO** : télécharge les modèles approuvés, regroupés par nom scientifique (par exemple *Pinna nobilis*). Les modèles que tu envoies passent en quarantaine et ne sont publiés qu'après vérification par un administrateur, car un fichier de modèle peut contenir du code.
+- **Jeux de données** : ensembles d'images et d'étiquettes pour l'entraînement. Les jeux de données que tu envoies s'ajoutent à celui du serveur.
+
+Les **groupes de travail** servent à travailler ensemble. N'importe qui peut en créer un et en devient l'administrateur : il ajoute et retire des membres, les promeut ou les rétrograde, et décide des réglages du groupe. Ce qu'envoie un membre attend dans la quarantaine du groupe jusqu'à ce qu'un administrateur l'approuve, et un groupe peut publier sur le serveur en son propre nom. Les utilisateurs peuvent lire, télécharger et ajouter des fichiers ; les fichiers existants ne sont jamais écrasés et les téléchargements interrompus reprennent là où ils s'étaient arrêtés.
 
 ## Mon profil
 
-Ouvrez **Mon profil** depuis la barre du haut.
+Ouvre **Mon profil** depuis la barre du haut.
 
-- **Données personnelles** : nom, e-mail, organisation, téléphone et une courte description, enregistrés sur le serveur. Vous pouvez aussi y changer votre mot de passe.
-- **Mon dossier sur le serveur** : un espace privé, comme un disque personnel, où vous ajoutez, renommez, déplacez et supprimez des fichiers depuis n'importe lequel de vos appareils. Une barre indique votre quota.
-- **Dossiers sur cet ordinateur** : choisissez les dossiers par défaut pour les téléchargements et les envois.
-- **Langue** : choisissez et téléchargez une langue.
+- **Données personnelles** : nom, e-mail, organisation, téléphone et une courte description, enregistrés sur le serveur. Tu peux aussi changer ton mot de passe.
+- **Mon dossier sur le serveur** : un espace privé, comme un disque personnel, où tu ajoutes, renommes, déplaces et supprimes des fichiers depuis n'importe lequel de tes appareils. Une barre montre ton quota.
+- **Dossiers sur cet ordinateur** : choisis les dossiers par défaut pour les téléchargements et les envois.
+- **Langue** : choisis et télécharge une langue.
 
 ## Langues
 
-L'anglais est installé avec l'application. Utilisez le bouton de langue, ou *Mon profil* → *Langue*, pour télécharger l'italien, l'espagnol, l'allemand, le français, le chinois (mandarin) ou le japonais. Chaque langue est téléchargée une seule fois, fonctionne hors ligne et inclut ce manuel. Le changement s'applique au prochain démarrage de l'application.
+L'anglais est installé avec l'application. Utilise le bouton de langue, ou *Mon profil* → *Langue*, pour télécharger l'italien, l'espagnol, l'allemand, le français, le chinois (mandarin) ou le japonais. Chaque langue se télécharge une seule fois, fonctionne hors ligne et contient ce manuel. Le changement s'applique au démarrage suivant de l'application.
 
 ## Pour les administrateurs
 
-Les administrateurs ouvrent la page **Gestion**, qui comporte quatre onglets.
+Les administrateurs ouvrent sur la page **Gestion**, qui a quatre onglets.
 
-- **Utilisateurs** : créez des utilisateurs, changez leur type (*Utilisateur* ou *Serveur*), désactivez ou supprimez des comptes, réinitialisez les mots de passe, définissez les quotas et consultez l'activité récente. Au moins un administrateur actif doit rester.
-- **Base de données** : les dossiers du serveur avec contrôle total. Les modèles du dossier *En attente d'approbation* peuvent être approuvés et publiés dans le dossier de leur espèce ; la sélection d'un modèle affiche ses détails (espèce, entraînement, métriques).
-- **Validation des photos** : les envois de photos des utilisateurs. Approuvez pour publier les photos dans le dossier de leur espèce, ou refusez.
-- **Entraînement** : ouvre la page d'entraînement, où vous pouvez aussi télécharger des jeux de données depuis le serveur et publier le modèle entraîné.
+- **Utilisateurs** : créer des utilisateurs, changer leur type (*Utilisateur* ou *Serveur*), désactiver ou supprimer des comptes, réinitialiser des mots de passe, fixer les quotas et lire l'activité récente. Il doit rester au moins un administrateur actif.
+- **Base de données** : les dossiers du serveur avec tous les droits. Les modèles en attente dans le dossier *En attente d'approbation* peuvent être approuvés et publiés dans le dossier de leur espèce ; en sélectionnant un modèle on voit ses détails (espèce, entraînement, métriques). Un administrateur peut aussi corriger les étiquettes d'une photo du serveur, et la vue par espèce suit aussitôt.
+- **Revue des photos** : les envois de photos faits par les utilisateurs. Approuver publie les photos dans le dossier de leur espèce, ou refuser.
+- **Entraînement** : ouvre la page d'entraînement, d'où l'on peut aussi télécharger des jeux de données du serveur et publier le modèle entraîné.
 
-Le serveur fonctionne sur l'ordinateur du laboratoire. Démarrez-le avec *python -m server serve* depuis le dossier du projet (ajoutez *--host 0.0.0.0* pour accepter les connexions du réseau), arrêtez-le avec Ctrl+C et redémarrez-le après chaque mise à jour du code.
+Le serveur tourne sur l'ordinateur du laboratoire. Lance-le avec *python -m server serve* depuis le dossier du projet (ajoute *--host 0.0.0.0* pour accepter les connexions du réseau), arrête-le avec Ctrl+C et redémarre-le après chaque mise à jour du code. Le gros du travail qu'il ne peut pas faire lui-même - entraîner un modèle, améliorer une image - est fait par un worker à part : lance *python training_worker.py* sur une machine avec carte graphique et il prend les demandes une à une.
 
-## Maintenance et réparation
+## Entretien et réparation
 
-À chaque démarrage, l'application vérifie rapidement que ses bibliothèques sont intactes. Si un fichier est endommagé, par exemple après un disque plein ou un téléchargement interrompu, elle propose de le réparer : seuls les paquets endommagés sont téléchargés de nouveau, une fenêtre de progression s'affiche et aucune fenêtre de console n'apparaît. Quand tout va bien, rien n'est réinstallé.
+L'application vérifie que ses bibliothèques sont intactes quand il y a une raison : la première fois, quand les paquets installés changent, ou au bout de quinze jours. Si un fichier est abîmé, par exemple après un disque plein ou un téléchargement interrompu, elle propose de le réparer : seuls les paquets abîmés sont retéléchargés, une fenêtre de progression s'affiche et **aucune fenêtre de terminal n'apparaît jamais**. Quand tout va bien, rien n'est réinstallé et l'application s'ouvre tout de suite.
 
-## Dépannage
+## En cas de problème
 
-- **Le serveur est injoignable** : vérifiez votre connexion et appuyez sur *Reconnecter* ; vous pouvez continuer à travailler hors ligne en attendant.
-- **La clé d'accès est bloquée** : attendez la fin du compte à rebours ; se connecter sans la clé est toujours possible.
-- **L'entraînement indique que des composants manquent** : appuyez sur *Installer* lorsque c'est demandé et restez en ligne jusqu'à la fin.
-- **Un fichier ne peut pas être envoyé** : chaque dossier du serveur n'accepte que certains types de fichiers et les fichiers existants ne sont pas écrasés.
+- **Le serveur est injoignable** : vérifie ta connexion et appuie sur *Reconnecter* ; en attendant tu peux continuer à travailler hors ligne.
+- **« Connexion requise »** : tu es entré sans compte ; connecte-toi pour utiliser le serveur et les groupes de travail.
+- **L'entraînement dit qu'il manque des composants** : appuie sur *Installer* quand il le demande et reste en ligne jusqu'à la fin ; tu peux continuer à utiliser l'application pendant le téléchargement.
+- **Un fichier ne s'envoie pas** : chaque dossier du serveur n'accepte que certains types de fichiers, et les fichiers existants ne sont pas écrasés.
 - **Un modèle est refusé** : il doit se trouver dans un dossier portant le nom scientifique, par exemple *Pinna nobilis*.
-- **Espace insuffisant dans votre dossier** : supprimez des fichiers ou demandez à un administrateur d'augmenter votre quota.
+- **Une photo n'est pas sous son espèce** : elle n'a pas encore d'étiquette de cette espèce ; ouvre-la et utilise *Créer les étiquettes...* ou *Classer dans une espèce...*.
 """

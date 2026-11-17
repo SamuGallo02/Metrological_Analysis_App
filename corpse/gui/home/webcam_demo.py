@@ -121,7 +121,7 @@ class WebcamDemoDialog(QDialog):
                 for name in list_model_classes(str(model_path)):
                     self.combo_class.addItem(name, name)
             except Exception:
-                pass  # if reading fails, "Tutti gli oggetti" remains available
+                pass  # if reading fails, "All objects" remains available
         idx = self.combo_class.findData("person")      # preselects "person" when present
         if idx >= 0:
             self.combo_class.setCurrentIndex(idx)

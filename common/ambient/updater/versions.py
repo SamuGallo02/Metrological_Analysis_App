@@ -1,4 +1,7 @@
-"""Which version is installed and which is the latest one on GitHub."""
+"""Which version is installed and which is the latest one on GitHub.
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass

@@ -1,4 +1,7 @@
-"""The Folders page: the choice Local / Server / Groups, the local folders and the group panels."""
+"""The Folders page: the choice Local / Server / Groups, the local folders and the group panels.
+
+Autore: Samuele Gallo
+"""
 import os
 import sys
 import tempfile

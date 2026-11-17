@@ -7,6 +7,8 @@ original, and the server stores the pair the same way.
 The algorithm itself is not part of this module: whoever has one registers it with `register()`, and the rest of the
 application (interface, upload, server) works without knowing what it does. Until something is registered,
 `available()` is empty and the application simply does not offer the improvement.
+
+Autore: Samuele Gallo
 """
 from __future__ import annotations
 

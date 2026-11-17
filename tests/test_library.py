@@ -1,4 +1,7 @@
-"""Media library: folders are registered where they are, never copied."""
+"""Media library: folders are registered where they are, never copied.
+
+Autore: Samuele Gallo
+"""
 import os, sys, tempfile, unittest
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))

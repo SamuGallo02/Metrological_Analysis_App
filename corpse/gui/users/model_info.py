@@ -1,11 +1,14 @@
-"""Le righe di testo che descrivono un modello a partire dai suoi metadati (senza Qt: si prova come una funzione)."""
+"""The lines of text that describe a model from its metadata (no Qt: it can be tested as a function).
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
 from common.i18n import tr
 
-# (chiave nei metadati, nome mostrato): sono termini tecnici, uguali in tutte le lingue
+# (key in the metadata, name shown): technical terms, the same in every language
 _METRICS = (("mAP50", "mAP50"), ("mAP50_95", "mAP50-95"), ("precision", "precision"), ("recall", "recall"))
 
 
@@ -15,7 +18,7 @@ def _dict(value: Any) -> Dict[str, Any]:
 
 
 def model_info_lines(meta: Optional[Dict[str, Any]]) -> List[str]:
-    """Le righe da mostrare per un modello; ogni riga compare solo se il dato c'è."""
+    """The lines to show for a model; a line appears only when the value is there."""
     meta = _dict(meta)
     lines: List[str] = []
     if meta.get("species"):

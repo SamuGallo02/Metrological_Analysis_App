@@ -1,4 +1,7 @@
-"""Improvement of a photo asked of the server: the queue, who may do what, and what happens to the file here."""
+"""Improvement of a photo asked of the server: the queue, who may do what, and what happens to the file here.
+
+Autore: Samuele Gallo
+"""
 import tempfile
 import unittest
 from pathlib import Path

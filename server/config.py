@@ -7,6 +7,8 @@ The key is NOT in the code. It is read, in order, from:
 The content can be the plain key or  sha256:<hex>  (created with `python -m server hash-key`),
 so that only the fingerprint stays on the server. To avoid publishing it: in .gitignore uncomment the line
 `server/admin_key.txt` when the project goes on the server.
+
+Autore: Samuele Gallo
 """
 from __future__ import annotations
 

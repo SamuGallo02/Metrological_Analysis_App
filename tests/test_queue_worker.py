@@ -1,4 +1,7 @@
-"""The worker that takes the queued trainings: what it does with a job, and what it does when it fails."""
+"""The worker that takes the queued trainings: what it does with a job, and what it does when it fails.
+
+Autore: Samuele Gallo
+"""
 import tempfile
 import unittest
 from pathlib import Path

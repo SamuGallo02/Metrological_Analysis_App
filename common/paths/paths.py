@@ -1,4 +1,7 @@
-"""Operating system user folders."""
+"""Operating system user folders.
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 
 import os

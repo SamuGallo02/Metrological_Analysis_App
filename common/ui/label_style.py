@@ -8,6 +8,8 @@ eyesight, not of data:
 
 A single colour is what a person needs when the picture fights the default one: red lines on a red fish are
 unreadable, and in a second the user can switch them to yellow - for the time of a correction, or for good.
+
+Autore: Samuele Gallo
 """
 from __future__ import annotations
 

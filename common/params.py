@@ -1,4 +1,7 @@
-"""Global application parameters (names, languages, addresses). A single place to edit."""
+"""Global application parameters (names, languages, addresses). A single place to edit.
+
+Autore: Samuele Gallo
+"""
 import os
 
 APP_NAME = "Metrological Analysis"

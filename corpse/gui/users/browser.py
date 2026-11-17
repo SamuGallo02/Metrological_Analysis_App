@@ -1,5 +1,8 @@
 """Browse the server folders. Common areas: everyone reads and uploads, only the 'server' role edits or
-deletes. Personal area ('mine'): the owner can do everything, within the quota."""
+deletes. Personal area ('mine'): the owner can do everything, within the quota.
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 import re
 
@@ -8,19 +11,21 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import (QAbstractItemView, QFileDialog, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
+from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QFileDialog, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
                                QMessageBox, QProgressBar, QPushButton, QTabBar, QTreeWidget, QTreeWidgetItem,
                                QVBoxLayout, QWidget, QTabWidget)
 
 from common.format import fmt_size, fmt_time
 from common.i18n import tr, tr_error
 
-from common.params import AREA_GROUPS, AREA_MINE, AREAS_SHARED, SPECIES_EXAMPLE, SPECIES_RE
+from common.params import AREA_GROUPS, AREA_MINE, AREAS_MEDIA, AREAS_SHARED, SPECIES_EXAMPLE, SPECIES_RE
 from common.ui.qt_utils import run_async
 from common.ui.thumbnails import ThumbnailCache, can_preview
 from common.remote_tree import walk_remote
 from common.model_metadata import fetch_remote_metadata
+from common.ui.places import desktop, managed
 from common.ui.server_state import server_note, server_ready
+from common.ui.places import desktop, managed
 
 from corpse.functions.users.session import Session
 from .labels import PENDING_DIR, area_label, folder_label, path_label
@@ -28,6 +33,9 @@ from .transfer import TransferDialog
 from .model_info import model_info_lines
 from .uploads import UploadsWidget
 from .catalog import CatalogWidget
+
+AREA_KIND = {"photos": "photo", "stereo": "photo_stereo", "videos": "video", "stereo_videos": "video_stereo",
+             "models": "models", "datasets": "datasets"}          # which folder of the app each area lands in
 
 
 class ServerBrowserWidget(QWidget):
@@ -41,7 +49,7 @@ class ServerBrowserWidget(QWidget):
         self.thumbs = ThumbnailCache(lambda key: self.session.client.read_bytes(*key.split("|", 1)))
         self.thumbs.ready.connect(self._thumb_ready)
         self._thumb_items: Dict[str, List[QTreeWidgetItem]] = {}      # key -> the rows waiting for that preview
-        self._info_token = 0                          # numero dell'ultima richiesta dei dettagli: scarta le risposte in ritardo
+        self._info_token = 0                          # number of the last request for details: late answers are dropped
         lay = QVBoxLayout(self)
 
         self.tabs = QTabBar()
@@ -50,6 +58,18 @@ class ServerBrowserWidget(QWidget):
         self.tabs.currentChanged.connect(self._area_changed)
         self.tabs.setVisible(len(self.areas) > 1)
         lay.addWidget(self.tabs)
+
+        view = QHBoxLayout()
+        view.addWidget(QLabel(tr("View:")))
+        self.view_mode = QComboBox()                   # the same files, two ways of looking at them
+        self.view_mode.addItem(tr("Folders"), "folders")
+        self.view_mode.addItem(tr("Species"), "species")
+        self.view_mode.setToolTip(tr("By species: taken from the labels, so a photo with two animals is under "
+                                     "both. The files stay where they are."))
+        self.view_mode.currentIndexChanged.connect(lambda *_: (self._apply_role(), self.refresh()))
+        view.addWidget(self.view_mode)
+        view.addStretch(1)
+        lay.addLayout(view)
 
         self.note = QLabel()
         self.note.setWordWrap(True)
@@ -70,7 +90,7 @@ class ServerBrowserWidget(QWidget):
         self.tree.itemExpanded.connect(self._expanded)
         lay.addWidget(self.tree, 1)
 
-        self.info = QLabel()                          # dettagli del modello selezionato (solo nella scheda dei modelli)
+        self.info = QLabel()                          # details of the chosen model (only in the models tab)
         self.info.setTextFormat(Qt.TextFormat.PlainText)
         self.info.setWordWrap(True)
         self.info.hide()
@@ -109,7 +129,7 @@ class ServerBrowserWidget(QWidget):
         return self.session.can("files.modify")
 
     def _apply_role(self) -> None:
-        editing = not self.download_only
+        editing = not self.download_only and not self.by_species()    # by species nothing is moved or created
         self.btn_up_files.setVisible(editing)
         self.btn_up_dir.setVisible(editing)
         self.btn_mkdir.setVisible(editing)
@@ -147,6 +167,10 @@ class ServerBrowserWidget(QWidget):
         self._apply_role()
         self.refresh()
 
+    def by_species(self) -> bool:
+        """True when this tab is showing the media by species (only the common media folders can be)."""
+        return self.view_mode.currentData() == "species" and self.area in AREAS_MEDIA
+
     def _selected(self) -> List[Dict[str, Any]]:
         """The selected entries; each has "path", its full path inside the area."""
         return [d for d in (it.data(0, Qt.ItemDataRole.UserRole) for it in self.tree.selectedItems()) if d]
@@ -163,7 +187,7 @@ class ServerBrowserWidget(QWidget):
         return path.rsplit("/", 1)[0] if "/" in path else ""
 
     def _show_info(self) -> None:
-        """Dettagli del modello selezionato: i metadati (.json) accanto al file, nella scheda dei modelli."""
+        """Details of the chosen model: the metadata (.json) beside the file, in the models tab."""
         self._info_token += 1
         token, area = self._info_token, self.area
         sel = self._selected()
@@ -204,12 +228,53 @@ class ServerBrowserWidget(QWidget):
     def refresh(self) -> None:
         self.crumb.setText(f"<b>{area_label(self.area)}</b> / {path_label(self.path)}")
         self.tree.clear()
+        self.view_mode.setVisible(self.area in AREAS_MEDIA)
         if not server_ready(self.session):
             self.status.setText(server_note(self.session))
             return
         self.status.setText(tr("Loading..."))
         self._refresh_quota()
+        if self.by_species():
+            return self._load_species()
         self._load(None, self.path)
+
+    # ---- the view by species ----------------------------------------------
+    def _load_species(self) -> None:
+        """Asks the server for the media of this area grouped by the species of their labels."""
+        area = self.area
+
+        def done(groups: Dict[str, List[Dict[str, Any]]]) -> None:
+            if area != self.area or not self.by_species():
+                return                                  # the tab changed while the answer was on its way
+            self.tree.clear()
+            names = sorted((n for n in groups if n), key=str.lower) + ([""] if "" in groups else [])
+            total = sum(len(v) for v in groups.values())
+            for name in names:
+                node = QTreeWidgetItem([name or tr("Without a species"), tr("Species"),
+                                        tr("{n} files", n=len(groups[name])), ""])
+                node.setData(0, Qt.ItemDataRole.UserRole, {"type": "species", "path": "", "name": name,
+                                                           "files": groups[name]})
+                node.addChild(QTreeWidgetItem([tr("Loading..."), "", "", ""]))     # placeholder: shows the arrow
+                self.tree.addTopLevelItem(node)
+            self.status.setText(tr("{n} species, {m} files", n=len([n for n in names if n]), m=total)
+                                if total else tr("No labelled file in this folder."))
+
+        def fail(e: Exception) -> None:
+            self.status.setText(tr("Error: {msg}", msg=tr_error(e)))
+
+        run_async(self, lambda: self.session.client.species_index(area), done, fail)
+
+    def _fill_species(self, item: QTreeWidgetItem, entry: Dict[str, Any]) -> None:
+        """The files of a species: ordinary rows, so download, preview and the rest work as usual."""
+        item.takeChildren()
+        for e in sorted(entry["files"], key=lambda f: f["path"].lower()):
+            row = QTreeWidgetItem([e["name"], tr("File"), fmt_size(e["size"]), fmt_time(e["mtime"])])
+            row.setData(0, Qt.ItemDataRole.UserRole, dict(e, type="file"))
+            row.setToolTip(0, e["path"])                # where the file really is on the server
+            if can_preview(e["name"]):
+                self._want_thumb(row, e["path"])
+            item.addChild(row)
+        item.setData(0, Qt.ItemDataRole.UserRole, dict(entry, loaded=True))
 
     def _load(self, parent: Optional[QTreeWidgetItem], path: str) -> None:
         """Lists `path` and puts its entries under `parent` (None: at the top of the tree)."""
@@ -271,6 +336,8 @@ class ServerBrowserWidget(QWidget):
 
     def _expanded(self, item: QTreeWidgetItem) -> None:
         entry = item.data(0, Qt.ItemDataRole.UserRole)
+        if entry and entry.get("type") == "species":
+            return None if entry.get("loaded") else self._fill_species(item, entry)
         if not entry or entry["type"] != "dir" or entry.get("loaded"):
             return
         item.setData(0, Qt.ItemDataRole.UserRole, dict(entry, loaded=True))          # one request per folder
@@ -305,8 +372,9 @@ class ServerBrowserWidget(QWidget):
             self.refresh()
 
     def _start_dir(self) -> str:
+        """Where the downloads of this area go: the folder the user chose for it, or the one of the app."""
         folders = self.session.local_folders()
-        return folders.get(self.area) or str(Path.home())
+        return folders.get(self.area) or managed(AREA_KIND.get(self.area, ""), None)
 
     # ---- transfers -----------------------------------------------------
     def _download(self) -> None:
@@ -383,12 +451,12 @@ class ServerBrowserWidget(QWidget):
         self._reload(self._upload_target)
 
     def _upload_files(self) -> None:
-        files, _ = QFileDialog.getOpenFileNames(self, tr("Choose the files to upload"), self._start_dir())
+        files, _ = QFileDialog.getOpenFileNames(self, tr("Choose the files to upload"), desktop())
         target = self._target()
         self._upload_paths([(Path(f), self._rel_in(target, Path(f).name)) for f in files], target)
 
     def _upload_dir(self) -> None:
-        d = QFileDialog.getExistingDirectory(self, tr("Choose the folder to upload"), self._start_dir())
+        d = QFileDialog.getExistingDirectory(self, tr("Choose the folder to upload"), desktop())
         if not d:
             return
         root, target = Path(d), self._target()

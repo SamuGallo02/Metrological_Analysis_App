@@ -6,6 +6,8 @@ names - there is no naming convention - and label files already sitting next to 
 
 Qt-free and without image libraries, so the interface, the analysis and the tests can all use it. Reading pixels
 (resolution, thumbnails) is added on top of this by `corpse.functions.analysis.library`.
+
+Autore: Samuele Gallo
 """
 from __future__ import annotations
 

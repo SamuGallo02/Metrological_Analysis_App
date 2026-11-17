@@ -1,4 +1,7 @@
-"""Language selection and download. Does not depend on any page."""
+"""Language selection and download. Does not depend on any page.
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional

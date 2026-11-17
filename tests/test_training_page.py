@@ -1,4 +1,7 @@
-"""Training page: connection with the account and the server (headless)."""
+"""Training page: connection with the account and the server (headless).
+
+Autore: Samuele Gallo
+"""
 import os, sys, tempfile, types, unittest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import json
@@ -23,7 +26,7 @@ class TrainingPageSessionTest(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
         tmp = Path(self._tmp.name)
-        # la pagina non deve toccare le cartelle vere, né controllare rete e hardware
+        # the page must not touch the real folders, nor check the network and the hardware
         for name, value in (("TDATASET_DIR", tmp / "datasets"), ("MODELS_DIR", tmp / "models"),
                             ("check_internet_connection", lambda: False),
                             ("get_hardware_info", lambda: ("cpu", "CPU di prova"))):
@@ -140,7 +143,7 @@ class TrainingPageSessionTest(unittest.TestCase):
         return types.SimpleNamespace(online=True, is_guest=False, client=client, username="admin"), client
 
     def _trained(self, session, with_species=False):
-        """Una pagina su cui è appena finito un training: restituisce (pagina, modello)."""
+        """A page where a training has just finished: returns (page, model)."""
         page = self.page(session)
         model = Path(self._tmp.name) / "trained.pt"
         model.write_bytes(b"abc")
@@ -157,7 +160,7 @@ class TrainingPageSessionTest(unittest.TestCase):
 
     def test_publish_needs_a_trained_model_and_the_server(self):
         session, _client = self._online()
-        self.assertFalse(self.page(session).btn_publish.isEnabled())          # nessun modello ancora
+        self.assertFalse(self.page(session).btn_publish.isEnabled())          # no model yet
         page, _model = self._trained(session)
         self.assertTrue(page.btn_publish.isEnabled())
         session.online = False

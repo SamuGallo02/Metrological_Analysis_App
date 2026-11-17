@@ -1,3 +1,4 @@
+# Autore: Samuele Gallo
 import sys
 
 from .runner import main

@@ -1,4 +1,7 @@
-"""General request limit per client address (sliding window). Protects a server exposed to a network."""
+"""General request limit per client address (sliding window). Protects a server exposed to a network.
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 
 import threading

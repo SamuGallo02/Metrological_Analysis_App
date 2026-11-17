@@ -1,4 +1,7 @@
-"""The views of the files: the labels can be shown over the media or hidden, and corrected from there."""
+"""The views of the files: the labels can be shown over the media or hidden, and corrected from there.
+
+Autore: Samuele Gallo
+"""
 import os
 import tempfile
 import unittest

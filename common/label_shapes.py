@@ -1,4 +1,7 @@
-"""YOLO label lines as shapes: reading and writing (no Qt, no network). Shared by the viewer and the label editor."""
+"""YOLO label lines as shapes: reading and writing (no Qt, no network). Shared by the viewer and the label editor.
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 
 import math

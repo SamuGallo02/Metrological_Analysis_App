@@ -9,6 +9,8 @@ The improvements use the algorithm registered in `common.image_enhance`: without
     python training_worker.py --server https://... --user NAME --password ... [--once]
 
 The password can also come from the AM_WORKER_PASSWORD environment variable, so it does not stay in the command.
+
+Autore: Samuele Gallo
 """
 from __future__ import annotations
 

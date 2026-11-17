@@ -1,3 +1,4 @@
+# Autore: Samuele Gallo
 import unittest
 from types import SimpleNamespace
 from unittest import mock

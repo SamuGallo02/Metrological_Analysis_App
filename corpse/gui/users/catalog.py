@@ -1,5 +1,8 @@
 """Catalog of what the server approved (photos or models): one tree, a folder per species in alphabetical order,
-and inside it every photo / model with its data beside it. Filterable and sortable; photos open in a viewer."""
+and inside it every photo / model with its data beside it. Filterable and sortable; photos open in a viewer.
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 
 import re
@@ -16,6 +19,7 @@ from common.remote_tree import walk_remote
 from common.ui.qt_utils import run_async, fit_columns
 from common.ui.server_state import server_note, server_ready
 from common.ui.widgets import open_performance, performance_available
+from common.ui.places import desktop, managed
 
 from corpse.functions.users.preview import IMAGE_SUFFIXES
 from corpse.functions.users.session import Session
@@ -250,7 +254,7 @@ class CatalogWidget(QWidget):
         picked = self._selected()
         if not picked:
             return
-        start = self.session.local_folders().get(self.area) or str(Path.home())
+        start = self.session.local_folders().get(self.area) or managed(self.kind, None)
         dest = QFileDialog.getExistingDirectory(self, tr("Choose where to save"), start)
         if not dest:
             return

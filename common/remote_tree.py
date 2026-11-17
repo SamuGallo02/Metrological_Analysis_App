@@ -1,7 +1,9 @@
-"""Scaricamento di una cartella intera dal server (senza interfaccia grafica).
+"""Downloading a whole folder from the server (no graphical interface).
 
 Riceve il client (ApiClient) come argomento: così sta in `common`, senza importare nessuna sezione,
 e lo possono usare sia il browser delle cartelle sia il Training.
+
+Autore: Samuele Gallo
 """
 from __future__ import annotations
 
@@ -26,7 +28,7 @@ def walk_remote(client: Any, area: str, rel: str) -> List[Tuple[str, int]]:
 
 def download_tree(client: Any, area: str, remote: str, dest: Path, progress: Progress = None,
                   cancel: Cancel = None) -> int:
-    """Scarica la cartella `remote` dentro `dest`; restituisce il numero di file della cartella.
+    """Downloads the folder `remote` into `dest`; returns how many files the folder had.
 
     I file già presenti non si scaricano di nuovo: un download interrotto riprende da dove era."""
     files = walk_remote(client, area, remote)

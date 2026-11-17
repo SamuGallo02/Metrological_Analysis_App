@@ -1,3 +1,4 @@
+# Autore: Samuele Gallo
 import tempfile
 import unittest
 from datetime import date
@@ -15,7 +16,7 @@ class ReviewSubmissionTest(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
         self.store = Storage(Path(self._tmp.name))
-        self.db = Database(Path(self._tmp.name) / "test.db")       # stessa riga degli altri test
+        self.db = Database(Path(self._tmp.name) / "test.db")       # the same line as the other tests
 
     def _upload(self, rel):
         upload_as_user(self.store, rel)

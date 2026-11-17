@@ -34,6 +34,7 @@ from corpse.gui.analysis.analysis_gui import StereoAnalysisPage
 from common.ui.widgets import set_manual_opener, set_performance_opener
 from corpse.gui.manual.dialog import ManualDialog
 from common.ui.layout import centered_content
+from common.ui.places import desktop, managed
 from corpse.gui.analysis.photo_gui import PhotoAnalysisPage
 from corpse.gui.analysis.video_gui import VideoAnalysisPage
 from corpse.gui.analysis.video_stereo_gui import VideoStereoAnalysisPage
@@ -199,7 +200,8 @@ class AppWindow(QMainWindow):
     def _edit_labels(self) -> None:
         """Picks a photo or video of this computer and opens the label editor on it."""
         patterns = " ".join(f"*{e}" for e in sorted(IMAGE_SUFFIXES + VIDEO_SUFFIXES))
-        f, _ = QFileDialog.getOpenFileName(self, tr("Choose a photo or video"), "", f"{tr('Photos')} ({patterns})")
+        f, _ = QFileDialog.getOpenFileName(self, tr("Choose a photo or video"), desktop(),
+                                           f"{tr('Photos')} ({patterns})")
         if f:
             edit_local_labels(self, Path(f))
 

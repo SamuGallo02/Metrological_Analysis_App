@@ -8,7 +8,10 @@ read-only or belong to somebody else), plus the list of class names the numbers 
   classes one class name per line (line N = class N)
 
 When the media is uploaded to the server the label file travels with it (same name, `.txt`) and stays associated
-with it in the catalog. Qt-free: used by the analysis and by the uploads."""
+with it in the catalog. Qt-free: used by the analysis and by the uploads.
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 
 import hashlib

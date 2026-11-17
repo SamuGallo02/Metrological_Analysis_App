@@ -1,4 +1,7 @@
-"""python -m server  serve | lan | status | doctor | backup | backups | restore | users | create-admin | hash-key"""
+"""python -m server  serve | lan | status | doctor | backup | backups | restore | users | create-admin | hash-key
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 
 import argparse

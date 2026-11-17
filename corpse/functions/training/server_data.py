@@ -1,4 +1,7 @@
-"""Dataset di training presenti sul server (area `datasets`). Funzioni senza interfaccia grafica."""
+"""Training datasets that live on the server (area `datasets`). Functions without a graphical interface.
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 
 from typing import Any, Dict, List
@@ -8,9 +11,9 @@ DATA_FILES = ("data.yaml", "data.yml")          # il file che YOLO vuole per sap
 
 
 def list_server_datasets(client: Any) -> List[Dict[str, Any]]:
-    """Le cartelle dell'area dei dataset, in ordine alfabetico: {"name", "valid"}.
+    """The folders of the dataset area, in alphabetical order: {"name", "valid"}.
 
-    "valid" vuol dire che dentro c'è un data.yaml (o data.yml): senza, YOLO non può usarla."""
+    "valid" means it holds a data.yaml (or data.yml): without one, YOLO cannot use it."""
     found = []
     for e in client.list(DATASETS_AREA, ""):
         if e["type"] != "dir":
@@ -21,7 +24,7 @@ def list_server_datasets(client: Any) -> List[Dict[str, Any]]:
 
 def group_datasets_by_species(items: list[dict]) -> list[tuple[str, list[dict]]]:
     """Raggruppa gli elementi del catalogo dei dataset per specie (le classi del data.yaml).
-    Un dataset con più specie compare sotto ognuna; quelli senza specie dichiarata vanno in coda, sotto ''."""
+    A dataset of several species appears under each of them; those with no declared species go last, under ''."""
     groups: dict[str, list[dict]] = {}
     for item in items:
         for species in item.get("classes") or [""]:

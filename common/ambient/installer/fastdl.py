@@ -6,6 +6,8 @@ SHA-256 verification. Standard library only.
 Why: the PyTorch GPU download is several GB and the server often limits the
 speed of EACH connection; with more connections the total speed grows, and an
 error halfway (disk full, network down) does not force a restart from scratch.
+
+Autore: Samuele Gallo
 """
 
 from __future__ import annotations

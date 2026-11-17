@@ -1,4 +1,7 @@
-"""Metadati dei modelli allenati (senza YOLO: i risultati del training sono finti)."""
+"""Metadata of trained models (no YOLO: the training results are faked).
+
+Autore: Samuele Gallo
+"""
 import hashlib
 import json
 import sys
@@ -111,13 +114,22 @@ class SuggestSpeciesTest(unittest.TestCase):
 
 
 class ModelFilenameTest(unittest.TestCase):
-    def test_includes_dataset_base_model_and_time(self):
-        name = model_filename("tonno", "/x/models/yolo11n-seg.pt", datetime(2026, 10, 30, 14, 5))
-        self.assertEqual(name, "tonno_yolo11n-seg_20261030-1405.pt")
+    def test_the_name_says_the_species_and_the_base_model(self):
+        self.assertEqual(model_filename("Pinna nobilis", "/x/models/yolo11l-seg.pt"),
+                         "Pinna_nobilis_yolo11l-seg.pt")
 
     def test_unsafe_characters_are_replaced(self):
-        name = model_filename("Tonni pinna gialla/v2", "yolo11n.pt", datetime(2026, 1, 2, 3, 4))
-        self.assertEqual(name, "Tonni_pinna_gialla_v2_yolo11n_20260102-0304.pt")
+        self.assertEqual(model_filename("Tonni pinna gialla/v2", "yolo11n.pt"), "Tonni_pinna_gialla_v2_yolo11n.pt")
+
+    def test_a_new_training_never_writes_over_the_previous_model(self):
+        from common.model_metadata import free_name
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            first = free_name(folder, "Pinna_nobilis_yolo11l-seg.pt")
+            self.assertEqual(first.name, "Pinna_nobilis_yolo11l-seg.pt")
+            first.write_bytes(b"x")
+            self.assertEqual(free_name(folder, "Pinna_nobilis_yolo11l-seg.pt").name,
+                             "Pinna_nobilis_yolo11l-seg (2).pt")
 
 
 class CountImagesTest(unittest.TestCase):

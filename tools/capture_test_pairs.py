@@ -21,6 +21,8 @@ DAEMON_PATH_LX="lx/", file name = Unix epoch timestamp, e.g. "1723130400.jpg"):
         └── 1723130403.jpg
 
 Autore: Candidato Tesi
+
+Autore: Samuele Gallo
 """
 
 from __future__ import annotations

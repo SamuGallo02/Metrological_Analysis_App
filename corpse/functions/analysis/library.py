@@ -8,6 +8,8 @@ Thumbnails are produced in memory on demand, so a preview never leaves a copy on
 Kinds: photo (flat folder of images), photo_stereo (rx/lx folders), video (one video), video_stereo (rx/lx videos).
 Folders that already live in the default data folders (older installations) are registered in place. The same
 register is what "Folders > Local" shows, so a folder added there can be analysed straight away.
+
+Autore: Samuele Gallo
 """
 from __future__ import annotations
 

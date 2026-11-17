@@ -2,6 +2,8 @@
 
 A photo of two animals carries two labels and is therefore under two species at once, while the folder the user
 added stays exactly as it was: the species are a view, not a place where files are moved.
+
+Autore: Samuele Gallo
 """
 import os
 import tempfile
@@ -150,3 +152,70 @@ class SpeciesViewTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ServerSpeciesTest(unittest.TestCase):
+    """The server tells the same story: the species of a file are the classes of its labels."""
+
+    @classmethod
+    def setUpClass(cls):
+        from tests.util import TestServer
+        cls.srv = TestServer()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.srv.close()
+
+    def admin(self):
+        from corpse.functions.users.api import ApiClient
+        c = ApiClient(self.srv.url)
+        c.login("admin", "adminpass1")
+        return c
+
+    def put(self, _client, rel: str, data: bytes):
+        """Puts a file straight into the library of the server, where an approved upload ends up."""
+        target = Path(self.srv.data) / "store" / "library" / "photos" / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+
+    def test_a_photo_with_two_species_is_listed_under_both(self):
+        from tests.util import png_bytes
+        c = self.admin()
+        base = "Pinna nobilis"
+        self.put(c, f"{base}/a.png", png_bytes())
+        self.put(c, f"{base}/a.txt", b"0 0.5 0.5 0.2 0.2\n1 0.2 0.2 0.1 0.1\n")
+        self.put(c, f"{base}/classes.txt", b"Pinna nobilis\nPosidonia oceanica\n")
+        groups = c.species_index("photos")
+        self.assertIn("Pinna nobilis", groups)
+        self.assertIn("Posidonia oceanica", groups)
+        self.assertEqual([f["path"] for f in groups["Pinna nobilis"]], [f"{base}/a.png"])
+        self.assertEqual([f["path"] for f in groups["Posidonia oceanica"]], [f"{base}/a.png"])
+
+    def test_a_photo_without_labels_waits_under_no_species(self):
+        from tests.util import png_bytes
+        c = self.admin()
+        base = "Sepia officinalis"
+        self.put(c, f"{base}/b.png", png_bytes())
+        groups = c.species_index("photos")
+        self.assertIn("", groups)
+        self.assertIn(f"{base}/b.png", [f["path"] for f in groups[""]])
+
+    def test_correcting_the_labels_changes_where_the_photo_is_seen(self):
+        from tests.util import png_bytes
+        c = self.admin()
+        base = "Pinna nobilis"
+        self.put(c, f"{base}/c.png", png_bytes())
+        self.put(c, f"{base}/c.txt", b"0 0.5 0.5 0.2 0.2\n")
+        self.put(c, f"{base}/classes.txt", b"Pinna nobilis\n")
+        self.assertIn(f"{base}/c.png", [f["path"] for f in c.species_index("photos")["Pinna nobilis"]])
+        c.save_labels("photos", f"{base}/c.png", "0 0.5 0.5 0.2 0.2\n", "Posidonia oceanica\n")
+        groups = c.species_index("photos")
+        self.assertIn(f"{base}/c.png", [f["path"] for f in groups["Posidonia oceanica"]])
+        self.assertNotIn(f"{base}/c.png", [f["path"] for f in groups.get("Pinna nobilis", [])])
+
+    def test_the_personal_folder_is_not_a_place_for_this_view(self):
+        from corpse.functions.users.api import ApiError
+        c = self.admin()
+        with self.assertRaises(ApiError) as e:
+            c.species_index("mine")
+        self.assertEqual(e.exception.status, 400)

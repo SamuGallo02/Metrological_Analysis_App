@@ -6,6 +6,8 @@ libraries, a tool a package calls on its own - by setting the flag in `subproces
 
 A process that deliberately wants a console of its own (DETACHED_PROCESS, CREATE_NEW_CONSOLE) is left alone:
 those flags cannot be combined, and asking for both makes Windows refuse to start the process.
+
+Autore: Samuele Gallo
 """
 from __future__ import annotations
 

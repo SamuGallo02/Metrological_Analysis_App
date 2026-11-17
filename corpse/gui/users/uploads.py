@@ -1,4 +1,7 @@
-"""Uploads page of the user: one large button per kind of upload. Whatever is sent waits for an administrator."""
+"""Uploads page of the user: one large button per kind of upload. Whatever is sent waits for an administrator.
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 import re
 from pathlib import Path
@@ -12,6 +15,7 @@ from common.species import common_species
 from common.params import AREA_STEREO, AREA_STEREO_VIDEOS, AREA_VIDEOS, IMAGE_SUFFIXES, SPECIES_EXAMPLE, SPECIES_RE, VIDEO_SUFFIXES
 from common.ui.qt_utils import run_async
 from common.ui.server_state import server_note, server_ready
+from common.ui.places import desktop, managed
 from corpse.functions.users.session import Session
 from corpse.functions.users.upload_plan import has_stereo_folders, plan_media, plan_stereo
 from .transfer import TransferDialog
@@ -106,7 +110,7 @@ class UploadsWidget(QWidget):
         """One photo or many, and videos, picked together (even from different folders), for one species. A label
         file with the same name next to a photo or saved by the analysis goes with it."""
         patterns = " ".join(f"*{ext}" for ext in sorted(IMAGE_SUFFIXES + VIDEO_SUFFIXES))
-        files, _ = QFileDialog.getOpenFileNames(self, tr("Choose the photos to upload"), "",
+        files, _ = QFileDialog.getOpenFileNames(self, tr("Choose the photos to upload"), desktop(),
                                                 f"{tr('Photos')} ({patterns})")
         if not files:
             return
@@ -127,7 +131,8 @@ class UploadsWidget(QWidget):
 
     def _stereo(self) -> None:
         """A folder with an `lx` and an `rx` subfolder holding photos (or videos) of the same names."""
-        d = QFileDialog.getExistingDirectory(self, tr("Choose the folder with the lx and rx subfolders"))
+        d = QFileDialog.getExistingDirectory(self, tr("Choose the folder with the lx and rx subfolders"),
+                                             desktop())
         if not d:
             return
         root = Path(d)
@@ -151,7 +156,7 @@ class UploadsWidget(QWidget):
                    lambda: self.session.client.submit_species(species, kind, self.group()))
 
     def _dataset(self) -> None:
-        d = QFileDialog.getExistingDirectory(self, tr("Choose the folder to upload"))
+        d = QFileDialog.getExistingDirectory(self, tr("Choose the folder to upload"), desktop())
         if not d:
             return
         root = Path(d)
@@ -160,7 +165,8 @@ class UploadsWidget(QWidget):
                    lambda: self.session.client.submit_dataset(root.name, self.group()))
 
     def _model(self) -> None:
-        f, _ = QFileDialog.getOpenFileName(self, tr("Choose the files to upload"), "", "YOLO (*.pt)")
+        f, _ = QFileDialog.getOpenFileName(self, tr("Choose the files to upload"),   # a model of the app
+                                           managed("models"), "YOLO (*.pt)")
         if not f:
             return
         model = Path(f)

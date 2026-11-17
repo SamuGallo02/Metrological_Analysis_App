@@ -1,4 +1,7 @@
-"""Structure of the photos, stereo photos and videos of a species, with their labels."""
+"""Structure of the photos, stereo photos and videos of a species, with their labels.
+
+Autore: Samuele Gallo
+"""
 import sys
 import tempfile
 import unittest

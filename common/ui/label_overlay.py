@@ -2,6 +2,8 @@
 
 The colour is the one the user chose for contrast (`common.ui.label_style`); on a small preview only the outline
 is drawn, because a class name would cover the picture itself.
+
+Autore: Samuele Gallo
 """
 from __future__ import annotations
 

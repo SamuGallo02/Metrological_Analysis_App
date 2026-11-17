@@ -1,3 +1,4 @@
+# Autore: Samuele Gallo
 import os
 import sys
 import tempfile

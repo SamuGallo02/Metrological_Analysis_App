@@ -1,4 +1,7 @@
-"""Where the code comes from and which files belong to an installation. A single place to edit."""
+"""Where the code comes from and which files belong to an installation. A single place to edit.
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 
 import os

@@ -1,5 +1,8 @@
 """What a normal user gets at installation: only the minimum (connect to the server and analyse).
-Everything else — GPU training above all — is installed later, on request."""
+Everything else — GPU training above all — is installed later, on request.
+
+Autore: Samuele Gallo
+"""
 import unittest
 from pathlib import Path
 

@@ -1,4 +1,7 @@
-"""Backup, restore and rotation of the server database (and, optionally, of the data folders)."""
+"""Backup, restore and rotation of the server database (and, optionally, of the data folders).
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 
 import shutil

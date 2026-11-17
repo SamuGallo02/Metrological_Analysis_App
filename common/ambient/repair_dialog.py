@@ -1,4 +1,7 @@
-"""Startup repair of the virtual environment: question, progress window and restart (see installer/integrity.py)."""
+"""Startup repair of the virtual environment: question, progress window and restart (see installer/integrity.py).
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 
 import sys

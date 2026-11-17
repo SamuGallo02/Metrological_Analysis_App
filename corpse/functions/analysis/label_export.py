@@ -2,7 +2,10 @@
 
 The polygon of each detected object (segmentation) is saved, or its box when the contour is too small to be a polygon.
 Class numbers follow the model's own class list; a class the model does not list is appended, so numbers never change
-within a set of labels."""
+within a set of labels.
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 
 import logging

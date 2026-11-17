@@ -5,6 +5,8 @@ by merging wrapper.in (Windows/sh) and installer_gui.py (the installation window
 
 Usage:  python common/ambient/distribution/build_installer.py   (writes to common/ambient/distribution/output/)
         python common/ambient/distribution/build_installer.py DEST     (writes to DEST)
+
+Autore: Samuele Gallo
 """
 import os
 import stat

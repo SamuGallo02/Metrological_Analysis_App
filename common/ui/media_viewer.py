@@ -3,6 +3,8 @@
 Every view of the files (local folders, server) opens this: the media fills the window, a button shows or hides
 the labels the analysis produced, another one opens the editor for correcting them by hand, and - when the
 server can do it - the improvement of the image is asked from here as well.
+
+Autore: Samuele Gallo
 """
 from __future__ import annotations
 

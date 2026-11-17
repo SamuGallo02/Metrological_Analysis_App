@@ -1,4 +1,7 @@
-"""Choice of PyTorch builds and requirements based on OS and hardware."""
+"""Choice of PyTorch builds and requirements based on OS and hardware.
+
+Autore: Samuele Gallo
+"""
 
 from __future__ import annotations
 

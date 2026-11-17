@@ -3,6 +3,8 @@ Installation state (.install_state.json in librery/).
 
 This is the ONLY check made at app startup (and by the launchers): the file exists
 => installation completed. No package-by-package verification.
+
+Autore: Samuele Gallo
 """
 
 from __future__ import annotations

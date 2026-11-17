@@ -146,18 +146,8 @@ class VideoAnalysisPage(AnalysisPageBase):
         self.folder_combo.currentIndexChanged.connect(self._on_folder_selection_changed)
         dataset_bar.addWidget(self.folder_combo, stretch=1)
 
-        btn_add_dataset = QPushButton("Aggiungi cartella...")
-        btn_add_dataset.clicked.connect(self._add_dataset)
-        dataset_bar.addWidget(btn_add_dataset)
-
-        btn_refresh_datasets = QPushButton("Aggiorna elenco")
-        btn_refresh_datasets.clicked.connect(self._refresh_datasets)
-        dataset_bar.addWidget(btn_refresh_datasets)
-        btn_remove_dataset = QPushButton("Rimuovi dall'elenco")
-        btn_remove_dataset.setToolTip("Toglie la cartella dall'elenco: i file non vengono cancellati.")
-        btn_remove_dataset.clicked.connect(self._remove_dataset)
-        dataset_bar.addWidget(btn_remove_dataset)
         layout.addLayout(dataset_bar)
+        # The folders are the ones registered in Folders > Local: nothing is added from here.
 
         note = QLabel("La cartella deve contenere UN SOLO file video (non rx/lx: quello è per la modalità Stereo).")
         note.setStyleSheet("color: #aaaaaa; font-style: italic;")
@@ -173,14 +163,6 @@ class VideoAnalysisPage(AnalysisPageBase):
             return (f"'{folder.name}' contiene le sottocartelle rx/lx: e' un dataset per la modalita' Video Stereo, "
                     f"non per il Video Singolo. Selezionala nella modalita' Stereo invece.")
         return None
-
-    def _add_dataset(self) -> None:
-        """Registers a folder where it is: nothing is copied into the application's folders."""
-        add_folder(self, self.KIND, "Seleziona cartella con un video (non rx/lx)",
-                   self._validate_folder)
-
-    def _remove_dataset(self) -> None:
-        remove_selected(self, self.KIND)
 
     def _refresh_datasets(self) -> None:
         refresh(self, self.KIND)

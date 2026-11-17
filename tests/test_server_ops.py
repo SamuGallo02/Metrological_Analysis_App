@@ -1,4 +1,7 @@
-"""Operational tools of the server: rate limit, statistics, backup/restore, command line."""
+"""Operational tools of the server: rate limit, statistics, backup/restore, command line.
+
+Autore: Samuele Gallo
+"""
 import json
 import sqlite3
 import sys

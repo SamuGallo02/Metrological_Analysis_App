@@ -2,6 +2,8 @@
 
 The server only holds the queue; a computer with a graphics card (the worker) does the work. So the user can ask
 for a training and close the application.
+
+Autore: Samuele Gallo
 """
 from __future__ import annotations
 

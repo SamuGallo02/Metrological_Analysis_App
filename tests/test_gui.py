@@ -1,4 +1,7 @@
-"""Headless test of the windows (QT_QPA_PLATFORM=offscreen)."""
+"""Headless test of the windows (QT_QPA_PLATFORM=offscreen).
+
+Autore: Samuele Gallo
+"""
 import os, sys, tempfile, threading, time, types, unittest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from pathlib import Path, PurePosixPath
@@ -347,7 +350,7 @@ class GuiTest(unittest.TestCase):
         w = ui.UploadsWidget(s)
         with mock.patch.object(QFileDialog, "getOpenFileName", return_value=(str(f), "")), \
                 mock.patch.object(QInputDialog, "getText", return_value=("Pinna nobilis", True)):
-            w.btn_model.click()                                          # chiede la specie, carica e invia
+            w.btn_model.click()                                          # asks for the species, uploads and submits
         admin = self._admin_client()
         waiting = lambda: [x["species"] for x in admin.species_submissions(status="pending", kind="model")
                            if x["username"] == "upuser3"]
@@ -646,13 +649,16 @@ class GuiTest(unittest.TestCase):
         write_metadata(with_meta, build_metadata(base_model="yolo11n-seg.pt", dataset_name="ok", dataset_source="server",
                                                  epochs=5, imgsz=640, batch=8, device="cpu", trained_by="admin",
                                                  classes=["Pinna nobilis"], dataset_images=120))
-        publish_model(s.client, with_meta, "Pinna nobilis")
-        publish_model(s.client, without, "Pinna nobilis")
+        first = publish_model(s.client, with_meta, "Pinna nobilis")
+        second = publish_model(s.client, without, "Pinna nobilis")
+        # Published models are named after the species they recognise and the network they come from.
+        self.assertEqual(first["name"], "Pinna_nobilis_yolo11n-seg.pt")
+        self.assertEqual(second["name"], "Pinna_nobilis_nodetails.pt")
 
         br = ui.ServerBrowserWidget(s, ("models",))
         pump(lambda: br.status.text().endswith("items"))
         br.path = "Pinna nobilis"; br.refresh()
-        self.assertTrue(pump(lambda: br.tree.topLevelItemCount() == 3), br.status.text())    # details.pt, details.json, nodetails.pt
+        self.assertTrue(pump(lambda: br.tree.topLevelItemCount() == 3), br.status.text())    # model, metadata, model
 
         def select(name):
             br.tree.clearSelection()
@@ -662,12 +668,12 @@ class GuiTest(unittest.TestCase):
                     br.tree.setCurrentItem(item)
 
         self.assertTrue(br.info.isHidden())                                  # niente selezionato: pannello nascosto
-        select("details.pt")
+        select(first["name"])
         self.assertTrue(pump(lambda: "Species: Pinna nobilis" in br.info.text()), br.info.text())
         self.assertIn("Dataset: ok (120 images)", br.info.text())
-        select("nodetails.pt")
+        select(second["name"])
         self.assertTrue(pump(lambda: "No details available" in br.info.text()), br.info.text())
-        select("details.json")                                               # il file dei metadati non ha un pannello
+        select(Path(first["name"]).with_suffix(".json").name)                                               # the metadata file has no panel
         self.assertTrue(pump(lambda: br.info.isHidden()))
 
     def test_browser_hides_the_internal_quarantine_name(self):

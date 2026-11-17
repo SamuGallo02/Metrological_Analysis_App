@@ -1,6 +1,8 @@
 """Parameters of the Analysis page: the available analyses and their colors.
 
 `id` is what `AnalysisHub.requested` emits and what the application maps to the existing page.
+
+Autore: Samuele Gallo
 """
 from common.i18n import N_
 

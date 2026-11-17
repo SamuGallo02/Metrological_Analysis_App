@@ -7,6 +7,8 @@ So the views of the media are built here, from the files the user registered, an
 stay as they are: the species are a way of looking at them, not a place where they are moved.
 
 Qt-free, so the interface, the analysis and the tests can all use it.
+
+Autore: Samuele Gallo
 """
 from __future__ import annotations
 

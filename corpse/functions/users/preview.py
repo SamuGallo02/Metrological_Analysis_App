@@ -1,4 +1,7 @@
-"""Anteprima di un invio in attesa: quali immagini mostrare (senza interfaccia grafica)."""
+"""Preview of a waiting submission: which images to show (no graphical interface).
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 
 from pathlib import PurePosixPath

@@ -1,3 +1,4 @@
+# Autore: Samuele Gallo
 VERSION = 2
 
 STRINGS = {
@@ -658,102 +659,150 @@ STRINGS = {
     "Without a species": "Senza specie",
     "{n} files filed under {name}": "{n} file archiviati in {name}",
     "{n} species, {m} files": "{n} specie, {m} file",
+    "By species: taken from the labels, so a photo with two animals is under both. The files stay where they are.": "Per specie: presa dai label, quindi una foto con due animali sta sotto entrambe. I file restano dove sono.",
+    "No labelled file in this folder.": "Nessun file con etichette in questa cartella.",
+    "This view is for the common folders.": "Questa vista è per le cartelle comuni.",
+    "View:": "Vista:",
+    "Choose the dataset folder to import": "Scegli la cartella del dataset da importare",
 }
 
 MANUAL = """\
-# Manuale d'uso
+# Manuale utente
 
-Analisi Metrologica è l'applicazione desktop del progetto Nautilus (Università di Padova) per misurare oggetti reali, come la fauna subacquea, in foto e video. Combina il rilevamento di oggetti YOLO con la geometria stereo per trasformare una coppia di immagini in lunghezze, larghezze e distanze reali. Questo manuale spiega ogni parte dell'applicazione.
+Metrological Analysis è l'applicazione desktop del progetto Nautilus (Università di Padova) per misurare oggetti reali, come la fauna sottomarina, in foto e video. Unisce il rilevamento YOLO alla geometria stereo per trasformare una coppia di immagini in lunghezze, larghezze e distanze reali. Questo manuale spiega ogni parte dell'applicazione.
 
 ## Per iniziare
 
 All'avvio dell'applicazione compare la pagina di benvenuto.
 
-- **Registrati**: scegli la scheda *Registrati* e inserisci nome utente, email e password. La connessione al server Nautilus è automatica: non devi mai digitare un indirizzo. I nuovi account sono di tipo *Utente*.
-- **Accedi**: inserisci nome utente e password. Dopo 5 password errate l'account viene bloccato per 5 minuti.
-- **Chiave di accesso**: solo per gli amministratori. Premi *Ho una chiave di accesso* e digitala; se è corretta l'account diventa **amministratore permanente**. Dopo 5 chiavi errate la chiave viene bloccata per 5 minuti, ma puoi comunque accedere senza.
-- **Continua senza accedere**: usa analisi e addestramento offline, senza account. Le cartelle del server e il tuo profilo non sono disponibili.
-- **Lingua**: il pulsante della lingua in alto a destra nella pagina di benvenuto e nella barra dell'account cambia la lingua in qualsiasi momento.
+- **Registrati**: scegli la scheda *Registrati* e inserisci nome utente, email e password. Il collegamento al server Nautilus è automatico: non devi mai scrivere un indirizzo. I nuovi account sono di tipo *Utente*.
+- **Accedi**: inserisci nome utente e password. Dopo 5 password sbagliate l'account resta bloccato per 5 minuti.
+- **Chiave di accesso**: solo per gli amministratori. Premi *Ho una chiave di accesso* e scrivila; se è corretta l'account diventa **amministratore permanente**. Dopo 5 chiavi sbagliate la chiave resta bloccata per 5 minuti, ma puoi comunque accedere senza.
+- **Continua senza accedere**: usi analisi e training offline, senza account. Il server, i gruppi di lavoro e il tuo profilo non sono disponibili.
+- **Lingua**: il pulsante della lingua in alto a destra nella pagina di benvenuto e nella barra dell'account cambia lingua in qualsiasi momento.
 
-Se il server non è raggiungibile, puoi comunque accedere con un account già usato su questo computer: l'applicazione funziona offline e si riconnette quando premi *Riconnetti*. Vale anche per gli amministratori: finché il server non torna disponibile, la pagina Gestione offre solo il lavoro in locale (addestramento e analisi).
+Se il server non è raggiungibile puoi comunque accedere con un account già usato su questo computer: l'applicazione funziona offline e si ricollega quando premi *Riconnetti*. Uscire dall'account, o cambiare server, non chiude e riapre l'applicazione: la pagina di benvenuto torna subito.
+
+## Come va una giornata di lavoro
+
+L'applicazione è costruita attorno a un percorso, e ogni pagina ne è un passo.
+
+1. **Cartelle**: metti dentro le foto, i video o le cartelle con cui sei tornato, esattamente come sono.
+2. **Analisi**: scegli una di quelle cartelle e il modello, e l'analisi scrive le etichette di ciò che ha trovato.
+3. **Etichette**: le etichette restano con i file; le guardi, le correggi a mano e aggiungi quelle sfuggite.
+4. **Specie**: un file appartiene alle specie che le sue etichette nominano, e da lì in poi lo trovi sotto ognuna.
+5. **Server**: mandi quello che vale la pena condividere, chiedi un'immagine migliore, o ci alleni un modello.
 
 ## I tuoi dati su questo computer
 
-Tutto ciò che l'applicazione salva si trova nella cartella del progetto *datasets/Dataset_Locale*, con una cartella per ogni tipo di dato.
+Tutto ciò che l'applicazione salva sta nella cartella di progetto *datasets/Dataset_Locale*, con una cartella per ogni tipo di dato.
 
-- **dataset_Foto** e **dataset_Foto_Stereo**: foto singole e coppie di foto sinistra/destra.
+- **dataset_Foto** e **dataset_Foto_Stereo**: foto singole e coppie di foto destra/sinistra.
 - **dataset_Video** e **dataset_Video_Stereo**: video singoli e video stereo.
-- **dataset_Training**: dataset annotati usati per l'addestramento.
+- **dataset_Training**: dataset annotati usati per il training.
 - **models**: modelli YOLO (.pt); quelli scaricati dal server sono raggruppati per specie.
-- **results**: le misure esportate in CSV.
+- **labels**: le etichette dei file che non le hanno accanto, e le piccole anteprime delle foto.
+
+Le cartelle che aggiungi tu **non** vengono copiate lì: restano dove sono sul tuo disco e l'applicazione ricorda soltanto dove trovarle. Quando questo computer fa anche da server, i dati del server stanno a parte, in *datasets/server_data*.
+
+## Cartelle
+
+Premi **Cartelle** nella pagina iniziale e scegli dove lavorare: *Locale*, *Server* o *Gruppi di lavoro*.
+
+In **Locale** vedi i tuoi file su questo computer, per tipo, con le stesse schede del server. Foto e video sono mostrati **per specie**: le specie di un file sono le classi delle sue etichette, quindi una foto con due animali sta sotto entrambe, senza essere copiata da nessuna parte. L'ultima scheda, **Dataset**, tiene le cartelle esattamente come le hai aggiunte, ed è lì che ci lavori:
+
+- **Aggiungi cartella...**: registra una cartella del tuo disco dov'è. I file mantengono i loro nomi, le etichette già accanto a loro restano, e non serve nessuna nomenclatura.
+- **Aggiungi file...**: copia i file scelti nella cartella aperta, file delle etichette compreso.
+- **Archivia in una specie...**: archivia uno o più file scelti in una specie, aggiungendo un'etichetta di quella specie. Puoi farlo anche da una specie, per aggiungerne una seconda.
+- **Togli dall'elenco**: l'applicazione dimentica una cartella; i file sul tuo disco non vengono toccati.
+- **Invia al server...**: manda un file o un'intera cartella nella tua cartella sul server, o in uno dei tuoi gruppi.
+
+Le cartelle registrate qui sono proprio quelle che l'analisi propone, quindi una cartella aggiunta la mattina si può analizzare subito.
+
+## Etichette
+
+Un'etichetta è un box o un poligono attorno a un animale, con il nome della sua specie. L'analisi le scrive, e restano salvate con la foto.
+
+- **Etichette**: il pulsante delle viste le mostra o le nasconde sopra foto e video, anteprime comprese.
+- **Crea etichette... / Modifica etichette...**: apre l'editor. Dice *Crea* quando il file non ne ha ancora.
+- **Nell'editor**: trascina un angolo o un punto per correggerlo, trascina dentro per spostare, doppio clic (o Alt e clic) su un lato per aggiungere un punto, tasto destro su un punto per toglierlo. *Più punti* ne aggiunge uno a metà di ogni lato, *Box in poligono* trasforma un box in una forma modellabile punto per punto.
+- **Colore**: cambia il colore delle linee, per quando si vedono male sopra l'immagine. Può essere un colore unico oppure uno per classe.
+- **Migliora con il server...**: chiede al server una versione migliore di una foto o di un video; quando torna scegli se aggiungerla accanto all'originale o metterla al suo posto (l'originale resta in *originals*).
 
 ## Analisi
 
 Premi **Analisi** nella pagina iniziale. In alto c'è il pulsante **Demo webcam**; sotto scegli una delle quattro analisi.
 
-1. **Analisi foto**: rilevamento e segmentazione su una singola foto.
-2. **Analisi foto stereo**: misure reali (lunghezza, larghezza, distanza) su coppie di foto sinistra/destra.
-3. **Analisi video**: rilevamento e tracciamento su un singolo video.
+1. **Analisi foto**: rilevamento e segmentazione su una foto singola.
+2. **Analisi foto stereo**: misure reali (lunghezza, larghezza, distanza) su coppie di foto destra/sinistra.
+3. **Analisi video**: rilevamento e tracciamento su un video singolo.
 4. **Analisi video stereo**: rilevamento, tracciamento e misure reali su un video stereo.
 
-In ogni pagina i passaggi sono gli stessi: scegli la cartella di input, scegli il modello YOLO, scegli quali oggetti analizzare (o *Tutti gli oggetti*; i nomi che aggiungi devono corrispondere alle etichette del modello), premi *AVVIA ANALISI* e leggi i risultati. *ESPORTA CSV* salva le misure nella cartella *results* e *Mostra solo variazioni* nasconde le righe ripetute.
+In ogni pagina i passi sono gli stessi: scegli la cartella, scegli il modello YOLO, scegli quali oggetti analizzare (o *Tutti gli oggetti*: si può trovare ciò che il modello conosce), premi *AVVIA ANALISI* e leggi i risultati. Le cartelle e i modelli sono quelli che gestisci in *Cartelle* → *Locale*, quindi da qui non si aggiunge nulla. *ESPORTA CSV* salva le misure e *Mostra solo variazioni* nasconde le righe ripetute.
 
-L'analisi stereo richiede due cose in più. La cartella di input deve contenere le sottocartelle *rx* (camera destra) e *lx* (camera sinistra), come prodotte dai sensing rig di Nautilus: le foto sono nominate con l'istante di scatto e ogni cartella video contiene un solo file. Devi inoltre inserire la calibrazione delle camere, la *baseline* (distanza tra le due camere, in mm) e la *focale* (in pixel): valori sbagliati danno misure sbagliate.
+L'analisi stereo ha bisogno di due cose in più. La cartella di partenza deve contenere le sottocartelle *rx* (camera destra) e *lx* (camera sinistra), come le producono i sistemi di acquisizione Nautilus: le foto hanno nel nome l'istante di scatto e ogni cartella video contiene un solo file. Devi anche inserire la calibrazione delle camere, la *baseline* (distanza fra le due camere, in mm) e la *focale* (in pixel): valori sbagliati danno misure sbagliate.
 
 ## Demo webcam
 
-La demo webcam mostra il rilevamento YOLO dal vivo in una finestra separata. Scegli la modalità (*Camera singola* o *Stereo dal vivo (2 camere)*), le camere, il modello e cosa riconoscere, poi premi *Avvia*. In modalità stereo le due camere devono essere dispositivi diversi e almeno un modello deve essere nella cartella *models*.
+La demo webcam mostra il rilevamento YOLO dal vivo in una finestra separata. Scegli la modalità (*Camera singola* o *Stereo dal vivo (2 camere)*), le camere, il modello e cosa riconoscere, poi premi *Avvia*. In stereo le due camere devono essere dispositivi diversi, e almeno un modello deve trovarsi nella cartella *models*.
 
-## Addestramento
+## Training
 
-Premi **Addestramento** per addestrare un tuo modello YOLO su un dataset annotato (una cartella con un file *data.yaml*). Scegli il dataset e avvia l'addestramento locale: la console mostra l'avanzamento. Per lavori più pesanti la stessa pagina apre Google Colab.
+Premi **Training** per far allenare un modello YOLO su un dataset annotato (una cartella con un file *data.yaml*). La pagina si apre senza installare nulla, perché la via normale è la prima.
 
-I componenti per l'addestramento non vengono mai installati da soli. La prima volta l'applicazione chiede conferma e mostra una barra di avanzamento. Con una scheda grafica NVIDIA viene scaricata una versione di PyTorch con GPU (alcuni GB) e l'applicazione si riavvia da sola per completare l'attivazione.
+- **Sul server**: chiedi il training e un computer con una scheda grafica fa il lavoro. Vedi la tua richiesta in attesa, poi in corso, e il modello allenato viene pubblicato quando è pronto.
+- **Su questo computer**: il training gira qui, con il tuo hardware. I componenti che servono (PyTorch e le estensioni per il training, diversi GB con una scheda NVIDIA) si scaricano solo quando premi il pulsante, in una finestrella a parte, e l'applicazione resta usabile mentre arrivano.
 
-## Cartelle del server
+Un modello allenato prende il nome dalla specie che riconosce e dalla rete da cui viene, ad esempio *Pinna_nobilis_yolo11l-seg.pt*, così il suo nome da solo dice cos'è.
 
-Quando sei online, **Cartelle del server** mostra le cartelle condivise dal computer del laboratorio.
+## Quanto è buono un modello
 
-- **Foto**: guarda, scarica e aggiungi foto. Ti chiediamo di donare le foto degli oggetti che misuri.
-- **Modelli YOLO**: scarica i modelli approvati, raggruppati per nome scientifico (ad esempio *Pinna nobilis*). I modelli che carichi vanno in quarantena e vengono pubblicati solo dopo il controllo di un amministratore, perché un file modello può contenere codice.
-- **Dataset**: insiemi di immagini ed etichette per l'addestramento. I dataset che carichi vengono aggiunti al dataset del server.
+**Prestazioni dei modelli** confronta un modello con le etichette controllate a mano: quanti animali trova, quanti se ne inventa, quanto si sovrappongono i box. C'è una scheda per ogni modello, un confronto specie per specie e un test su foto vere tue, così vedi dove funziona e dove no prima di fidarti di una misura.
 
-Gli utenti possono leggere, scaricare e aggiungere file, ma solo gli amministratori possono modificare, rinominare o eliminare quelli esistenti. I file esistenti non vengono mai sovrascritti e i download interrotti riprendono da dove si erano fermati.
+## Il server e i gruppi di lavoro
+
+Quando sei online, **Cartelle** → **Server** mostra le cartelle condivise del computer del laboratorio: foto, foto stereo, video, video stereo, modelli e dataset. Il pulsante *Vista* passa dalle cartelle come sono agli stessi file **per specie**, presa dalle loro etichette.
+
+- **Foto**: guarda, scarica e aggiungi foto. Dona le foto degli oggetti che misuri.
+- **Modelli YOLO**: scarica i modelli approvati, raggruppati per nome scientifico (ad esempio *Pinna nobilis*). I modelli che carichi vanno in quarantena e sono pubblicati solo dopo il controllo di un amministratore, perché un file di modello può contenere codice.
+- **Dataset**: insiemi di immagini ed etichette per il training. I dataset che carichi vengono aggiunti al dataset del server.
+
+I **gruppi di lavoro** servono per lavorare insieme. Chiunque può crearne uno e ne diventa amministratore: aggiunge e toglie membri, li promuove o li retrocede, e decide le impostazioni del gruppo. Quello che manda un membro aspetta nella quarantena del gruppo finché un amministratore non lo approva, e un gruppo può pubblicare sul server a proprio nome. Gli utenti possono leggere, scaricare e aggiungere file; i file esistenti non vengono mai sovrascritti e i download interrotti riprendono da dove si erano fermati.
 
 ## Il mio profilo
 
 Apri **Il mio profilo** dalla barra in alto.
 
-- **Dati personali**: nome, email, organizzazione, telefono e una breve descrizione, salvati sul server. Qui puoi anche cambiare la password.
-- **La mia cartella sul server**: uno spazio privato, come un drive personale, dove aggiungi, rinomini, sposti ed elimini file da qualsiasi tuo dispositivo. Una barra mostra la tua quota.
+- **Dati personali**: nome, email, organizzazione, telefono e una breve descrizione, salvati sul server. Puoi anche cambiare la password.
+- **La mia cartella sul server**: uno spazio privato, come un disco personale, dove aggiungi, rinomini, sposti ed elimini file da qualsiasi tuo dispositivo. Una barra mostra la tua quota.
 - **Cartelle su questo computer**: scegli le cartelle predefinite per download e upload.
 - **Lingua**: scegli e scarica una lingua.
 
 ## Lingue
 
-L'inglese è installato con l'applicazione. Usa il pulsante della lingua, oppure *Il mio profilo* → *Lingua*, per scaricare italiano, spagnolo, tedesco, francese, cinese (mandarino) o giapponese. Ogni lingua si scarica una sola volta, funziona offline e include questo manuale. La modifica viene applicata al successivo avvio dell'applicazione.
+L'inglese è installato con l'applicazione. Usa il pulsante della lingua, o *Il mio profilo* → *Lingua*, per scaricare italiano, spagnolo, tedesco, francese, cinese (mandarino) o giapponese. Ogni lingua si scarica una volta sola, funziona offline e comprende questo manuale. Il cambio si applica al successivo avvio dell'applicazione.
 
 ## Per gli amministratori
 
-Gli amministratori aprono la pagina **Gestione**, che ha quattro schede.
+Gli amministratori si aprono sulla pagina **Gestione**, che ha quattro schede.
 
-- **Utenti**: crea utenti, cambia il loro tipo (*Utente* o *Server*), disattiva o elimina account, reimposta le password, imposta le quote e leggi l'attività recente. Deve restare almeno un amministratore attivo.
-- **Database**: le cartelle del server con controllo completo. I modelli nella cartella *In attesa di approvazione* possono essere approvati e pubblicati nella cartella della loro specie; selezionando un modello si vedono i suoi dettagli (specie, addestramento, metriche).
-- **Revisione foto**: gli invii di foto degli utenti. Approva per pubblicare le foto nella cartella della loro specie, oppure rifiuta.
-- **Addestramento**: apre la pagina di addestramento, dove puoi anche scaricare i dataset dal server e pubblicare il modello addestrato.
+- **Utenti**: crea utenti, cambia il loro tipo (*Utente* o *Server*), disattiva o elimina account, reimposta password, imposta le quote e leggi l'attività recente. Deve restare almeno un amministratore attivo.
+- **Database**: le cartelle del server con pieno controllo. I modelli in attesa nella cartella *In attesa di approvazione* possono essere approvati e pubblicati nella cartella della loro specie; selezionando un modello se ne vedono i dettagli (specie, training, metriche). Un amministratore può anche correggere le etichette di una foto del server, e la vista per specie si aggiorna subito.
+- **Revisione foto**: gli invii di foto fatti dagli utenti. Approva per pubblicare le foto nella cartella della loro specie, oppure rifiuta.
+- **Training**: apre la pagina di training, da cui si possono anche scaricare dataset dal server e pubblicare il modello allenato.
 
-Il server gira sul computer del laboratorio. Avvialo con *python -m server serve* dalla cartella del progetto (aggiungi *--host 0.0.0.0* per accettare connessioni dalla rete), fermalo con Ctrl+C e riavvialo dopo ogni aggiornamento del codice.
+Il server gira sul computer del laboratorio. Avvialo con *python -m server serve* dalla cartella di progetto (aggiungi *--host 0.0.0.0* per accettare connessioni dalla rete), fermalo con Ctrl+C e riavvialo dopo ogni aggiornamento del codice. Il lavoro pesante che non può fare da solo - allenare un modello, migliorare un'immagine - lo fa un worker separato: lancia *python training_worker.py* su una macchina con scheda grafica e prende le richieste una alla volta.
 
 ## Manutenzione e riparazione
 
-A ogni avvio l'applicazione controlla rapidamente che le sue librerie siano integre. Se un file è danneggiato, ad esempio dopo un disco pieno o un download interrotto, chiede di ripararlo: vengono scaricati di nuovo solo i pacchetti danneggiati, compare una finestra di avanzamento e non appare nessuna finestra di console. Se è tutto a posto non viene reinstallato nulla.
+L'applicazione controlla che le sue librerie siano integre quando c'è un motivo: la prima volta, quando i pacchetti installati cambiano, o dopo due settimane. Se un file è danneggiato, ad esempio dopo un disco pieno o un download interrotto, chiede di ripararlo: solo i pacchetti danneggiati vengono riscaricati, si vede una finestra di avanzamento e **non compare mai nessuna finestra di terminale**. Quando è tutto a posto non si reinstalla niente e l'applicazione si apre subito.
 
 ## Risoluzione dei problemi
 
 - **Il server non è raggiungibile**: controlla la connessione e premi *Riconnetti*; nel frattempo puoi continuare a lavorare offline.
-- **La chiave di accesso è bloccata**: attendi la fine del conto alla rovescia; accedere senza chiave è sempre possibile.
-- **L'addestramento dice che mancano componenti**: premi *Installa* quando richiesto e resta online fino alla fine.
-- **Un file non può essere caricato**: ogni cartella del server accetta solo certi tipi di file e i file esistenti non vengono sovrascritti.
+- **"Accesso richiesto"**: sei entrato senza account; accedi per usare il server e i gruppi di lavoro.
+- **Il training dice che mancano dei componenti**: premi *Installa* quando te lo chiede e resta online fino alla fine; puoi continuare a usare l'applicazione mentre scarica.
+- **Un file non si carica**: ogni cartella del server accetta solo certi tipi di file, e i file esistenti non vengono sovrascritti.
 - **Un modello viene rifiutato**: deve trovarsi in una cartella con il nome scientifico, ad esempio *Pinna nobilis*.
-- **Spazio insufficiente nella tua cartella**: elimina file o chiedi a un amministratore di aumentare la quota.
+- **Una foto non sta sotto la sua specie**: non ha ancora un'etichetta di quella specie; aprila e usa *Crea etichette...* o *Archivia in una specie...*.
 """

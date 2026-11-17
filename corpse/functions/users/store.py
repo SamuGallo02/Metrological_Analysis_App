@@ -7,6 +7,8 @@
   profiles.json     last downloaded profile of each user + chosen local folders
   users_cache.json  last user list seen by an administrator (offline consultation)
 The local verifier is valid only for this computer; the server remains the authority.
+
+Autore: Samuele Gallo
 """
 from __future__ import annotations
 

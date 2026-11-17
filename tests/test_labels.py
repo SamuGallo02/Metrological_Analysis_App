@@ -1,3 +1,4 @@
+# Autore: Samuele Gallo
 import unittest
 
 from corpse.gui.users.labels import area_label, folder_label, path_label

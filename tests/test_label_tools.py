@@ -1,6 +1,8 @@
 """Shaping the labels by hand: more points on a polygon, a box turned into one, and the colour of the lines.
 
 The colour matters as much as the geometry: red lines on a red fish cannot be corrected by anybody.
+
+Autore: Samuele Gallo
 """
 import os
 import tempfile

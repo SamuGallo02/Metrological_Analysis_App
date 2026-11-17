@@ -1,4 +1,7 @@
-"""Registrazione di un invio di foto di specie, dopo la fine del caricamento."""
+"""Registrazione di un invio di foto di specie, dopo la fine del caricamento.
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 import re
 from typing import Any, Dict, List, Optional
@@ -56,7 +59,7 @@ def submit_dataset(store: Storage, db: Database, username: str, name: str, admin
     folder = store.pending_dataset_dir(username, name, admin)      # 404 se non c'è nulla da inviare
     errors = validate_dataset_dir(folder)
     if errors:
-        raise errors[0]                                            # rifiuta: nessuna riga viene creata
+        raise errors[0]                                            # refused: no row is created
     path = name if admin else f"{PENDING}/{username}/{name}"
     images = count_dataset_images(folder)
     sid = _record(db, username, name, path, images, KIND_DATASET, admin, group)
@@ -96,7 +99,7 @@ def approve_submission(store: Storage, db: Database, sid: int, reviewer: str) ->
         db.review_submission(sid, SUBMISSION_APPROVED, reviewer, path=name, photos=images)
         return {"id": sid, "kind": KIND_DATASET, "name": name, "images": images}
     if sub["kind"] == KIND_MODEL:
-        final = store.approve_model(sub["path"])                   # il modello e il suo .json si spostano insieme
+        final = store.approve_model(sub["path"])                   # the model and its .json move together
         db.review_submission(sid, SUBMISSION_APPROVED, reviewer, path=final)
         return {"id": sid, "kind": KIND_MODEL, "path": final}
     day = datetime.fromtimestamp(sub["created"]).date()              # the date of the upload
@@ -112,7 +115,7 @@ def reject_submission(store: Storage, db: Database, sid: int, reviewer: str) -> 
         db.review_submission(sid, SUBMISSION_REJECTED, reviewer)
         return {"id": sid, "kind": KIND_DATASET, "images": images}
     if sub["kind"] == KIND_MODEL:
-        store.delete("models", sub["path"])                        # toglie anche il .json e le cartelle vuote
+        store.delete("models", sub["path"])                        # removes the .json and the empty folders too
         db.review_submission(sid, SUBMISSION_REJECTED, reviewer)
         return {"id": sid, "kind": KIND_MODEL, "path": sub["path"]}
     photos = store.reject_media(sub["username"], sub["species"], sub["kind"])   # deletes the files

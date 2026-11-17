@@ -1,5 +1,8 @@
 """Attempt limit: after N errors the key stays blocked for a while. Never blocks the server:
-whoever is blocked immediately gets a 429 error with the remaining time and other requests carry on."""
+whoever is blocked immediately gets a 429 error with the remaining time and other requests carry on.
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 
 import threading

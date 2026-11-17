@@ -7,6 +7,8 @@
 The other languages are downloadable JSON packs (LanguageManager) saved in the user's folder:
     {"code": "it", "name": "Italian", "native": "Italiano", "version": 1,
      "strings": {"Sign in": "Accedi", ...}, "manual": "# ..."}
+
+Autore: Samuele Gallo
 """
 from __future__ import annotations
 

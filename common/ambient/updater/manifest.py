@@ -2,6 +2,8 @@
 
 librery/.code_version.json = {"repo", "sha", "label", "installed_at", "os",
                               "files": {"<path>": {"size": n, "sha256": "..."}}}
+
+Autore: Samuele Gallo
 """
 from __future__ import annotations
 

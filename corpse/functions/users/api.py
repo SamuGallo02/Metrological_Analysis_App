@@ -1,4 +1,7 @@
-"""HTTP client for the server (standard library only)."""
+"""HTTP client for the server (standard library only).
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 
 import http.client
@@ -212,6 +215,11 @@ class ApiClient:
 
     def update_training(self, job_id: int, **fields: Any) -> Dict[str, Any]:
         return self._request("POST", "/api/training/update", body={"id": job_id, **fields})["job"]
+
+    def species_index(self, area: str) -> Dict[str, List[Dict[str, Any]]]:
+        """The media of a common area grouped by the species of their labels: a photo with two animals comes
+        back under both. The files are not moved, this is a way of looking at them."""
+        return self._request("GET", "/api/species/index", params={"area": area}).get("species", {})
 
     # ---- improvement of a photo or a video asked of the server --------------
     def request_enhance(self, path: str, method: str = "") -> Dict[str, Any]:

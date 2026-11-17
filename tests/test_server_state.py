@@ -1,6 +1,8 @@
 """Without an account there is no token: the views must say so instead of letting the server answer 401.
 
 And the check of the environment at startup must not read 25.000 files every time the application opens.
+
+Autore: Samuele Gallo
 """
 import json
 import tempfile

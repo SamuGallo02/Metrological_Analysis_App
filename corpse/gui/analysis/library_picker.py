@@ -1,11 +1,19 @@
 """Folder selection for the analysis pages, backed by the media library: folders are registered where they are,
-never copied (see corpse.functions.library)."""
+never copied (see corpse.functions.library).
+
+The folders themselves are added and removed in Folders > Local: here they are only chosen. A page that cannot
+use the chosen folder (stereo photos where single photos are expected) says so when it is picked.
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Callable, Optional
 
 from PySide6.QtWidgets import QFileDialog, QMessageBox, QWidget
+
+from common.ui.places import desktop
 
 from corpse.functions.analysis.library import default_library
 
@@ -15,7 +23,7 @@ MISSING = " (non trovata)"
 def add_folder(page: QWidget, kind: str, title: str, validate: Optional[Callable[[Path], Optional[str]]] = None) -> None:
     """Asks for a folder and registers it in place. `validate(path)` returns an error text or None."""
     start = default_library().sources(kind)
-    initial = str(start[-1].path.parent) if start else str(Path.home())
+    initial = str(start[-1].path.parent) if start else desktop()   # a folder of yours: the Desktop first
     chosen = QFileDialog.getExistingDirectory(page, title, initial)
     if not chosen:
         return
@@ -46,7 +54,8 @@ def remove_selected(page: QWidget, kind: str) -> None:
         refresh(page, kind)
 
 
-def refresh(page: QWidget, kind: str, select: Optional[str] = None, empty_text: str = "Nessuna cartella: usa 'Aggiungi cartella...'") -> None:
+def refresh(page: QWidget, kind: str, select: Optional[str] = None,
+            empty_text: str = "Nessuna cartella: aggiungile in Cartelle > Locale") -> None:
     """Fills page.folder_combo from the library and sets page.selected_folder (None if nothing usable)."""
     combo = page.folder_combo
     current = select or combo.currentData()
@@ -70,4 +79,10 @@ def on_selected(page: QWidget, kind: str) -> None:
     name = page.folder_combo.currentData()
     src = default_library().source(kind, name) if name else None
     page.selected_folder = str(src.path) if src is not None and src.exists else None
+    check = getattr(page, "_validate_folder", None)
+    if page.selected_folder and check is not None:
+        problem = check(Path(page.selected_folder))     # this page cannot work with that folder
+        if problem:
+            QMessageBox.warning(page, "Cartella non adatta", problem)
+            page.selected_folder = None
     page._update_run_button_state()

@@ -1,3 +1,4 @@
+# Autore: Samuele Gallo
 import tempfile
 import unittest
 from pathlib import Path
@@ -14,7 +15,7 @@ class QuarantineTest(unittest.TestCase):
         self.store = Storage(Path(self._tmp.name))
 
     def _upload_as_user(self, area, rel):
-        """Simula l'upload di un utente normale e crea davvero il file in quarantena."""
+        """Mimics the upload of an ordinary user and really creates the file in quarantine."""
         return upload_as_user(self.store, rel, area=area)[1]
 
     def test_models_pending_is_hidden_from_users(self):
@@ -53,4 +54,4 @@ class QuarantineTest(unittest.TestCase):
         with self.assertRaises(AppError):
             self.store.pending_media_dir("francy", "../francy", "photos")                # nome non valido
         with self.assertRaises(AppError):
-            self.store.pending_media_dir("altro", "Pinna nobilis", "photos")             # le foto sono di un altro utente
+            self.store.pending_media_dir("altro", "Pinna nobilis", "photos")             # the photos belong to another user

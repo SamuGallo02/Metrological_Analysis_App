@@ -1,4 +1,7 @@
-"""Transfer window with progress bar and Cancel."""
+"""Transfer window with progress bar and Cancel.
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 
 from typing import Callable, List, Optional, Tuple

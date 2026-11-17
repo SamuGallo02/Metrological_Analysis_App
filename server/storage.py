@@ -7,6 +7,8 @@ Common areas (photos, models, datasets):
   * A .pt/.onnx model uploaded by a user ends up in models/_pending/<user>/ until an administrator
     approves it: a .pt is a pickle archive and can execute code when loaded.
 Personal area (mine): files/mine/<user>/ - the owner reads, writes, moves and deletes, within the quota.
+
+Autore: Samuele Gallo
 """
 from __future__ import annotations
 
@@ -29,6 +31,7 @@ from common.model_metadata import classes_from_data_yaml
 from .params import (EXTENSIONS, GROUPS_DIR, LIBRARY_DIR, MAX_BYTES, MAX_BYTES_EXT, MINE_DIR, PENDING, PENDING_DIR_NAME, SPECIES_EXAMPLE,
                      SPECIES_RE, STORE_DIR, TMP, DATASET_EXAMPLE, LABEL_SUFFIX, SPECIES_IMAGE_EXT)
 from .media_tree import CLASSES_FILE, check_media_file, count_media, move_numbered, validate_media_dir
+from .species_index import SpeciesIndex
 from .dataset_tree import count_dataset_images, validate_dataset_dir
 
 _MAGIC = {".jpg": (b"\xff\xd8\xff",), ".jpeg": (b"\xff\xd8\xff",), ".png": (b"\x89PNG\r\n\x1a\n",),
@@ -114,6 +117,7 @@ class Storage:
             self.pending_root(a).mkdir(parents=True, exist_ok=True)
         for d in (MINE_DIR, GROUPS_DIR):
             (self.root / d).mkdir(parents=True, exist_ok=True)
+        self._species = SpeciesIndex()          # the species of the media, read from their labels when asked for
         # Which work groups a user belongs to. The server sets it to the database method; alone, Storage knows
         # nothing about groups and lets nobody in.
         self.groups_of: Callable[[str], Sequence[str]] = lambda _user: ()
@@ -267,6 +271,15 @@ class Storage:
                 return
 
     # ---- labels of approved photos ----------------------------------------
+    def species_view(self, area: str, owner: str = "") -> Dict[str, List[Dict[str, Any]]]:
+        """The media of an area grouped by the species of their labels. The files are not moved: a photo with
+        two animals is simply listed under both."""
+        return self._species.build(self.base(area, owner))
+
+    def forget_species(self, path: Optional[Path] = None) -> None:
+        """After labels have been written: that file is read again the next time a view is built."""
+        self._species.forget(path)
+
     def save_labels(self, area: str, media_rel: str, text: str, classes: Optional[str] = None) -> str:
         """Replaces the label file (and, if given, the class names) of an APPROVED photo of the library. Returns the
         path of the label file. Only photos can be edited here (a video would have to be downloaded whole)."""
@@ -284,6 +297,7 @@ class Storage:
         self._write_text(media.with_suffix(LABEL_SUFFIX), text)
         if classes is not None:
             self._write_text(media.parent / CLASSES_FILE, classes)
+        self.forget_species(media)                      # its species may have changed
         return str(PurePosixPath(rel).with_suffix(LABEL_SUFFIX))
 
     @staticmethod
@@ -426,7 +440,7 @@ class Storage:
         _remove_tree(path) if path.is_dir() else path.unlink()
         if quarantined:
             if is_file and area == "models" and path.suffix.lower() != ".json":
-                path.with_suffix(".json").unlink(missing_ok=True)       # i metadati seguono il modello
+                path.with_suffix(".json").unlink(missing_ok=True)       # the metadata follows the model
             self._prune_quarantine(area, path.parent)
 
     def move(self, area: str, src: str, dst: str, owner: str = "", admin: bool = True) -> str:
@@ -461,7 +475,7 @@ class Storage:
         return dst
 
     def _sidecar(self, rel: str, name: str) -> Optional[Tuple[str, str]]:
-        """I metadati (.json) di un modello in quarantena, con la loro destinazione; None se non ci sono
+        """The metadata (.json) of a model in quarantine, with where it is going; None when there is none
         (o se il file stesso è un .json). Se la destinazione è occupata, errore prima di spostare qualsiasi cosa."""
         if PurePosixPath(rel).suffix.lower() == ".json":
             return None

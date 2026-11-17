@@ -1,5 +1,7 @@
 """All the buttons are there from the first start: the ones that need something downloaded say so when pressed,
 without blocking the application. And no process of the application ever opens a console window.
+
+Autore: Samuele Gallo
 """
 import os
 import unittest

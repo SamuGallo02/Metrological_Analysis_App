@@ -1,4 +1,7 @@
-"""Installation logic for the 'core' and 'training' components."""
+"""Installation logic for the 'core' and 'training' components.
+
+Autore: Samuele Gallo
+"""
 
 from __future__ import annotations
 

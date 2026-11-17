@@ -2,6 +2,8 @@
 
 Being connected is not enough: whoever entered without an account has no token, so the server answers
 "Sign-in required." to every request. The views ask here before calling, and say which of the two it is.
+
+Autore: Samuele Gallo
 """
 from __future__ import annotations
 

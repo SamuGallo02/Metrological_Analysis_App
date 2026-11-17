@@ -1,5 +1,8 @@
 """Structure of the media (photos, stereo photos, videos) a user sends for a species, and how they are numbered when
-approved. Labels are YOLO `.txt` files with the same name as the media they describe."""
+approved. Labels are YOLO `.txt` files with the same name as the media they describe.
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 
 import os

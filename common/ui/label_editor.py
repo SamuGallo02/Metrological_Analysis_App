@@ -1,6 +1,9 @@
 """Graphical editor of YOLO labels: correct the boxes and polygons found by the model so that the next training
 learns from accurate examples. It works on photos and on single frames of a video; where the labels come from and
-where they are saved is up to the caller (a local file, or the server for an administrator)."""
+where they are saved is up to the caller (a local file, or the server for an administrator).
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 
 from pathlib import Path

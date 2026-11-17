@@ -1,5 +1,8 @@
 """Application error with a translatable message: `key` is the English text (with {name} placeholders),
-`params` the values. The server sends key+params, the client translates them into the user's language."""
+`params` the values. The server sends key+params, the client translates them into the user's language.
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 
 from typing import Any, Dict

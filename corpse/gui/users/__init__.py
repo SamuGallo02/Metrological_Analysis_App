@@ -1,4 +1,7 @@
-"""PySide6 windows of the Users page."""
+"""PySide6 windows of the Users page.
+
+Autore: Samuele Gallo
+"""
 from .account_bar import AccountBar
 from .browser import ServerFoldersWidget, ServerBrowserWidget
 from .folders_local import LocalFoldersWidget

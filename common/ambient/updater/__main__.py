@@ -1,4 +1,7 @@
-"""python -m common.ambient.updater  status | check | update | repair | mode"""
+"""python -m common.ambient.updater  status | check | update | repair | mode
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 
 import argparse

@@ -1,4 +1,7 @@
-"""Update preferences (librery/.update_prefs.json): mode, last automatic check, version to skip."""
+"""Update preferences (librery/.update_prefs.json): mode, last automatic check, version to skip.
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 
 import json

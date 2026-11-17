@@ -1,5 +1,8 @@
 """YOLO label files for the photo viewer: where to look for them (no Qt, no network). Reading and writing the
-lines is in `common.label_shapes`."""
+lines is in `common.label_shapes`.
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 
 from pathlib import PurePosixPath

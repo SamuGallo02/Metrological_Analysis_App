@@ -1,4 +1,7 @@
-"""The performance view: which photos the test uses and what it shows."""
+"""The performance view: which photos the test uses and what it shows.
+
+Autore: Samuele Gallo
+"""
 import os
 import sys
 import unittest

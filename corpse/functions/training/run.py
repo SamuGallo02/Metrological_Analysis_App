@@ -2,6 +2,8 @@
 
 Used by the training page (inside its thread) and by the worker that takes the jobs the server queues, so the two
 follow exactly the same steps and produce the same files.
+
+Autore: Samuele Gallo
 """
 from __future__ import annotations
 
@@ -9,7 +11,7 @@ import shutil
 from pathlib import Path
 from typing import Callable, Dict, Optional, Tuple
 
-from common.model_metadata import metrics_from_results, model_filename
+from common.model_metadata import free_name, metrics_from_results, model_filename
 
 from .config import MODELS_DIR, RUN_NAME, RUNS_DIR
 
@@ -17,7 +19,8 @@ Log = Optional[Callable[[str], None]]
 
 
 def train_model(data_yaml: str, base_model: str, epochs: int, imgsz: int, batch: int, device: str,
-                log: Log = None, models_dir: Optional[Path] = None) -> Tuple[Path, Dict[str, float]]:
+                log: Log = None, models_dir: Optional[Path] = None,
+                species: str = "") -> Tuple[Path, Dict[str, float]]:
     """Trains and returns (file of the trained model, measurements). Raises an exception if it does not finish."""
     say = log or (lambda _line: None)
     from ultralytics import YOLO                       # imported here: the server and the tests do without it
@@ -33,6 +36,6 @@ def train_model(data_yaml: str, base_model: str, epochs: int, imgsz: int, batch:
         raise RuntimeError("Training terminato ma non è stato trovato il file dei pesi salvato.")
     folder = Path(models_dir or MODELS_DIR)
     folder.mkdir(parents=True, exist_ok=True)
-    dest = folder / model_filename(Path(data_yaml).parent.name, base_model)
+    dest = free_name(folder, model_filename(species or Path(data_yaml).parent.name, base_model))
     shutil.copy2(best, dest)
     return dest, metrics

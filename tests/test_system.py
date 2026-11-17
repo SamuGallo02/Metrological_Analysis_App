@@ -1,3 +1,4 @@
+# Autore: Samuele Gallo
 import os, sys, threading, time, unittest
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -479,16 +480,16 @@ class TestSpeciesReview(Base):
             u.upload("photos", f"Pinna nobilis/{name}.png", self.f(f"{name}.png", png_bytes()))
         sub = u.submit_species("Pinna nobilis")
         self.assertEqual((sub["species"], sub["photos"]), ("Pinna nobilis", 2))
-        self.assertEqual([s["id"] for s in u.species_submissions()], [sub["id"]])        # l'utente vede le sue
-        self.assertEqual(other.species_submissions(), [])                                # non quelle degli altri
-        self.assertIn(sub["id"], [s["id"] for s in a.species_submissions("pending")])    # l'admin le vede tutte
+        self.assertEqual([s["id"] for s in u.species_submissions()], [sub["id"]])        # a user sees their own
+        self.assertEqual(other.species_submissions(), [])                                # not those of the others
+        self.assertIn(sub["id"], [s["id"] for s in a.species_submissions("pending")])    # an administrator sees them all
         with self.assertRaises(ApiError) as e:
             u.approve_submission(sub["id"])
         self.assertEqual(e.exception.status, 403)                                        # approva solo l'admin
         res = a.approve_submission(sub["id"])
         self.assertEqual(res["photos"], 2)
         self.assertEqual(u.species_submissions()[0]["status"], "approved")
-        self.assertIn(res["folder"], [x["name"] for x in other.list("photos", "Pinna nobilis")])   # il dataset è di tutti
+        self.assertIn(res["folder"], [x["name"] for x in other.list("photos", "Pinna nobilis")])   # the dataset belongs to everybody
         with self.assertRaises(ApiError) as e:
             a.approve_submission(sub["id"])
         self.assertEqual(e.exception.status, 409)                                        # non si approva due volte

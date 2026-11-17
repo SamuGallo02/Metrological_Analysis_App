@@ -1,4 +1,7 @@
-"""Current session: who is logged in, with which role, and whether the server is reachable."""
+"""Current session: who is logged in, with which role, and whether the server is reachable.
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 
 from typing import Any, Dict, Optional

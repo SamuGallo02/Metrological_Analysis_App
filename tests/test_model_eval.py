@@ -1,4 +1,7 @@
-"""Measuring a model on photos that already have labels."""
+"""Measuring a model on photos that already have labels.
+
+Autore: Samuele Gallo
+"""
 import unittest
 from pathlib import Path
 

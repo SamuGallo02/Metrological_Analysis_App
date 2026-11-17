@@ -1,4 +1,7 @@
-"""Passwords and tokens. No password or token is stored in plain text. Used by server and client."""
+"""Passwords and tokens. No password or token is stored in plain text. Used by server and client.
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 
 import hashlib

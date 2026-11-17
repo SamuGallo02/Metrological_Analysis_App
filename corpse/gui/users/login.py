@@ -1,4 +1,7 @@
-"""Login / registration, with optional access key and no-account mode."""
+"""Login / registration, with optional access key and no-account mode.
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 
 import os

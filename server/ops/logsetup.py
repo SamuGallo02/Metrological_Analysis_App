@@ -1,4 +1,7 @@
-"""Logging to console + rotating file (<data>/logs/server.log)."""
+"""Logging to console + rotating file (<data>/logs/server.log).
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 
 import logging

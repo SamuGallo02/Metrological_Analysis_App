@@ -1,3 +1,4 @@
+# Autore: Samuele Gallo
 VERSION = 2
 STRINGS = {
     "The server is unreachable: you are working locally only. Users and server folders are available again after you reconnect.": "El servidor no está accesible: está trabajando solo en local. Los usuarios y las carpetas del servidor volverán a estar disponibles tras reconectar.",
@@ -657,102 +658,150 @@ STRINGS = {
     "Without a species": "Sin especie",
     "{n} files filed under {name}": "{n} archivos archivados en {name}",
     "{n} species, {m} files": "{n} especies, {m} archivos",
+    "By species: taken from the labels, so a photo with two animals is under both. The files stay where they are.": "Por especie: tomada de las etiquetas, así que una foto con dos animales está en las dos. Los archivos no se mueven.",
+    "No labelled file in this folder.": "Ningún archivo con etiquetas en esta carpeta.",
+    "This view is for the common folders.": "Esta vista es para las carpetas comunes.",
+    "View:": "Vista:",
+    "Choose the dataset folder to import": "Elige la carpeta del dataset a importar",
 }
 
 MANUAL = """\
 # Manual de usuario
 
-Análisis Metrológico es la aplicación de escritorio del proyecto Nautilus (Universidad de Padua) para medir objetos reales, como la fauna submarina, en fotos y vídeos. Combina la detección de objetos YOLO con la geometría estéreo para convertir un par de imágenes en longitudes, anchuras y distancias reales. Este manual explica cada parte de la aplicación.
+Metrological Analysis es la aplicación de escritorio del proyecto Nautilus (Universidad de Padua) para medir objetos reales, como la fauna submarina, en fotos y vídeos. Combina la detección de objetos YOLO con la geometría estéreo para convertir un par de imágenes en longitudes, anchuras y distancias reales. Este manual explica cada parte de la aplicación.
 
-## Primeros pasos
+## Para empezar
 
 Al iniciar la aplicación aparece la página de bienvenida.
 
-- **Registrarse**: elija la pestaña *Registrarse* e introduzca nombre de usuario, correo electrónico y contraseña. La conexión con el servidor de Nautilus es automática: nunca hay que escribir una dirección. Las cuentas nuevas son de tipo *Usuario*.
-- **Iniciar sesión**: introduzca su nombre de usuario y contraseña. Tras 5 contraseñas incorrectas la cuenta se bloquea durante 5 minutos.
-- **Clave de acceso**: solo para administradores. Pulse *Tengo una clave de acceso* y escríbala; si es correcta, la cuenta pasa a ser **administrador permanente**. Tras 5 claves incorrectas la clave se bloquea durante 5 minutos, pero se puede iniciar sesión sin ella.
-- **Continuar sin iniciar sesión**: use el análisis y el entrenamiento sin conexión y sin cuenta. Las carpetas del servidor y su perfil no están disponibles.
-- **Idioma**: el botón de idioma, arriba a la derecha en la página de bienvenida y en la barra de la cuenta, cambia el idioma en cualquier momento.
+- **Registrarse**: elige la pestaña *Registrarse* e introduce un nombre de usuario, tu correo y una contraseña. La conexión con el servidor Nautilus es automática: nunca escribes una dirección. Las cuentas nuevas son de tipo *Usuario*.
+- **Iniciar sesión**: introduce tu nombre de usuario y tu contraseña. Tras 5 contraseñas erróneas la cuenta se bloquea 5 minutos.
+- **Clave de acceso**: solo para administradores. Pulsa *Tengo una clave de acceso* y escríbela; si es correcta la cuenta pasa a ser **administrador permanente**. Tras 5 claves erróneas la clave se bloquea 5 minutos, pero puedes seguir entrando sin ella.
+- **Continuar sin iniciar sesión**: usas el análisis y el entrenamiento sin conexión y sin cuenta. El servidor, los grupos de trabajo y tu perfil no están disponibles.
+- **Idioma**: el botón de idioma arriba a la derecha de la página de bienvenida y de la barra de cuenta cambia el idioma en cualquier momento.
 
-Si no se puede acceder al servidor, aún puede iniciar sesión con una cuenta ya usada en este equipo: la aplicación funciona sin conexión y se reconecta al pulsar *Reconectar*. Esto vale también para los administradores: hasta que el servidor vuelva, la página Gestión ofrece solo el trabajo local (entrenamiento y análisis).
+Si no se puede llegar al servidor, aún puedes entrar con una cuenta ya usada en este ordenador: la aplicación funciona sin conexión y se reconecta cuando pulsas *Reconectar*. Cerrar la sesión, o cambiar de servidor, nunca cierra y vuelve a abrir la aplicación: la página de bienvenida vuelve enseguida.
 
-## Sus datos en este equipo
+## Cómo transcurre un día de trabajo
+
+La aplicación está construida alrededor de un camino, y cada página es un paso de él.
+
+1. **Carpetas**: metes las fotos, los vídeos o las carpetas con las que has vuelto, tal como están.
+2. **Análisis**: eliges una de esas carpetas y el modelo, y el análisis escribe las etiquetas de lo que ha encontrado.
+3. **Etiquetas**: las etiquetas se quedan con los archivos; las miras, las corriges a mano y añades las que se escaparon.
+4. **Especies**: un archivo pertenece a las especies que nombran sus etiquetas, y desde entonces lo encuentras bajo cada una.
+5. **Servidor**: envías lo que vale la pena compartir, pides una imagen mejor, o entrenas un modelo con ello.
+
+## Tus datos en este ordenador
 
 Todo lo que guarda la aplicación está en la carpeta del proyecto *datasets/Dataset_Locale*, con una carpeta para cada tipo de dato.
 
-- **dataset_Foto** y **dataset_Foto_Stereo**: fotos individuales y pares de fotos izquierda/derecha.
-- **dataset_Video** y **dataset_Video_Stereo**: vídeos individuales y vídeos estéreo.
-- **dataset_Training**: conjuntos de datos anotados usados para el entrenamiento.
-- **models**: modelos YOLO (.pt); los descargados del servidor se agrupan por especie.
-- **results**: las mediciones exportadas en CSV.
+- **dataset_Foto** y **dataset_Foto_Stereo**: fotos sueltas y pares de fotos izquierda/derecha.
+- **dataset_Video** y **dataset_Video_Stereo**: vídeos sueltos y vídeos estéreo.
+- **dataset_Training**: datasets anotados usados para el entrenamiento.
+- **models**: modelos YOLO (.pt); los descargados del servidor están agrupados por especie.
+- **labels**: las etiquetas de los archivos que no las tienen al lado, y las pequeñas vistas previas de las fotos.
+
+Las carpetas que añades tú **no** se copian allí: se quedan donde están en tu disco y la aplicación solo recuerda dónde encontrarlas. Cuando este ordenador hace también de servidor, los datos del servidor viven aparte, en *datasets/server_data*.
+
+## Carpetas
+
+Pulsa **Carpetas** en la página de inicio y elige dónde trabajar: *Local*, *Servidor* o *Grupos de trabajo*.
+
+En **Local** ves tus archivos de este ordenador, por tipo, con las mismas pestañas que el servidor. Las fotos y los vídeos se muestran **por especie**: las especies de un archivo son las clases de sus etiquetas, así que una foto con dos animales está en las dos, sin copiarse a ninguna parte. La última pestaña, **Datasets**, guarda las carpetas tal como las añadiste, y ahí es donde trabajas con ellas:
+
+- **Añadir carpeta...**: registra una carpeta de tu disco donde está. Los archivos conservan sus nombres, las etiquetas que ya estaban a su lado se mantienen, y no hace falta ninguna nomenclatura.
+- **Añadir archivos...**: copia los archivos elegidos en la carpeta abierta, incluido el archivo de etiquetas.
+- **Archivar en una especie...**: archiva uno o varios archivos elegidos en una especie, añadiendo una etiqueta suya. También puedes hacerlo desde una especie, para añadir una segunda.
+- **Quitar de la lista**: la aplicación olvida una carpeta; los archivos de tu disco no se tocan.
+- **Enviar al servidor...**: envía un archivo o una carpeta entera a tu carpeta del servidor, o a uno de tus grupos.
+
+Las carpetas registradas aquí son justo las que ofrece el análisis, así que una carpeta añadida por la mañana se puede analizar enseguida.
+
+## Etiquetas
+
+Una etiqueta es una caja o un polígono alrededor de un animal, con el nombre de su especie. El análisis las escribe, y quedan guardadas con la foto.
+
+- **Etiquetas**: el botón de las vistas las muestra o las oculta sobre las fotos y los vídeos, vistas previas incluidas.
+- **Crear etiquetas... / Editar etiquetas...**: abre el editor. Dice *Crear* cuando el archivo no tiene ninguna todavía.
+- **En el editor**: arrastra una esquina o un punto para corregirlo, arrastra dentro para mover, doble clic (o Alt y clic) en un lado para añadir un punto, clic derecho en un punto para quitarlo. *Más puntos* añade uno en el centro de cada lado, *Caja a polígono* convierte una caja en una forma que puedes modelar punto a punto.
+- **Color**: cambia el color de las líneas, para cuando se ven mal sobre la imagen. Puede ser un color único o uno por clase.
+- **Mejorar con el servidor...**: pide al servidor una versión mejor de una foto o un vídeo; cuando vuelve eliges si añadirla junto al original o ponerla en su lugar (el original se queda en *originals*).
 
 ## Análisis
 
-Pulse **Análisis** en la página de inicio. Arriba está el botón **Demo de webcam**; debajo elija uno de los cuatro análisis.
+Pulsa **Análisis** en la página de inicio. Arriba está el botón **Demo de webcam**; debajo eliges uno de los cuatro análisis.
 
-1. **Análisis de fotos**: detección y segmentación en una sola foto.
-2. **Análisis de fotos estéreo**: mediciones reales (longitud, anchura, distancia) en pares de fotos izquierda/derecha.
-3. **Análisis de vídeo**: detección y seguimiento en un solo vídeo.
-4. **Análisis de vídeo estéreo**: detección, seguimiento y mediciones reales en un vídeo estéreo.
+1. **Análisis de fotos**: detección y segmentación en una foto suelta.
+2. **Análisis de fotos estéreo**: medidas reales (longitud, anchura, distancia) en pares de fotos izquierda/derecha.
+3. **Análisis de vídeo**: detección y seguimiento en un vídeo suelto.
+4. **Análisis de vídeo estéreo**: detección, seguimiento y medidas reales en un vídeo estéreo.
 
-En todas las páginas los pasos son los mismos: elija la carpeta de entrada, elija el modelo YOLO, elija qué objetos analizar (o *Todos los objetos*; los nombres que añada deben coincidir con las etiquetas del modelo), pulse *AVVIA ANALISI* y lea los resultados. *ESPORTA CSV* guarda las mediciones en la carpeta *results* y *Mostra solo variazioni* oculta las filas repetidas.
+En cada página los pasos son los mismos: elige la carpeta, elige el modelo YOLO, elige qué objetos analizar (o *Todos los objetos*: se puede encontrar lo que el modelo conoce), pulsa *AVVIA ANALISI* y lee los resultados. Las carpetas y los modelos son los que gestionas en *Carpetas* → *Local*, así que desde aquí no se añade nada. *ESPORTA CSV* guarda las medidas y *Mostra solo variazioni* oculta las filas repetidas.
 
-El análisis estéreo necesita dos cosas más. La carpeta de entrada debe contener las subcarpetas *rx* (cámara derecha) y *lx* (cámara izquierda), tal como las producen los sensing rigs de Nautilus: las fotos se nombran con la hora de captura y cada carpeta de vídeo contiene un solo archivo. También debe introducir la calibración de las cámaras, la *línea base* (distancia entre las dos cámaras, en mm) y la *distancia focal* (en píxeles): valores incorrectos dan mediciones incorrectas.
+El análisis estéreo necesita dos cosas más. La carpeta de partida debe contener las subcarpetas *rx* (cámara derecha) y *lx* (cámara izquierda), tal como las producen los equipos de captación Nautilus: las fotos llevan en el nombre el instante de la toma y cada carpeta de vídeo contiene un solo archivo. También debes introducir la calibración de las cámaras, la *baseline* (distancia entre las dos cámaras, en mm) y la *focal* (en píxeles): valores equivocados dan medidas equivocadas.
 
 ## Demo de webcam
 
-La demo de webcam muestra la detección YOLO en directo en una ventana aparte. Elija el modo (*Una cámara* o *Estéreo en directo (2 cámaras)*), las cámaras, el modelo y qué reconocer, y pulse *Iniciar*. En modo estéreo las dos cámaras deben ser dispositivos distintos y debe haber al menos un modelo en la carpeta *models*.
+La demo de webcam muestra la detección YOLO en vivo en una ventana aparte. Elige el modo (*Cámara única* o *Estéreo en vivo (2 cámaras)*), las cámaras, el modelo y qué reconocer, y pulsa *Iniciar*. En estéreo las dos cámaras deben ser dispositivos distintos, y al menos un modelo debe estar en la carpeta *models*.
 
 ## Entrenamiento
 
-Pulse **Entrenamiento** para entrenar su propio modelo YOLO con un conjunto de datos anotado (una carpeta con un archivo *data.yaml*). Elija el conjunto de datos e inicie el entrenamiento local: la consola muestra el avance. Para trabajos más pesados, la misma página abre Google Colab.
+Pulsa **Entrenamiento** para que se entrene un modelo YOLO con un dataset anotado (una carpeta con un archivo *data.yaml*). La página se abre sin instalar nada, porque la vía normal es la primera.
 
-Los componentes de entrenamiento nunca se instalan solos. La primera vez, la aplicación pide confirmación y muestra una barra de progreso. Con una tarjeta gráfica NVIDIA se descarga una versión de PyTorch con GPU (varios GB) y la aplicación se reinicia sola para completar la activación.
+- **En el servidor**: pides el entrenamiento y un ordenador con tarjeta gráfica hace el trabajo. Ves tu petición en espera, luego en marcha, y el modelo entrenado se publica cuando está listo.
+- **En este ordenador**: el entrenamiento se ejecuta aquí, con tu hardware. Los componentes necesarios (PyTorch y las extensiones de entrenamiento, varios GB con una tarjeta NVIDIA) se descargan solo cuando pulsas el botón, en una ventanita propia, y la aplicación sigue usable mientras llegan.
 
-## Carpetas del servidor
+Un modelo entrenado toma el nombre de la especie que reconoce y de la red de la que viene, por ejemplo *Pinna_nobilis_yolo11l-seg.pt*, así su nombre por sí solo dice qué es.
 
-Con conexión, **Carpetas del servidor** muestra las carpetas compartidas por el equipo del laboratorio.
+## Cómo de bueno es un modelo
 
-- **Fotos**: vea, descargue y añada fotos. Le pedimos que done las fotos de los objetos que mide.
-- **Modelos YOLO**: descargue modelos aprobados, agrupados por nombre científico (por ejemplo *Pinna nobilis*). Los modelos que suba van a cuarentena y se publican solo después de que un administrador los revise, porque un archivo de modelo puede contener código.
-- **Conjuntos de datos**: imágenes y etiquetas para el entrenamiento. Los conjuntos que suba se añaden al conjunto de datos del servidor.
+**Rendimiento de los modelos** compara un modelo con las etiquetas revisadas a mano: cuántos animales encuentra, cuántos se inventa, cuánto se solapan las cajas. Hay una ficha por modelo, una comparación especie por especie y una prueba con fotos reales tuyas, para ver dónde funciona y dónde no antes de fiarte de una medida.
 
-Los usuarios pueden leer, descargar y añadir archivos, pero solo los administradores pueden modificar, renombrar o eliminar los existentes. Los archivos existentes nunca se sobrescriben y las descargas interrumpidas se reanudan donde se quedaron.
+## El servidor y los grupos de trabajo
+
+Cuando estás en línea, **Carpetas** → **Servidor** muestra las carpetas compartidas del ordenador del laboratorio: fotos, fotos estéreo, vídeos, vídeos estéreo, modelos y datasets. El botón *Vista* pasa de las carpetas tal cual a los mismos archivos **por especie**, tomada de sus etiquetas.
+
+- **Fotos**: mira, descarga y añade fotos. Dona las fotos de los objetos que midas.
+- **Modelos YOLO**: descarga los modelos aprobados, agrupados por nombre científico (por ejemplo *Pinna nobilis*). Los modelos que subes van a cuarentena y se publican solo después de que un administrador los revise, porque un archivo de modelo puede contener código.
+- **Datasets**: conjuntos de imágenes y etiquetas para el entrenamiento. Los datasets que subes se añaden al dataset del servidor.
+
+Los **grupos de trabajo** sirven para trabajar juntos. Cualquiera puede crear uno y pasa a ser su administrador: añade y quita miembros, los asciende o los degrada, y decide los ajustes del grupo. Lo que envía un miembro espera en la cuarentena del grupo hasta que un administrador lo aprueba, y un grupo puede publicar en el servidor en su propio nombre. Los usuarios pueden leer, descargar y añadir archivos; los archivos existentes nunca se sobrescriben y las descargas interrumpidas siguen desde donde se quedaron.
 
 ## Mi perfil
 
-Abra **Mi perfil** desde la barra superior.
+Abre **Mi perfil** desde la barra superior.
 
-- **Datos personales**: nombre, correo, organización, teléfono y una breve descripción, guardados en el servidor. Aquí también puede cambiar la contraseña.
-- **Mi carpeta en el servidor**: un espacio privado, como una unidad personal, donde añade, renombra, mueve y elimina archivos desde cualquiera de sus dispositivos. Una barra muestra su cuota.
-- **Carpetas en este equipo**: elija las carpetas predeterminadas para descargas y subidas.
-- **Idioma**: elija y descargue un idioma.
+- **Datos personales**: nombre, correo, organización, teléfono y una breve descripción, guardados en el servidor. También puedes cambiar tu contraseña.
+- **Mi carpeta en el servidor**: un espacio privado, como un disco personal, donde añades, renombras, mueves y borras archivos desde cualquiera de tus dispositivos. Una barra muestra tu cuota.
+- **Carpetas en este ordenador**: elige las carpetas por defecto para descargas y subidas.
+- **Idioma**: elige y descarga un idioma.
 
 ## Idiomas
 
-El inglés se instala con la aplicación. Use el botón de idioma, o *Mi perfil* → *Idioma*, para descargar italiano, español, alemán, francés, chino (mandarín) o japonés. Cada idioma se descarga una sola vez, funciona sin conexión e incluye este manual. El cambio se aplica la próxima vez que inicie la aplicación.
+El inglés se instala con la aplicación. Usa el botón de idioma, o *Mi perfil* → *Idioma*, para descargar italiano, español, alemán, francés, chino (mandarín) o japonés. Cada idioma se descarga una sola vez, funciona sin conexión e incluye este manual. El cambio se aplica al siguiente arranque de la aplicación.
 
 ## Para administradores
 
-Los administradores abren la página **Gestión**, que tiene cuatro pestañas.
+Los administradores se abren en la página **Gestión**, que tiene cuatro pestañas.
 
-- **Usuarios**: cree usuarios, cambie su tipo (*Usuario* o *Servidor*), desactive o elimine cuentas, restablezca contraseñas, fije cuotas y lea la actividad reciente. Debe quedar al menos un administrador activo.
-- **Base de datos**: las carpetas del servidor con control total. Los modelos de la carpeta *Pendiente de aprobación* se pueden aprobar y publicar en la carpeta de su especie; al seleccionar un modelo se ven sus detalles (especie, entrenamiento, métricas).
-- **Revisión de fotos**: los envíos de fotos de los usuarios. Apruébalos para publicar las fotos en la carpeta de su especie, o recházalos.
-- **Entrenamiento**: abre la página de entrenamiento, donde también puedes descargar conjuntos de datos del servidor y publicar el modelo entrenado.
+- **Usuarios**: crea usuarios, cambia su tipo (*Usuario* o *Servidor*), desactiva o borra cuentas, restablece contraseñas, fija cuotas y lee la actividad reciente. Debe quedar al menos un administrador activo.
+- **Base de datos**: las carpetas del servidor con control total. Los modelos que esperan en la carpeta *Pendiente de aprobación* se pueden aprobar y publicar en la carpeta de su especie; al seleccionar un modelo se ven sus detalles (especie, entrenamiento, métricas). Un administrador también puede corregir las etiquetas de una foto del servidor, y la vista por especie se actualiza enseguida.
+- **Revisión de fotos**: los envíos de fotos hechos por los usuarios. Aprueba para publicar las fotos en la carpeta de su especie, o rechaza.
+- **Entrenamiento**: abre la página de entrenamiento, desde donde también se pueden descargar datasets del servidor y publicar el modelo entrenado.
 
-El servidor funciona en el equipo del laboratorio. Inícielo con *python -m server serve* desde la carpeta del proyecto (añada *--host 0.0.0.0* para aceptar conexiones de la red), deténgalo con Ctrl+C y reinícielo tras cada actualización del código.
+El servidor se ejecuta en el ordenador del laboratorio. Arráncalo con *python -m server serve* desde la carpeta del proyecto (añade *--host 0.0.0.0* para aceptar conexiones de la red), párralo con Ctrl+C y reinícialo después de cada actualización del código. El trabajo pesado que no puede hacer él solo - entrenar un modelo, mejorar una imagen - lo hace un worker aparte: lanza *python training_worker.py* en una máquina con tarjeta gráfica y toma las peticiones de una en una.
 
 ## Mantenimiento y reparación
 
-En cada inicio la aplicación comprueba rápidamente que sus bibliotecas estén intactas. Si un archivo está dañado, por ejemplo tras un disco lleno o una descarga interrumpida, pide repararlo: solo se vuelven a descargar los paquetes dañados, aparece una ventana de progreso y no se muestra ninguna ventana de consola. Si todo está bien, no se reinstala nada.
+La aplicación comprueba que sus bibliotecas estén intactas cuando hay un motivo: la primera vez, cuando cambian los paquetes instalados, o tras dos semanas. Si un archivo está dañado, por ejemplo tras un disco lleno o una descarga interrumpida, pide repararlo: solo se vuelven a descargar los paquetes dañados, se ve una ventana de progreso y **nunca aparece ninguna ventana de terminal**. Cuando todo está bien no se reinstala nada y la aplicación se abre enseguida.
 
-## Solución de problemas
+## Resolución de problemas
 
-- **No se puede acceder al servidor**: compruebe la conexión y pulse *Reconectar*; mientras tanto puede seguir trabajando sin conexión.
-- **La clave de acceso está bloqueada**: espere a que termine la cuenta atrás; iniciar sesión sin la clave siempre es posible.
-- **El entrenamiento dice que faltan componentes**: pulse *Instalar* cuando se le pida y permanezca conectado hasta el final.
-- **No se puede subir un archivo**: cada carpeta del servidor solo acepta ciertos tipos de archivo y los archivos existentes no se sobrescriben.
-- **Se rechaza un modelo**: debe estar dentro de una carpeta con el nombre científico, por ejemplo *Pinna nobilis*.
-- **No hay espacio suficiente en su carpeta**: elimine archivos o pida a un administrador que aumente su cuota.
+- **No se llega al servidor**: comprueba tu conexión y pulsa *Reconectar*; mientras tanto puedes seguir trabajando sin conexión.
+- **"Se requiere iniciar sesión"**: entraste sin cuenta; inicia sesión para usar el servidor y los grupos de trabajo.
+- **El entrenamiento dice que faltan componentes**: pulsa *Instalar* cuando te lo pida y quédate en línea hasta el final; puedes seguir usando la aplicación mientras descarga.
+- **Un archivo no se puede subir**: cada carpeta del servidor acepta solo ciertos tipos de archivo, y los archivos existentes no se sobrescriben.
+- **Un modelo es rechazado**: debe estar dentro de una carpeta con el nombre científico, por ejemplo *Pinna nobilis*.
+- **Una foto no está bajo su especie**: aún no tiene una etiqueta de esa especie; ábrela y usa *Crear etiquetas...* o *Archivar en una especie...*.
 """

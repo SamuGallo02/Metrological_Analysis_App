@@ -1,4 +1,7 @@
-"""Code repair and update, against a fake GitHub running on localhost (no real network)."""
+"""Code repair and update, against a fake GitHub running on localhost (no real network).
+
+Autore: Samuele Gallo
+"""
 import hashlib, io, json, os, re, shutil, sys, tempfile, threading, unittest, zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path

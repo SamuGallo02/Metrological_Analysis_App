@@ -1,4 +1,7 @@
-"""Reading the code from GitHub: archives (zip) and single files, always pinned to a commit."""
+"""Reading the code from GitHub: archives (zip) and single files, always pinned to a commit.
+
+Autore: Samuele Gallo
+"""
 from __future__ import annotations
 
 import hashlib

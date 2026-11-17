@@ -1,3 +1,4 @@
+# Autore: Samuele Gallo
 import unittest
 
 from common.label_edit import LabelModel

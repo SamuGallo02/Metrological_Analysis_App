@@ -60,11 +60,11 @@ class TrainingPage(QWidget):
     def __init__(self, on_home, parent: Optional[QWidget] = None, session: Optional[Any] = None) -> None:
         super().__init__(parent)
         self.on_home = on_home
-        self.session = session                          # account e server: arriva dalla home, questa sezione non importa gli utenti
+        self.session = session                          # account and server: it comes from the home, this section does not import the users
         self.worker: Optional[TrainingWorker] = None
-        self._server_datasets: set = set()            # dataset scaricati dal server in questa sessione
-        self._run_context: Optional[dict] = None      # cosa si sta allenando: serve ai metadati
-        self.last_model: Optional[Path] = None        # l'ultimo modello allenato: si può pubblicare
+        self._server_datasets: set = set()            # datasets downloaded from the server in this session
+        self._run_context: Optional[dict] = None      # what is being trained: the metadata needs it
+        self.last_model: Optional[Path] = None        # the last trained model: it can be published
         self._publishing = False
 
         TDATASET_DIR.mkdir(exist_ok=True, parents=True)
@@ -78,7 +78,7 @@ class TrainingPage(QWidget):
         self._check_model_download_status()
 
     def server_available(self) -> bool:
-        """True se c'è un account (non ospite) collegato al server in questo momento."""
+        """True when an account (not a guest) is connected to the server right now."""
         s = self.session
         return s is not None and bool(s.online) and not s.is_guest
     
@@ -266,7 +266,8 @@ class TrainingPage(QWidget):
         TDATASET_DIR.mkdir(parents=True, exist_ok=True)
         initial_dir = str(TDATASET_DIR.resolve())
 
-        source_dir = QFileDialog.getExistingDirectory(self, "Seleziona cartella dataset da importare", initial_dir)
+        source_dir = QFileDialog.getExistingDirectory(self, tr("Choose the dataset folder to import"),
+                                                     initial_dir)      # where the datasets live
         if not source_dir:
             return
 
@@ -376,7 +377,7 @@ class TrainingPage(QWidget):
         QMessageBox.information(self, "Training Completato", f"Modello salvato in:\n{output_path}")
 
     def _write_metadata(self, model_path: str) -> None:
-        """Scrive <modello>.json accanto al modello. Un errore qui non deve rovinare un training già finito."""
+        """Writes <model>.json beside the model. A failure here must not spoil a training that is already done."""
         if not self._run_context:
             return
         try:

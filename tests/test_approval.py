@@ -1,3 +1,4 @@
+# Autore: Samuele Gallo
 import tempfile
 import unittest
 from datetime import date
