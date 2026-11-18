@@ -1,13 +1,42 @@
 # Autore: Samuele Gallo
 VERSION = 5
 STRINGS = {
+    'By species: taken from the labels, so a photo with two animals is under both. Improved: only the copies cleaned up by the improvement. The files stay where they are.': 'Nach Art: aus den Labels, ein Foto mit zwei Tieren steht also unter beiden. Verbessert: nur die von der Verbesserung bereinigten Kopien. Die Dateien bleiben, wo sie sind.',
+    'Cannot read this file.': 'Diese Datei kann nicht gelesen werden.',
+    'Choose a method.': 'Wählen Sie ein Verfahren.',
     'Choose the group that can see it.': 'Wählen Sie die Gruppe, die es sehen darf.',
+    'Click a point of the outline first (an outline keeps at least three).': 'Klicken Sie zuerst auf einen Punkt des Umrisses (ein Umriss behält mindestens drei).',
+    'Delete point': 'Punkt löschen',
+    "Delete the folder '{name}' and everything in it?": "Den Ordner '{name}' und alles darin löschen?",
+    'does not do videos': 'verarbeitet keine Videos',
+    'Done by:': 'Ausgeführt von:',
+    'Drag the divider to compare.': 'Ziehen Sie die Trennlinie zum Vergleichen.',
     'Files go inside the folder of a group.': 'Dateien gehören in den Ordner einer Gruppe.',
     'Files stay inside the folder of their group.': 'Dateien bleiben im Ordner ihrer Gruppe.',
+    'Improve': 'Verbessern',
+    'Improve...': 'Verbessern...',
+    'Improved': 'Verbessert',
+    'Improved copy of {path}': 'Verbesserte Kopie von {path}',
+    'Install the improvement on this computer, or connect to the server.': 'Installieren Sie die Verbesserung auf diesem Computer oder verbinden Sie sich mit dem Server.',
     'Invalid visibility.': 'Ungültige Sichtbarkeit.',
+    'Keep': 'Behalten',
+    'Method:': 'Verfahren:',
+    'No improved copy here yet.': 'Hier gibt es noch keine verbesserte Kopie.',
+    "No improved copy yet: choose a file and press 'Improve...'.": "Noch keine verbesserte Kopie: Wählen Sie eine Datei und drücken Sie 'Verbessern...'.",
+    'No improvement is installed on this computer.': 'Auf diesem Computer ist keine Verbesserung installiert.',
     'Not enough space in the group folder (quota {mb} MB).': 'Nicht genug Platz im Gruppenordner (Kontingent {mb} MB).',
+    'Not now': 'Jetzt nicht',
+    'Original': 'Original',
+    'Preparing the models...': 'Modelle werden vorbereitet...',
+    'Preview...': 'Vorschau...',
+    'Removes the point chosen in the outline (click it first). Delete does the same, and a right click on a point as well.': 'Entfernt den gewählten Punkt des Umrisses (klicken Sie ihn zuerst an). Entf tut dasselbe, ebenso ein Rechtsklick auf einen Punkt.',
+    'Shows the improved copy in place of the original.': 'Zeigt die verbesserte Kopie anstelle des Originals.',
     'The folder of a group is created with the group.': 'Der Ordner einer Gruppe wird mit der Gruppe erstellt.',
     'The folder of a group is removed with the group.': 'Der Ordner einer Gruppe wird mit der Gruppe entfernt.',
+    'The improved copies, beside their originals': 'Die verbesserten Kopien, neben ihren Originalen',
+    'The preview appears here.': 'Hier erscheint die Vorschau.',
+    'The server': 'Der Server',
+    'The server chooses the method of the computer that does the work.': 'Das Verfahren wählt der Computer, der die Arbeit macht.',
     "The server is unreachable: you are working locally only. Users and server folders are available again after you reconnect.": "Der Server ist nicht erreichbar: Sie arbeiten nur lokal. Benutzer und Serverordner stehen nach dem erneuten Verbinden wieder zur Verfügung.",
     "Repairing files": "Dateien werden repariert",
     "Checking the files...": "Dateien werden geprüft...",
@@ -26,6 +55,8 @@ STRINGS = {
     "Enter the scientific name as 'Genus species', for example {example}.": "Gib den wissenschaftlichen Namen als 'Gattung Art' ein, zum Beispiel {example}.",
     "Models go in a folder named after the scientific name (Genus species), for example {example}.": "Modelle gehören in einen Ordner mit dem wissenschaftlichen Namen (Gattung Art), zum Beispiel {example}.",
     "Publish as (path in the models folder, Genus species/file.pt):": "Veröffentlichen als (Pfad im Modellordner, Gattung Art/Datei.pt):",
+    'This computer': 'Dieser Computer',
+    'This computer ({device})': 'Dieser Computer ({device})',
     "You can download approved models and upload new ones: an administrator checks them before publishing. Models are grouped by the scientific name of the species (Genus species).": "Du kannst freigegebene Modelle herunterladen und neue hochladen: Ein Administrator prüft sie vor der Veröffentlichung. Die Modelle sind nach dem wissenschaftlichen Namen der Art (Gattung Art) gruppiert.",
     "Stereo-photogrammetric measurement of objects with YOLO": "Stereophotogrammetrische Vermessung von Objekten mit YOLO",
     "Measure length, width and height from stereo pairs": "Länge, Breite und Höhe aus Stereopaaren messen",
@@ -600,20 +631,14 @@ STRINGS = {
     "Add it anyway?": "Trotzdem hinzufügen?",
     "Add it beside the original (enhanced folder)": "Neben dem Original ablegen (Ordner enhanced)",
     "All files (*)": "Alle Dateien (*)",
-    "Apply": "Übernehmen",
     "Bringing the improved file back...": "Verbesserte Datei wird geholt...",
-    "Connect to the server to ask for the improvement.": "Verbinde dich mit dem Server, um die Verbesserung anzufordern.",
-    "Improve with the server": "Mit dem Server verbessern",
-    "Improve with the server...": "Mit dem Server verbessern...",
     "Improved file saved in {path}": "Verbesserte Datei in {path} gespeichert",
     "Improvement request not found.": "Verbesserungsanfrage nicht gefunden.",
     "No folder yet: use 'Add folder...'.": "Noch kein Ordner: 'Ordner hinzufügen...' benutzen.",
     "No label": "Keine Labels",
-    "Not now": "Jetzt nicht",
     "Only an improvement that is still waiting can be cancelled.": "Nur eine noch wartende Verbesserung kann abgebrochen werden.",
     "Put it in place of the original (a copy stays in 'originals')": "An die Stelle des Originals setzen (eine Kopie bleibt in 'originals')",
     "Remove '{name}' from the list? The files in {path} are not touched.": "'{name}' aus der Liste nehmen? Die Dateien in {path} bleiben unberührt.",
-    "Remove from the list": "Aus der Liste nehmen",
     "Sending the file...": "Datei wird gesendet...",
     "Show labels": "Labels anzeigen",
     "The improved file is ready.": "Die verbesserte Datei ist fertig.",
@@ -666,7 +691,6 @@ STRINGS = {
     "Without a species": "Ohne Art",
     "{n} files filed under {name}": "{n} Dateien unter {name} abgelegt",
     "{n} species, {m} files": "{n} Arten, {m} Dateien",
-    "By species: taken from the labels, so a photo with two animals is under both. The files stay where they are.": "Nach Art: aus den Labels, also steht ein Foto mit zwei Tieren unter beiden. Die Dateien bleiben, wo sie sind.",
     "No labelled file in this folder.": "Keine Datei mit Labels in diesem Ordner.",
     "This view is for the common folders.": "Diese Ansicht ist für die gemeinsamen Ordner.",
     "View:": "Ansicht:",
@@ -716,12 +740,12 @@ Die Ordner, die du selbst hinzufügst, werden dorthin **nicht** kopiert: sie ble
 
 Drücke **Ordner** auf der Startseite und wähle, wo du arbeiten willst: *Lokal*, *Server* oder *Arbeitsgruppen*.
 
-Unter **Lokal** siehst du deine Dateien auf diesem Computer, nach Art, mit denselben Reitern wie auf dem Server. Fotos und Videos werden **nach Art** gezeigt: die Arten einer Datei sind die Klassen ihrer Labels, ein Foto mit zwei Tieren steht also unter beiden, ohne irgendwohin kopiert zu werden. Der letzte Reiter, **Datasets**, hält die Ordner genau so, wie du sie hinzugefügt hast, und dort arbeitest du mit ihnen:
+Unter **Lokal** siehst du deine Dateien auf diesem Computer, nach Art, mit denselben Reitern wie auf dem Server. Fotos und Videos werden **nach Art** gezeigt: die Arten einer Datei sind die Klassen ihrer Labels, ein Foto mit zwei Tieren steht also unter beiden, ohne irgendwohin kopiert zu werden. Der Reiter **Verbessert** sammelt die Kopien, die die Verbesserung erzeugt hat, wo auch immer ihr Original liegt, und der letzte Reiter, **Datasets**, hält die Ordner genau so, wie du sie hinzugefügt hast, und dort arbeitest du mit ihnen:
 
 - **Ordner hinzufügen...**: registriert einen Ordner deiner Platte dort, wo er ist. Die Dateien behalten ihre Namen, Labels, die schon daneben liegen, bleiben, und es wird keine Namensregel verlangt.
 - **Dateien hinzufügen...**: kopiert gewählte Dateien in den geöffneten Ordner, samt Labeldatei.
-- **Einer Art zuordnen...**: ordnet eine oder mehrere gewählte Dateien einer Art zu und fügt ein Label dafür hinzu. Das geht auch aus einer Art heraus, um eine zweite zu ergänzen.
-- **Aus der Liste nehmen**: die Anwendung vergisst einen Ordner; die Dateien auf deiner Platte bleiben unberührt.
+- **Einer Art zuordnen...**: ordnet die Fotos, die du einzeln gewählt hast, einer Art zu und fügt jedem ein Label dafür hinzu; sie ist aus, solange eine ganze Art oder ein Ordner gewählt ist, denn die sind schon zugeordnet.
+- **Löschen**: nimmt das Gewählte von der Platte, auch einen leeren Ordner. Bei einem Ordner der Liste wird er nur aus der Liste genommen: diese Dateien gehörten nie der Anwendung und bleiben, wo sie sind.
 - **An den Server senden...**: schickt eine Datei oder einen ganzen Ordner in deinen Ordner auf dem Server oder in eine deiner Gruppen.
 
 Die hier registrierten Ordner sind genau die, welche die Analyse anbietet; ein morgens hinzugefügter Ordner lässt sich also sofort analysieren.
@@ -732,9 +756,9 @@ Ein Label ist ein Kasten oder ein Polygon um ein Tier, mit dem Namen seiner Art.
 
 - **Labels**: die Schaltfläche der Ansichten zeigt oder verbirgt sie über den Fotos und Videos, Vorschauen eingeschlossen.
 - **Labels erstellen... / Labels bearbeiten...**: öffnet den Editor. Er sagt *Erstellen*, wenn die Datei noch keine hat.
-- **Im Editor**: ziehe eine Ecke oder einen Punkt, um ihn zu korrigieren, ziehe innen zum Verschieben, Doppelklick (oder Alt und Klick) auf eine Kante fügt einen Punkt hinzu, Rechtsklick auf einen Punkt entfernt ihn. *Mehr Punkte* setzt auf jede Kante einen, *Box zu Polygon* macht aus einer Box eine Form, die sich Punkt für Punkt modellieren lässt.
+- **Im Editor**: ziehe eine Ecke oder einen Punkt, um ihn zu korrigieren, ziehe innen zum Verschieben, Doppelklick (oder Alt und Klick) auf eine Kante fügt einen Punkt hinzu. Klicke einen Punkt an, um ihn zu wählen: *Punkt löschen* (oder die Entf-Taste, oder ein Rechtsklick darauf) nimmt nur diesen weg, und ein Umriss behält immer drei. *Mehr Punkte* fügt in der Mitte jeder Kante einen hinzu, *Rechteck zu Polygon* macht aus einem Rechteck eine Form, die du Punkt für Punkt formst.
 - **Farbe**: ändert die Farbe der Linien, wenn sie über dem Bild schlecht zu sehen sind. Eine Farbe für alle oder eine je Klasse.
-- **Mit dem Server verbessern...**: bittet den Server um eine bessere Fassung eines Fotos oder Videos; wenn sie zurückkommt, wählst du, ob sie neben dem Original liegen oder an seine Stelle treten soll (das Original bleibt in *originals*).
+- **Verbessern...**: nimmt einem Foto oder Video den Farbstich und den Schleier, auf diesem Computer, wenn die Modelle installiert sind, sonst auf dem Server; du wählst das Verfahren und seine Einstellungen, vergleichst vorher und nachher an einer verkleinerten Kopie und sagst, ob die verbesserte Datei neben dem Original (*enhanced*) oder an seiner Stelle liegt (das Original bleibt in *originals*). Im Betrachter zeigt ein Schalter das eine oder das andere.
 
 ## Analyse
 

@@ -2,13 +2,42 @@
 VERSION = 5
 
 STRINGS = {
+    'By species: taken from the labels, so a photo with two animals is under both. Improved: only the copies cleaned up by the improvement. The files stay where they are.': '種別：ラベルから読み取るので、2種類写っている写真は両方に入ります。補正済み：補正で作られた画像だけを表示します。ファイルはそのままの場所に残ります。',
+    'Cannot read this file.': 'このファイルを読み取れません。',
+    'Choose a method.': '方法を選んでください。',
     'Choose the group that can see it.': '表示できるグループを選んでください。',
+    'Click a point of the outline first (an outline keeps at least three).': 'まず輪郭の点をクリックしてください（輪郭には最低3点が必要です）。',
+    'Delete point': '点を削除',
+    "Delete the folder '{name}' and everything in it?": 'フォルダー「{name}」と中身をすべて削除しますか？',
+    'does not do videos': '動画には対応していません',
+    'Done by:': '実行する場所:',
+    'Drag the divider to compare.': '仕切りをドラッグして見比べてください。',
     'Files go inside the folder of a group.': 'ファイルはグループのフォルダーの中に入れてください。',
     'Files stay inside the folder of their group.': 'ファイルは自分のグループのフォルダーの中にとどまります。',
+    'Improve': '補正',
+    'Improve...': '補正...',
+    'Improved': '補正済み',
+    'Improved copy of {path}': '{path} の補正済みの画像',
+    'Install the improvement on this computer, or connect to the server.': 'この端末に補正機能をインストールするか、サーバーに接続してください。',
     'Invalid visibility.': '無効な公開範囲です。',
+    'Keep': '保存する',
+    'Method:': '方法:',
+    'No improved copy here yet.': 'ここにはまだ補正済みの画像がありません。',
+    "No improved copy yet: choose a file and press 'Improve...'.": '補正済みの画像はまだありません。ファイルを選んで「補正...」を押してください。',
+    'No improvement is installed on this computer.': 'この端末には補正機能がインストールされていません。',
     'Not enough space in the group folder (quota {mb} MB).': 'グループのフォルダーに空き容量がありません（割り当て {mb} MB）。',
+    'Not now': '今はしない',
+    'Original': '元の画像',
+    'Preparing the models...': 'モデルを準備しています...',
+    'Preview...': 'プレビュー...',
+    'Removes the point chosen in the outline (click it first). Delete does the same, and a right click on a point as well.': '輪郭で選んだ点を取り除きます（先にその点をクリックしてください）。Delete キーでも、点を右クリックしても同じです。',
+    'Shows the improved copy in place of the original.': '元の画像の代わりに補正済みの画像を表示します。',
     'The folder of a group is created with the group.': 'グループのフォルダーはグループと一緒に作られます。',
     'The folder of a group is removed with the group.': 'グループのフォルダーはグループと一緒に削除されます。',
+    'The improved copies, beside their originals': '補正済みの画像を、元のファイルと並べて表示します',
+    'The preview appears here.': 'ここにプレビューが表示されます。',
+    'The server': 'サーバー',
+    'The server chooses the method of the computer that does the work.': '方法は作業を行うコンピューターが選びます。',
     'The server is unreachable: you are working locally only. Users and server folders are available again after you reconnect.': 'サーバーに接続できません：ローカルのみで作業しています。再接続すると、ユーザーとサーバーフォルダーが再び使えるようになります。',
     'Repairing files': 'ファイルを修復中',
     'Checking the files...': 'ファイルを確認中...',
@@ -27,6 +56,8 @@ STRINGS = {
     "Enter the scientific name as 'Genus species', for example {example}.": "学名を「属名 種小名」の形式で入力してください。例：{example}。",
     "Models go in a folder named after the scientific name (Genus species), for example {example}.": "モデルは学名（属名 種小名）のフォルダに入れてください。例：{example}。",
     "Publish as (path in the models folder, Genus species/file.pt):": "公開名（モデルフォルダ内のパス、属名 種小名/ファイル.pt）：",
+    'This computer': 'この端末',
+    'This computer ({device})': 'この端末（{device}）',
     "You can download approved models and upload new ones: an administrator checks them before publishing. Models are grouped by the scientific name of the species (Genus species).": "承認済みのモデルをダウンロードし、新しいモデルをアップロードできます。公開前に管理者が確認します。モデルは種の学名（属名 種小名）ごとにまとめられています。",
     "Stereo-photogrammetric measurement of objects with YOLO": "YOLO によるステレオ写真測量での物体計測",
     "Measure length, width and height from stereo pairs": "ステレオ画像ペアから長さ・幅・高さを測定",
@@ -606,20 +637,14 @@ STRINGS = {
     "Add it anyway?": "それでも追加しますか？",
     "Add it beside the original (enhanced folder)": "元のファイルの隣に追加（enhanced フォルダー）",
     "All files (*)": "すべてのファイル (*)",
-    "Apply": "適用",
     "Bringing the improved file back...": "改善されたファイルを取得しています…",
-    "Connect to the server to ask for the improvement.": "改善を依頼するにはサーバーに接続してください。",
-    "Improve with the server": "サーバーで改善",
-    "Improve with the server...": "サーバーで改善…",
     "Improved file saved in {path}": "改善されたファイルを {path} に保存しました",
     "Improvement request not found.": "改善の依頼が見つかりません。",
     "No folder yet: use 'Add folder...'.": "フォルダーがありません：「フォルダーを追加…」を使ってください。",
     "No label": "ラベルなし",
-    "Not now": "後で",
     "Only an improvement that is still waiting can be cancelled.": "待機中の改善だけを取り消せます。",
     "Put it in place of the original (a copy stays in 'originals')": "元のファイルと置き換える（コピーは originals に残ります）",
     "Remove '{name}' from the list? The files in {path} are not touched.": "「{name}」を一覧から外しますか？ {path} のファイルはそのままです。",
-    "Remove from the list": "一覧から外す",
     "Sending the file...": "ファイルを送信しています…",
     "Show labels": "ラベルを表示",
     "The improved file is ready.": "改善されたファイルができました。",
@@ -672,7 +697,6 @@ STRINGS = {
     "Without a species": "種なし",
     "{n} files filed under {name}": "{n} 件のファイルを {name} に振り分けました",
     "{n} species, {m} files": "{n} 種、{m} 件のファイル",
-    "By species: taken from the labels, so a photo with two animals is under both. The files stay where they are.": "種別：ラベルから取るので、2種が写った写真は両方に出ます。ファイルはそのままです。",
     "No labelled file in this folder.": "このフォルダーにラベル付きのファイルはありません。",
     "This view is for the common folders.": "この表示は共有フォルダー用です。",
     "View:": "表示：",
@@ -722,12 +746,12 @@ Metrological Analysis は、Nautilus プロジェクト（パドヴァ大学）�
 
 ホーム画面で **フォルダー** を押し、作業する場所を選びます：*ローカル*、*サーバー*、*ワークグループ*。
 
-**ローカル** では、このコンピューターのファイルを種類別に、サーバーと同じタブで見られます。写真と動画は **種ごと** に表示されます：ファイルの種はそのラベルのクラスなので、2 種が写っている写真は両方に出てきますが、どこにもコピーはされません。最後のタブ **データセット** は、追加したままのフォルダーを保持し、そこで作業します：
+**ローカル** では、このコンピューターのファイルを種類別に、サーバーと同じタブで見られます。写真と動画は **種ごと** に表示されます：ファイルの種はそのラベルのクラスなので、2 種が写っている写真は両方に出てきますが、どこにもコピーはされません。**補正済み** タブは、元のファイルがどこにあっても補正で作られた画像を集めます。最後のタブ **データセット** は、追加したままのフォルダーを保持し、そこで作業します：
 
 - **フォルダーを追加…**：ディスク上のフォルダーをその場所のまま登録します。ファイル名はそのまま、すでに隣にあるラベルも残り、命名規則は求められません。
 - **ファイルを追加…**：選んだファイルを開いているフォルダーにコピーします。ラベルファイルも一緒です。
-- **種に振り分ける…**：選んだ 1 つまたは複数のファイルを種に振り分け、その種のラベルを追加します。ある種から始めて、2 つ目を足すこともできます。
-- **一覧から外す**：アプリケーションがそのフォルダーを忘れます。ディスク上のファイルはそのままです。
+- **種に振り分ける…**：ひとつずつ選んだ写真を種に振り分け、それぞれにその種のラベルを追加します。種全体やフォルダーを選んでいるときは使えません。すでに振り分けられているからです。
+- **削除**：選んだものをディスクから削除します。空のフォルダーも削除できます。一覧にあるフォルダーの場合は一覧から外すだけです。それらのファイルはアプリケーションのものではないので、そのまま残ります。
 - **サーバーへ送る…**：ファイルやフォルダーごと、サーバー上の自分のフォルダーか、所属するワークグループへ送ります。
 
 ここで登録したフォルダーが、まさに解析で選べるフォルダーです。朝に追加したフォルダーをそのまま解析できます。
@@ -738,9 +762,9 @@ Metrological Analysis は、Nautilus プロジェクト（パドヴァ大学）�
 
 - **ラベル**：各表示のこのボタンで、写真や動画の上にラベルを表示したり隠したりできます（プレビューも含みます）。
 - **ラベルを作成… / ラベルを編集…**：エディターを開きます。ファイルにまだラベルがないときは *作成* と表示されます。
-- **エディターの中では**：角や点をドラッグして直し、内側をドラッグして動かし、辺をダブルクリック（または Alt＋クリック）で点を追加、点を右クリックで削除します。*点を増やす* は各辺の中点に 1 つずつ加え、*ボックスを多角形に* はボックスを点ごとに形を整えられる図形に変えます。
+- **エディターの中では**：角や点をドラッグして直し、内側をドラッグして動かし、辺をダブルクリック（または Alt＋クリック）で点を追加します。点をクリックして選ぶと、*点を削除*（Delete キーでも、その点の右クリックでも）でその点だけを取り除けます。輪郭には常に 3 点が残ります。*点を増やす* は各辺の中央に 1 点ずつ加え、*矩形を多角形に* は矩形を点ごとに整えられる形に変えます。
 - **色**：線の色を変えます。画像の上で見づらいときに使います。すべて同じ色にも、クラスごとの色にもできます。
-- **サーバーで改善…**：写真や動画のよりよい版をサーバーに頼みます。戻ってきたら、元のファイルの隣に追加するか、元と置き換えるかを選びます（元のファイルは *originals* に残ります）。
+- **補正...**：写真や動画の色かぶりとかすみを取り除きます。モデルが入っていればこの端末で、なければサーバーで行います。方法と設定を選び、縮小した画像で補正前と後を見比べ、補正したファイルを元のファイルの隣（*enhanced*）に置くか、元と置き換えるかを決めます（元のファイルは *originals* に残ります）。ビューアーのスイッチでどちらかを表示できます。
 
 ## 解析
 

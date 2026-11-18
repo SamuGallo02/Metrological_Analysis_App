@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
 
-from common.params import IMAGE_SUFFIXES, VIDEO_SUFFIXES
+from common.params import ENHANCED_DIR, IMAGE_SUFFIXES, ORIGINALS_DIR, VIDEO_SUFFIXES
 from common.paths import LOCAL_DIR, PHOTO_DIR, STEREO_PHOTO_DIR, STEREO_VIDEO_DIR, VIDEO_DIR
 
 KIND_PHOTO, KIND_PHOTO_STEREO = "photo", "photo_stereo"
@@ -146,8 +146,15 @@ class Registry:
         suffixes = media_suffixes(source.kind)
         if not source.path.is_dir():
             return []
-        return sorted((p for p in source.path.rglob("*") if p.is_file() and p.suffix.lower() in suffixes),
+        return sorted((p for p in source.path.rglob("*")
+                       if p.is_file() and p.suffix.lower() in suffixes and not _is_copy(p)),
                       key=lambda p: str(p).lower())
+
+
+def _is_copy(path: Path) -> bool:
+    """An improved copy, or an original an improved copy took the place of: the same picture seen another way,
+    so it is not counted as a file of its own (the viewer and the "Improved" view show them)."""
+    return ENHANCED_DIR in path.parts or ORIGINALS_DIR in path.parts
 
 
 _default: Optional[Registry] = None

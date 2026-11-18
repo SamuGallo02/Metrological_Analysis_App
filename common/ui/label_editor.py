@@ -89,6 +89,7 @@ class LabelCanvas(QWidget):
         self.mode = MODE_SELECT
         self.current_class = 0
         self.sel = -1
+        self.sel_handle = -1                           # the point chosen inside the shape (-1: none)
         self.read_only = False                         # a viewer only shows the shapes: nothing can be changed
         self.show_shapes = True                        # the "labels" button of the views turns the drawing off
         self._drag: Optional[Tuple] = None              # ("handle", si, hi) | ("shape", si, last) | ("box", start)
@@ -125,6 +126,7 @@ class LabelCanvas(QWidget):
 
     def select(self, si: int) -> None:
         self.sel = si
+        self.sel_handle = -1                           # another shape: no point is chosen in it any more
         self.selected.emit(si)
         self.update()
 
@@ -182,9 +184,15 @@ class LabelCanvas(QWidget):
                 painter.setPen(QPen(Qt.GlobalColor.white, 1))
                 painter.setBrush(color if i == self.sel else Qt.BrushStyle.NoBrush)
                 size = 4.0 if i == self.sel else 3.0
-                for h in self.model.handles(s):
+                for hi, h in enumerate(self.model.handles(s)):
                     c = self.to_screen(h)
-                    painter.drawRect(QRectF(c.x() - size, c.y() - size, size * 2, size * 2))
+                    chosen = i == self.sel and hi == self.sel_handle
+                    half = size + 2 if chosen else size
+                    if chosen:
+                        painter.setBrush(Qt.GlobalColor.white)
+                    painter.drawRect(QRectF(c.x() - half, c.y() - half, half * 2, half * 2))
+                    if chosen:
+                        painter.setBrush(color)
                 painter.setBrush(Qt.BrushStyle.NoBrush)
         if self._new_point is not None:                 # the point that a click would add, under the pointer
             c = self.to_screen(self._new_point)
@@ -231,6 +239,8 @@ class LabelCanvas(QWidget):
         if hit:
             if hit[0] != self.sel:
                 self.select(hit[0])
+            self.sel_handle = hit[1]                   # this point is the chosen one: Delete removes it alone
+            self.selected.emit(hit[0])                 # the buttons follow: "Delete point" turns on
             self.model.begin_change()
             self._drag = ("handle", hit[0], hit[1])
             return
@@ -239,6 +249,7 @@ class LabelCanvas(QWidget):
             self.select(-1)
             return
         self.select(si)
+        self.sel_handle = -1                           # the shape, not one of its points
         self.model.begin_change()
         self._drag = ("shape", si, (x, y))
 
@@ -397,7 +408,28 @@ class LabelCanvas(QWidget):
         else:
             super().keyPressEvent(e)
 
+    def delete_point(self) -> bool:
+        """Removes the chosen point of the chosen shape. A box, or a triangle, has none to spare: then nothing
+        happens and the shape is left as it is."""
+        if self.read_only or self.sel < 0 or self.sel_handle < 0:
+            return False
+        self.model.begin_change()
+        if not self.model.remove_vertex(self.sel, self.sel_handle):
+            self.model.undo()
+            return False
+        self.sel_handle = -1
+        self.edited.emit()
+        self.update()
+        return True
+
+    def has_point(self) -> bool:
+        """Whether one point is chosen (the interface turns its button on with this)."""
+        return self.sel >= 0 and self.sel_handle >= 0
+
     def delete_selected(self) -> None:
+        """Delete removes the chosen point when there is one, and the whole shape otherwise."""
+        if self.delete_point():
+            return
         if 0 <= self.sel < len(self.model.shapes):
             self.model.begin_change()
             self.model.delete(self.sel)
@@ -442,22 +474,32 @@ class LabelEditorDialog(QDialog):
         for b in (self.btn_delete, self.btn_undo, self.btn_redo):
             bar.addWidget(b)
         bar.addSpacing(12)
-        self.btn_more_points = QPushButton(tr("More points"))
-        self.btn_more_points.setToolTip(tr("Adds a point in the middle of every edge of the chosen shape."))
-        bar.addWidget(self.btn_more_points)
-        self.btn_to_polygon = QPushButton(tr("Box to polygon"))
-        self.btn_to_polygon.setToolTip(tr("Turns the chosen box into a polygon that can be shaped point by point."))
-        bar.addWidget(self.btn_to_polygon)
         self.btn_color = LabelColorButton()
         bar.addWidget(self.btn_color)
-        bar.addSpacing(12)
-        bar.addWidget(QLabel(tr("Class")))
-        self.combo = QComboBox()
-        bar.addWidget(self.combo)
-        self.btn_new_class = QPushButton(tr("New class..."))
-        bar.addWidget(self.btn_new_class)
         bar.addStretch(1)
         lay.addLayout(bar)
+
+        # The shape of an outline and its class live on a second row: on a small screen one row of buttons
+        # would not fit, and these are the ones used while an outline is already chosen.
+        shape = QHBoxLayout()
+        self.btn_more_points = QPushButton(tr("More points"))
+        self.btn_more_points.setToolTip(tr("Adds a point in the middle of every edge of the chosen shape."))
+        shape.addWidget(self.btn_more_points)
+        self.btn_delete_point = QPushButton(tr("Delete point"))
+        self.btn_delete_point.setToolTip(tr("Removes the point chosen in the outline (click it first). "
+                                            "Delete does the same, and a right click on a point as well."))
+        shape.addWidget(self.btn_delete_point)
+        self.btn_to_polygon = QPushButton(tr("Box to polygon"))
+        self.btn_to_polygon.setToolTip(tr("Turns the chosen box into a polygon that can be shaped point by point."))
+        shape.addWidget(self.btn_to_polygon)
+        shape.addSpacing(12)
+        shape.addWidget(QLabel(tr("Class")))
+        self.combo = QComboBox()
+        shape.addWidget(self.combo)
+        self.btn_new_class = QPushButton(tr("New class..."))
+        shape.addWidget(self.btn_new_class)
+        shape.addStretch(1)
+        lay.addLayout(shape)
 
         self.canvas = LabelCanvas()
         lay.addWidget(self.canvas, 1)
@@ -496,6 +538,7 @@ class LabelEditorDialog(QDialog):
         self.canvas.selected.connect(self._selected)
         self.group.idToggled.connect(lambda *_: None)
         self.btn_delete.clicked.connect(self.canvas.delete_selected)
+        self.btn_delete_point.clicked.connect(self._delete_point)
         self.btn_more_points.clicked.connect(self._more_points)
         self.btn_to_polygon.clicked.connect(self._to_polygon)
         self.btn_color.changed.connect(self.canvas.update)
@@ -552,11 +595,18 @@ class LabelEditorDialog(QDialog):
         if not self.canvas.to_polygon_selected():
             self.status.setText(tr("Choose a box to turn into a polygon."))
 
+    def _delete_point(self) -> None:
+        """The chosen point alone, not the whole outline."""
+        if not self.canvas.delete_point():
+            self.status.setText(tr("Click a point of the outline first (an outline keeps at least three)."))
+        self._selected(self.canvas.sel)
+
     def _selected(self, si: int) -> None:
         shapes = self.canvas.model.shapes
         chosen = 0 <= si < len(shapes)
         self.btn_more_points.setEnabled(chosen and not shapes[si].is_box)
         self.btn_to_polygon.setEnabled(chosen and shapes[si].is_box)
+        self.btn_delete_point.setEnabled(self.canvas.has_point())
         if 0 <= si < len(self.canvas.model.shapes):
             cls = self.canvas.model.shapes[si].cls
             if cls < self.combo.count():

@@ -2,13 +2,42 @@
 VERSION = 5
 
 STRINGS = {
+    'By species: taken from the labels, so a photo with two animals is under both. Improved: only the copies cleaned up by the improvement. The files stay where they are.': '按物种：取自标注，因此含两种动物的照片会同时出现在两处。已增强：只显示增强生成的副本。文件都留在原处。',
+    'Cannot read this file.': '无法读取此文件。',
+    'Choose a method.': '请选择一种方法。',
     'Choose the group that can see it.': '请选择可以查看它的工作组。',
+    'Click a point of the outline first (an outline keeps at least three).': '请先点击轮廓上的一个点（轮廓至少保留三个点）。',
+    'Delete point': '删除点',
+    "Delete the folder '{name}' and everything in it?": '删除文件夹“{name}”及其中的全部内容？',
+    'does not do videos': '不支持视频',
+    'Done by:': '执行方：',
+    'Drag the divider to compare.': '拖动分隔线进行对比。',
     'Files go inside the folder of a group.': '文件必须放在某个工作组的文件夹内。',
     'Files stay inside the folder of their group.': '文件只能留在所属工作组的文件夹内。',
+    'Improve': '增强',
+    'Improve...': '增强…',
+    'Improved': '已增强',
+    'Improved copy of {path}': '{path} 的增强副本',
+    'Install the improvement on this computer, or connect to the server.': '请在本机安装增强功能，或连接到服务器。',
     'Invalid visibility.': '可见性无效。',
+    'Keep': '保留',
+    'Method:': '方法：',
+    'No improved copy here yet.': '这里还没有增强副本。',
+    "No improved copy yet: choose a file and press 'Improve...'.": '还没有增强副本：选择一个文件并按“增强…”。',
+    'No improvement is installed on this computer.': '本机尚未安装任何增强功能。',
     'Not enough space in the group folder (quota {mb} MB).': '工作组文件夹空间不足（配额 {mb} MB）。',
+    'Not now': '暂不',
+    'Original': '原图',
+    'Preparing the models...': '正在准备模型…',
+    'Preview...': '预览…',
+    'Removes the point chosen in the outline (click it first). Delete does the same, and a right click on a point as well.': '删除轮廓中选中的点（请先点击该点）。按 Delete 键同样可以，右键点击某个点也可以。',
+    'Shows the improved copy in place of the original.': '显示增强后的副本，替代原图。',
     'The folder of a group is created with the group.': '工作组的文件夹随工作组一起创建。',
     'The folder of a group is removed with the group.': '工作组的文件夹随工作组一起删除。',
+    'The improved copies, beside their originals': '增强副本，与各自的原文件并列',
+    'The preview appears here.': '预览将显示在这里。',
+    'The server': '服务器',
+    'The server chooses the method of the computer that does the work.': '方法由执行工作的计算机选择。',
     "The server is unreachable: you are working locally only. Users and server folders are available again after you reconnect.": "服务器无法连接：您只能在本地工作。重新连接后，用户和服务器文件夹将再次可用。",
     "Repairing files": "正在修复文件",
     "Checking the files...": "正在检查文件...",
@@ -27,6 +56,8 @@ STRINGS = {
     "Enter the scientific name as 'Genus species', for example {example}.": "请按“属名 种名”的格式输入学名，例如 {example}。",
     "Models go in a folder named after the scientific name (Genus species), for example {example}.": "模型应放在以学名（属名 种名）命名的文件夹中，例如 {example}。",
     "Publish as (path in the models folder, Genus species/file.pt):": "发布为（模型文件夹内的路径，属名 种名/文件.pt）：",
+    'This computer': '本机',
+    'This computer ({device})': '本机（{device}）',
     "You can download approved models and upload new ones: an administrator checks them before publishing. Models are grouped by the scientific name of the species (Genus species).": "您可以下载已批准的模型并上传新模型：管理员会在发布前进行检查。模型按物种学名（属名 种名）分组。",
     "Stereo-photogrammetric measurement of objects with YOLO": "使用 YOLO 对物体进行立体摄影测量",
     "Measure length, width and height from stereo pairs": "通过立体图像对测量长度、宽度和高度",
@@ -601,20 +632,14 @@ STRINGS = {
     "Add it anyway?": "仍要添加吗？",
     "Add it beside the original (enhanced folder)": "放在原文件旁边（enhanced 文件夹）",
     "All files (*)": "所有文件 (*)",
-    "Apply": "应用",
     "Bringing the improved file back...": "正在取回改进后的文件…",
-    "Connect to the server to ask for the improvement.": "请先连接服务器再请求改进。",
-    "Improve with the server": "用服务器改进",
-    "Improve with the server...": "用服务器改进…",
     "Improved file saved in {path}": "改进后的文件已保存到 {path}",
     "Improvement request not found.": "未找到改进请求。",
     "No folder yet: use 'Add folder...'.": "还没有文件夹：请使用“添加文件夹…”。",
     "No label": "没有标签",
-    "Not now": "暂不",
     "Only an improvement that is still waiting can be cancelled.": "只能取消仍在等待中的改进。",
     "Put it in place of the original (a copy stays in 'originals')": "替换原文件（副本保留在 originals 中）",
     "Remove '{name}' from the list? The files in {path} are not touched.": "从列表中移除“{name}”？{path} 中的文件不会被改动。",
-    "Remove from the list": "从列表移除",
     "Sending the file...": "正在发送文件…",
     "Show labels": "显示标签",
     "The improved file is ready.": "改进后的文件已就绪。",
@@ -667,7 +692,6 @@ STRINGS = {
     "Without a species": "未归入物种",
     "{n} files filed under {name}": "已将 {n} 个文件归入 {name}",
     "{n} species, {m} files": "{n} 个物种，{m} 个文件",
-    "By species: taken from the labels, so a photo with two animals is under both. The files stay where they are.": "按物种：取自标签，所以含两种动物的照片会同时出现在两处。文件仍留在原处。",
     "No labelled file in this folder.": "该文件夹中没有带标签的文件。",
     "This view is for the common folders.": "该视图用于公共文件夹。",
     "View:": "视图：",
@@ -717,12 +741,12 @@ Metrological Analysis 是 Nautilus 项目（帕多瓦大学）的桌面应用，
 
 在主页点击 **文件夹**，选择在哪里工作：*本地*、*服务器* 或 *工作组*。
 
-在 **本地** 中，你会按类型看到本机的文件，标签页与服务器相同。照片和视频按 **物种** 显示：文件的物种就是其标签的类别，所以含两种动物的照片会同时出现在两处，而不会被复制到任何地方。最后一个标签页 **数据集** 保留你添加时的文件夹原样，你在那里对它们进行操作：
+在 **本地** 中，你会按类型看到本机的文件，标签页与服务器相同。照片和视频按 **物种** 显示：文件的物种就是其标签的类别，所以含两种动物的照片会同时出现在两处，而不会被复制到任何地方。**已增强** 标签页汇总增强生成的副本，无论原文件在哪里；最后一个标签页 **数据集** 保留你添加时的文件夹原样，你在那里对它们进行操作：
 
 - **添加文件夹…**：在磁盘原处登记一个文件夹。文件保留原有名称，已经在旁边的标签会被保留，也不需要任何命名规范。
 - **添加文件…**：把选中的文件复制到打开的文件夹中，包括标签文件。
-- **归入某个物种…**：把选中的一个或多个文件归入某个物种，为它们添加该物种的标签。也可以从某个物种出发，再加上第二个。
-- **从列表移除**：应用忘记这个文件夹；磁盘上的文件不受影响。
+- **归入某个物种…**：把你逐一选中的照片归入某个物种，为每张添加该物种的标签；选中整个物种或一个文件夹时它是灰的，因为那些已经归好了。
+- **删除**：把选中的内容从磁盘上删除，空文件夹也可以。对列表中的文件夹，只是把它移出列表：那些文件从来不属于本应用，会留在原处。
 - **发送到服务器…**：把一个文件或整个文件夹发送到你在服务器上的文件夹，或你的某个工作组。
 
 这里登记的文件夹正是分析页面提供的文件夹，所以早上添加的文件夹马上就能分析。
@@ -733,9 +757,9 @@ Metrological Analysis 是 Nautilus 项目（帕多瓦大学）的桌面应用，
 
 - **标签**：各视图中的这个按钮可以在照片和视频上显示或隐藏标签，包括预览。
 - **创建标签… / 编辑标签…**：打开编辑器。当文件还没有标签时，它显示 *创建*。
-- **在编辑器中**：拖动角点或节点进行修改，在内部拖动可整体移动，双击（或按住 Alt 单击）边可添加节点，右键单击节点可删除。*更多节点* 会在每条边中点各加一个，*框转多边形* 把框变成可逐点调整的形状。
+- **在编辑器中**：拖动角点或节点进行修改，在内部拖动可整体移动，双击（或按住 Alt 单击）边可添加节点。单击某个节点即可选中它：*删除点*（或 Delete 键，或右键单击该点）只删除这一个，轮廓始终保留三个。*更多节点* 会在每条边中点各加一个，*框转多边形* 把方框变成可逐点调整的形状。
 - **颜色**：更改线条颜色，用于在图像上看不清的时候。可以所有标签一种颜色，也可以每个类别一种。
-- **用服务器改进…**：请服务器给出照片或视频的更好版本；返回后你可以选择放在原文件旁边，或替换原文件（原件保留在 *originals* 中）。
+- **增强…**：去除照片或视频的色偏和水下雾感，本机装有模型时在本机运行，否则交给服务器；你选择方法和参数，在缩小的副本上对比处理前后，并决定增强后的文件放在原文件旁边（*enhanced*）还是取代原文件（原件保留在 *originals* 中）。在查看器中有一个开关，可在两者之间切换。
 
 ## 分析
 

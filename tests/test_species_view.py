@@ -99,7 +99,8 @@ class SpeciesViewTest(unittest.TestCase):
                 w._expanded(node)                                      # the files of that species
                 self.assertEqual([node.child(i).text(0) for i in range(node.childCount())], ["a.png"])
 
-                w.tabs.setCurrentIndex(5)                              # 'Datasets': the folder as it was added
+                datasets = [t[1] for t in folders_local.tabs()].index(folders_local.ADDED_FOLDERS)
+                w.tabs.setCurrentIndex(datasets)                       # 'Datasets': the folder as it was added
                 groups = [w.tree.topLevelItem(i).text(0) for i in range(w.tree.topLevelItemCount())]
                 self.assertIn("Photos", groups)
                 self.assertIn("Training datasets", groups)

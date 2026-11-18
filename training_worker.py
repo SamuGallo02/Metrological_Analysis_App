@@ -4,7 +4,8 @@ The server only keeps the queue (it has no GPU and no YOLO): this program, run o
 signs in as an administrator, takes one job at a time, downloads what it needs, works, publishes the result and
 says how it went. It can be stopped with Ctrl+C: the job in hand is finished first.
 
-The improvements use the algorithm registered in `common.image_enhance`: without one, they are left in the queue.
+The improvements use the models of `nautilus`, which this program registers at startup when their libraries are
+installed here (see `common.enhance_nautilus`); without them the improvements are left to another worker.
 
     python training_worker.py --server https://... --user NAME --password ... [--once]
 
@@ -24,6 +25,7 @@ import traceback
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from common.enhance_nautilus import install as install_enhancers
 from common.image_enhance import available as enhancers, improve
 from common.model_metadata import build_metadata, write_metadata
 from common.params import ENHANCED_DIR, JOB_DONE, JOB_FAILED
@@ -187,6 +189,7 @@ def main(argv: Optional[list] = None) -> int:
     if not a.password:
         say("serve la password: --password o la variabile AM_WORKER_PASSWORD")
         return 2
+    install_enhancers()                                 # the models of nautilus, if they are installed here
     client = ApiClient(a.server)
     client.login(a.user, a.password)
     worker = Worker(client, a.name, Path(a.workspace), a.device)

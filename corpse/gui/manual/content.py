@@ -47,12 +47,12 @@ The folders you add yourself are **not** copied there: they stay where they are 
 
 Press **Folders** on the home page and choose where to work: *Local*, *Server* or *Work groups*.
 
-In **Local** you see your files on this computer, by kind, with the same tabs as the server. Photos and videos are shown **by species**: the species of a file are the classes of its labels, so a photo with two animals is under both, without being copied anywhere. The last tab, **Datasets**, holds the folders exactly as you added them, and that is where you work on them:
+In **Local** you see your files on this computer, by kind, with the same tabs as the server. Photos and videos are shown **by species**: the species of a file are the classes of its labels, so a photo with two animals is under both, without being copied anywhere. The **Improved** tab gathers the copies the improvement produced, wherever their original is, and the last tab, **Datasets**, holds the folders exactly as you added them, and that is where you work on them:
 
 - **Add folder...**: registers a folder of your disk where it is. The files keep their names, labels already beside them are kept, and no naming convention is asked for.
 - **Add files...**: copies chosen files into the folder that is open, label file included.
-- **File under a species...**: files one or more chosen files under a species, adding a label of it. You can also do it from a species, to add a second one.
-- **Remove from the list**: the application forgets a folder; the files on your disk are not touched.
+- **File under a species...**: files under a species the photos you have picked one by one, adding a label of it to each; it stays off while a whole species or a folder is chosen, because those are already filed.
+- **Delete**: removes what is chosen from your disk, an empty folder included. On a folder of the list it only takes it off the list: those files were never the application's, so they stay where they are.
 - **Send to the server...**: sends a file or a whole folder to your folder on the server, or to one of your groups.
 
 The folders registered here are the very ones the analysis offers, so a folder added in the morning can be analysed straight away.
@@ -63,9 +63,9 @@ A label is a box or a polygon around an animal, with the name of its species. Th
 
 - **Labels**: the button of the views shows or hides them over the photos and the videos, previews included.
 - **Create labels... / Edit labels...**: opens the editor. It says *Create* when the file has none yet.
-- **In the editor**: drag a corner or a point to correct it, drag inside to move, double click (or Alt and click) on an edge to add a point, right click a point to remove it. *More points* adds one in the middle of every edge, *Box to polygon* turns a box into a shape you can mould point by point.
+- **In the editor**: drag a corner or a point to correct it, drag inside to move, double click (or Alt and click) on an edge to add a point. Click a point to choose it and *Delete point* (or the Delete key, or a right click on it) takes that one away, while an outline always keeps three. *More points* adds one in the middle of every edge, *Box to polygon* turns a box into a shape you can mould point by point.
 - **Colour**: changes the colour of the lines, for when they are hard to see over the picture. It can be one colour for all of them or one per class.
-- **Improve with the server...**: asks the server for a better version of a photo or a video; when it comes back you choose whether to add it beside the original or to put it in its place (the original is kept in *originals*).
+- **Improve...**: cleans a photo or a video of its colour cast and haze, on this computer when the models are installed or on the server otherwise; you choose the method and its settings, compare before and after on a reduced copy, and say whether the improved file goes beside the original (*enhanced*) or in its place (the original is kept in *originals*). In the viewer a switch shows one or the other.
 
 ## Analysis
 

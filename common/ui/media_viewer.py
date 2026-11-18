@@ -1,8 +1,11 @@
 """Looking at a photo or a video of this computer with the labels on top of it.
 
 Every view of the files (local folders, server) opens this: the media fills the window, a button shows or hides
-the labels the analysis produced, another one opens the editor for correcting them by hand, and - when the
-server can do it - the improvement of the image is asked from here as well.
+the labels the analysis produced, another one opens the editor for correcting them by hand, and the improvement of
+the image is asked from here as well (on this computer or on the server).
+
+When an improved copy of the file exists, a switch shows it in place of the original: it is the same picture seen
+in another way, so the labels stay drawn on top of either.
 
 Autore: Samuele Gallo
 """
@@ -17,6 +20,7 @@ from PySide6.QtWidgets import (QCheckBox, QDialog, QHBoxLayout, QLabel, QMessage
                                QVBoxLayout, QWidget)
 
 from common.i18n import tr
+from common.image_enhance import find_enhanced
 from common.label_edit import LabelModel
 from common.label_shapes import Shape, parse_labels, parse_video_labels
 from common.label_store import read_labels
@@ -49,6 +53,7 @@ class MediaViewerDialog(QDialog):
         super().__init__(parent)
         show_labels = labels_visible() if show_labels is None else show_labels
         self.media = Path(media)
+        self.shown = self.media                              # the original, or its improved copy
         self.improve = improve
         self.setWindowTitle(self.media.name)
         self.resize(900, 640)
@@ -66,6 +71,10 @@ class MediaViewerDialog(QDialog):
         lay.addWidget(self.slider)
 
         row = QHBoxLayout()
+        self.improved = QCheckBox(tr("Improved"))            # only when an improved copy has been made
+        self.improved.setToolTip(tr("Shows the improved copy in place of the original."))
+        self.improved.toggled.connect(self._show_improved)
+        row.addWidget(self.improved)
         self.toggle = QCheckBox(tr("Show labels"))
         self.toggle.setChecked(show_labels)
         self.toggle.toggled.connect(self.canvas.set_shapes_visible)
@@ -81,7 +90,7 @@ class MediaViewerDialog(QDialog):
         self.btn_edit.clicked.connect(self._edit)
         row.addWidget(self.btn_edit)
         if improve is not None:
-            self.btn_improve = QPushButton(tr("Improve with the server..."))
+            self.btn_improve = QPushButton(tr("Improve..."))
             self.btn_improve.clicked.connect(lambda: improve(self.media))
             row.addWidget(self.btn_improve)
         close = QPushButton(tr("Close"))
@@ -94,8 +103,13 @@ class MediaViewerDialog(QDialog):
     def reload(self) -> None:
         """Reads the media and its labels again (after an edit, or when the file has been replaced)."""
         self._close_frames()
+        better = find_enhanced(self.media)
+        self.improved.setVisible(better is not None)
+        if better is None:
+            self.improved.setChecked(False)
+        self.shown = better if (better is not None and self.improved.isChecked()) else self.media
         try:
-            self.frames = VideoSource(self.media) if is_video(self.media) else ImageSource(QImage(str(self.media)))
+            self.frames = VideoSource(self.shown) if is_video(self.shown) else ImageSource(QImage(str(self.shown)))
         except ValueError as e:
             QMessageBox.warning(self, tr("Error"), str(e))
             self.reject()
@@ -116,6 +130,10 @@ class MediaViewerDialog(QDialog):
         self.canvas.set_model(LabelModel(shapes))
         self.count.setText(tr("{n} labels", n=len(shapes)) if self.shapes else tr("No label"))
         self.btn_edit.setText(tr("Edit labels...") if self.shapes else tr("Create labels..."))
+
+    def _show_improved(self, _on: bool) -> None:
+        """The same labels, drawn over the other picture: nothing is changed on disk."""
+        self.reload()
 
     def _edit(self) -> None:
         edit_local_labels(self, self.media)

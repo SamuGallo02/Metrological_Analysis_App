@@ -2,13 +2,42 @@
 VERSION = 5
 
 STRINGS = {
+    'By species: taken from the labels, so a photo with two animals is under both. Improved: only the copies cleaned up by the improvement. The files stay where they are.': 'Per specie: presa dai label, quindi una foto con due animali sta sotto entrambe. Migliorate: solo le copie ripulite dal miglioramento. I file restano dove sono.',
+    'Cannot read this file.': 'Non riesco a leggere questo file.',
+    'Choose a method.': 'Scegli un metodo.',
     'Choose the group that can see it.': 'Scegli il gruppo che può vederlo.',
+    'Click a point of the outline first (an outline keeps at least three).': 'Fai prima clic su un punto del contorno (un contorno ne tiene almeno tre).',
+    'Delete point': 'Elimina punto',
+    "Delete the folder '{name}' and everything in it?": "Eliminare la cartella '{name}' e tutto quello che contiene?",
+    'does not do videos': 'non elabora i video',
+    'Done by:': 'Eseguito da:',
+    'Drag the divider to compare.': 'Trascina il divisorio per confrontare.',
     'Files go inside the folder of a group.': 'I file vanno dentro la cartella di un gruppo.',
     'Files stay inside the folder of their group.': 'I file restano nella cartella del loro gruppo.',
+    'Improve': 'Migliora',
+    'Improve...': 'Migliora...',
+    'Improved': 'Migliorata',
+    'Improved copy of {path}': 'Copia migliorata di {path}',
+    'Install the improvement on this computer, or connect to the server.': 'Installa il miglioramento su questo computer, oppure collegati al server.',
     'Invalid visibility.': 'Visibilità non valida.',
+    'Keep': 'Tieni',
+    'Method:': 'Metodo:',
+    'No improved copy here yet.': 'Qui non c’è ancora nessuna copia migliorata.',
+    "No improved copy yet: choose a file and press 'Improve...'.": "Ancora nessuna copia migliorata: scegli un file e premi 'Migliora...'.",
+    'No improvement is installed on this computer.': 'Su questo computer non è installato nessun miglioramento.',
     'Not enough space in the group folder (quota {mb} MB).': 'Spazio insufficiente nella cartella del gruppo (quota {mb} MB).',
+    'Not now': 'Non ora',
+    'Original': 'Originale',
+    'Preparing the models...': 'Preparo i modelli...',
+    'Preview...': 'Anteprima...',
+    'Removes the point chosen in the outline (click it first). Delete does the same, and a right click on a point as well.': 'Toglie il punto scelto nel contorno (prima fai clic su di esso). Delete fa lo stesso, e anche il clic destro su un punto.',
+    'Shows the improved copy in place of the original.': "Mostra la copia migliorata al posto dell'originale.",
     'The folder of a group is created with the group.': 'La cartella di un gruppo viene creata insieme al gruppo.',
     'The folder of a group is removed with the group.': 'La cartella di un gruppo viene rimossa insieme al gruppo.',
+    'The improved copies, beside their originals': 'Le copie migliorate, accanto ai loro originali',
+    'The preview appears here.': "Qui compare l'anteprima.",
+    'The server': 'Il server',
+    'The server chooses the method of the computer that does the work.': 'Il metodo lo sceglie il computer che fa il lavoro.',
     "The server is unreachable: you are working locally only. Users and server folders are available again after you reconnect.": "Il server non è raggiungibile: stai lavorando solo in locale. Utenti e cartelle del server torneranno disponibili dopo la riconnessione.",
     "Repairing files": "Riparazione dei file",
     "Checking the files...": "Controllo dei file...",
@@ -27,6 +56,8 @@ STRINGS = {
     "Enter the scientific name as 'Genus species', for example {example}.": "Inserisci il nome scientifico come 'Genere specie', ad esempio {example}.",
     "Models go in a folder named after the scientific name (Genus species), for example {example}.": "I modelli vanno in una cartella con il nome scientifico (Genere specie), ad esempio {example}.",
     "Publish as (path in the models folder, Genus species/file.pt):": "Pubblica come (percorso nella cartella dei modelli, Genere specie/file.pt):",
+    'This computer': 'Questo computer',
+    'This computer ({device})': 'Questo computer ({device})',
     "You can download approved models and upload new ones: an administrator checks them before publishing. Models are grouped by the scientific name of the species (Genus species).": "Puoi scaricare i modelli approvati e caricarne di nuovi: un amministratore li controlla prima di pubblicarli. I modelli sono raggruppati per nome scientifico della specie (Genere specie).",
     "Stereo-photogrammetric measurement of objects with YOLO": "Misurazione stereo-fotogrammetrica di oggetti con YOLO",
     "Measure length, width and height from stereo pairs": "Misura lunghezza, larghezza e altezza da coppie stereo",
@@ -601,20 +632,14 @@ STRINGS = {
     "Add it anyway?": "Aggiungerla lo stesso?",
     "Add it beside the original (enhanced folder)": "Aggiungilo accanto all'originale (cartella enhanced)",
     "All files (*)": "Tutti i file (*)",
-    "Apply": "Applica",
     "Bringing the improved file back...": "Recupero il file migliorato...",
-    "Connect to the server to ask for the improvement.": "Collegati al server per chiedere il miglioramento.",
-    "Improve with the server": "Migliora con il server",
-    "Improve with the server...": "Migliora con il server...",
     "Improved file saved in {path}": "File migliorato salvato in {path}",
     "Improvement request not found.": "Richiesta di miglioramento non trovata.",
     "No folder yet: use 'Add folder...'.": "Nessuna cartella: usa 'Aggiungi cartella...'.",
     "No label": "Nessuna etichetta",
-    "Not now": "Non ora",
     "Only an improvement that is still waiting can be cancelled.": "Si può annullare solo un miglioramento ancora in attesa.",
     "Put it in place of the original (a copy stays in 'originals')": "Mettilo al posto dell'originale (una copia resta in 'originals')",
     "Remove '{name}' from the list? The files in {path} are not touched.": "Togliere '{name}' dall'elenco? I file in {path} non vengono toccati.",
-    "Remove from the list": "Togli dall'elenco",
     "Sending the file...": "Invio il file...",
     "Show labels": "Mostra etichette",
     "The improved file is ready.": "Il file migliorato è pronto.",
@@ -667,7 +692,6 @@ STRINGS = {
     "Without a species": "Senza specie",
     "{n} files filed under {name}": "{n} file archiviati in {name}",
     "{n} species, {m} files": "{n} specie, {m} file",
-    "By species: taken from the labels, so a photo with two animals is under both. The files stay where they are.": "Per specie: presa dai label, quindi una foto con due animali sta sotto entrambe. I file restano dove sono.",
     "No labelled file in this folder.": "Nessun file con etichette in questa cartella.",
     "This view is for the common folders.": "Questa vista è per le cartelle comuni.",
     "View:": "Vista:",
@@ -717,12 +741,12 @@ Le cartelle che aggiungi tu **non** vengono copiate lì: restano dove sono sul t
 
 Premi **Cartelle** nella pagina iniziale e scegli dove lavorare: *Locale*, *Server* o *Gruppi di lavoro*.
 
-In **Locale** vedi i tuoi file su questo computer, per tipo, con le stesse schede del server. Foto e video sono mostrati **per specie**: le specie di un file sono le classi delle sue etichette, quindi una foto con due animali sta sotto entrambe, senza essere copiata da nessuna parte. L'ultima scheda, **Dataset**, tiene le cartelle esattamente come le hai aggiunte, ed è lì che ci lavori:
+In **Locale** vedi i tuoi file su questo computer, per tipo, con le stesse schede del server. Foto e video sono mostrati **per specie**: le specie di un file sono le classi delle sue etichette, quindi una foto con due animali sta sotto entrambe, senza essere copiata da nessuna parte. La scheda **Migliorate** raccoglie le copie prodotte dal miglioramento, ovunque sia il loro originale, e l'ultima scheda, **Dataset**, tiene le cartelle esattamente come le hai aggiunte, ed è lì che ci lavori:
 
 - **Aggiungi cartella...**: registra una cartella del tuo disco dov'è. I file mantengono i loro nomi, le etichette già accanto a loro restano, e non serve nessuna nomenclatura.
 - **Aggiungi file...**: copia i file scelti nella cartella aperta, file delle etichette compreso.
-- **Archivia in una specie...**: archivia uno o più file scelti in una specie, aggiungendo un'etichetta di quella specie. Puoi farlo anche da una specie, per aggiungerne una seconda.
-- **Togli dall'elenco**: l'applicazione dimentica una cartella; i file sul tuo disco non vengono toccati.
+- **Archivia in una specie...**: archivia in una specie le foto che hai scelto una per una, aggiungendo a ciascuna un'etichetta di quella specie; resta spento se è scelta un'intera specie o una cartella, perché quelle sono già archiviate.
+- **Elimina**: toglie dal disco quello che è scelto, anche una cartella vuota. Su una cartella dell'elenco la toglie soltanto dall'elenco: quei file non sono mai stati dell'applicazione e restano dove sono.
 - **Invia al server...**: manda un file o un'intera cartella nella tua cartella sul server, o in uno dei tuoi gruppi.
 
 Le cartelle registrate qui sono proprio quelle che l'analisi propone, quindi una cartella aggiunta la mattina si può analizzare subito.
@@ -733,9 +757,9 @@ Un'etichetta è un box o un poligono attorno a un animale, con il nome della sua
 
 - **Etichette**: il pulsante delle viste le mostra o le nasconde sopra foto e video, anteprime comprese.
 - **Crea etichette... / Modifica etichette...**: apre l'editor. Dice *Crea* quando il file non ne ha ancora.
-- **Nell'editor**: trascina un angolo o un punto per correggerlo, trascina dentro per spostare, doppio clic (o Alt e clic) su un lato per aggiungere un punto, tasto destro su un punto per toglierlo. *Più punti* ne aggiunge uno a metà di ogni lato, *Box in poligono* trasforma un box in una forma modellabile punto per punto.
+- **Nell'editor**: trascina un angolo o un punto per correggerlo, trascina dentro per spostare, doppio clic (o Alt e clic) su un lato per aggiungere un punto. Fai clic su un punto per sceglierlo: *Elimina punto* (o il tasto Canc, o il clic destro su di esso) toglie solo quello, e un contorno ne tiene sempre tre. *Più punti* ne aggiunge uno in mezzo a ogni lato, *Da riquadro a poligono* trasforma un riquadro in una forma da modellare punto per punto.
 - **Colore**: cambia il colore delle linee, per quando si vedono male sopra l'immagine. Può essere un colore unico oppure uno per classe.
-- **Migliora con il server...**: chiede al server una versione migliore di una foto o di un video; quando torna scegli se aggiungerla accanto all'originale o metterla al suo posto (l'originale resta in *originals*).
+- **Migliora...**: toglie a una foto o a un video la dominante di colore e la foschia, su questo computer se i modelli sono installati oppure sul server; scegli il metodo e le sue impostazioni, confronti prima e dopo su una copia ridotta, e dici se il file migliorato va accanto all'originale (*enhanced*) o al suo posto (l'originale resta in *originals*). Nel visualizzatore un interruttore mostra l'uno o l'altro.
 
 ## Analisi
 

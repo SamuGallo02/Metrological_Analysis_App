@@ -18,7 +18,8 @@ from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QFileDialog, QHBoxL
 from common.format import fmt_size, fmt_time
 from common.i18n import tr, tr_error
 
-from common.params import AREA_GROUPS, AREA_MINE, AREAS_MEDIA, AREAS_SHARED, SPECIES_EXAMPLE, SPECIES_RE
+from common.params import (AREA_GROUPS, AREA_MINE, AREAS_MEDIA, AREAS_SHARED, ENHANCED_DIR, SPECIES_EXAMPLE,
+                           SPECIES_RE)
 from common.ui.qt_utils import run_async
 from common.ui.thumbnails import ThumbnailCache, can_preview
 from common.remote_tree import walk_remote
@@ -61,11 +62,13 @@ class ServerBrowserWidget(QWidget):
 
         view = QHBoxLayout()
         view.addWidget(QLabel(tr("View:")))
-        self.view_mode = QComboBox()                   # the same files, two ways of looking at them
+        self.view_mode = QComboBox()                   # the same files, three ways of looking at them
         self.view_mode.addItem(tr("Folders"), "folders")
         self.view_mode.addItem(tr("Species"), "species")
+        self.view_mode.addItem(tr("Improved"), "improved")
         self.view_mode.setToolTip(tr("By species: taken from the labels, so a photo with two animals is under "
-                                     "both. The files stay where they are."))
+                                     "both. Improved: only the copies cleaned up by the improvement. "
+                                     "The files stay where they are."))
         self.view_mode.currentIndexChanged.connect(lambda *_: (self._apply_role(), self.refresh()))
         view.addWidget(self.view_mode)
         view.addStretch(1)
@@ -171,6 +174,10 @@ class ServerBrowserWidget(QWidget):
         """True when this tab is showing the media by species (only the common media folders can be)."""
         return self.view_mode.currentData() == "species" and self.area in AREAS_MEDIA
 
+    def only_improved(self) -> bool:
+        """True when this tab is showing the improved copies alone."""
+        return self.view_mode.currentData() == "improved" and self.area in AREAS_MEDIA
+
     def _selected(self) -> List[Dict[str, Any]]:
         """The selected entries; each has "path", its full path inside the area."""
         return [d for d in (it.data(0, Qt.ItemDataRole.UserRole) for it in self.tree.selectedItems()) if d]
@@ -234,7 +241,7 @@ class ServerBrowserWidget(QWidget):
             return
         self.status.setText(tr("Loading..."))
         self._refresh_quota()
-        if self.by_species():
+        if self.by_species() or self.only_improved():
             return self._load_species()
         self._load(None, self.path)
 
@@ -244,9 +251,11 @@ class ServerBrowserWidget(QWidget):
         area = self.area
 
         def done(groups: Dict[str, List[Dict[str, Any]]]) -> None:
-            if area != self.area or not self.by_species():
+            if area != self.area or not (self.by_species() or self.only_improved()):
                 return                                  # the tab changed while the answer was on its way
             self.tree.clear()
+            if self.only_improved():
+                return self._show_improved(groups)
             names = sorted((n for n in groups if n), key=str.lower) + ([""] if "" in groups else [])
             total = sum(len(v) for v in groups.values())
             for name in names:
@@ -263,6 +272,26 @@ class ServerBrowserWidget(QWidget):
             self.status.setText(tr("Error: {msg}", msg=tr_error(e)))
 
         run_async(self, lambda: self.session.client.species_index(area), done, fail)
+
+    def _show_improved(self, groups: Dict[str, List[Dict[str, Any]]]) -> None:
+        """Only the improved copies: they live in an `enhanced` folder beside the file they come from, so they
+        are picked out of the same listing instead of asking the server a second time."""
+        seen, rows = set(), []
+        for files in groups.values():
+            for e in files:
+                parts = e["path"].split("/")
+                if ENHANCED_DIR in parts and e["path"] not in seen:
+                    seen.add(e["path"])
+                    rows.append(e)
+        for e in sorted(rows, key=lambda f: f["path"].lower()):
+            row = QTreeWidgetItem([e["name"], tr("File"), fmt_size(e["size"]), fmt_time(e["mtime"])])
+            row.setData(0, Qt.ItemDataRole.UserRole, dict(e, type="file"))
+            row.setToolTip(0, e["path"])
+            if can_preview(e["name"]):
+                self._want_thumb(row, e["path"])
+            self.tree.addTopLevelItem(row)
+        self.status.setText(tr("{n} files", n=len(rows)) if rows
+                            else tr("No improved copy here yet."))
 
     def _fill_species(self, item: QTreeWidgetItem, entry: Dict[str, Any]) -> None:
         """The files of a species: ordinary rows, so download, preview and the rest work as usual."""

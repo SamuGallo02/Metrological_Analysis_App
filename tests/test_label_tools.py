@@ -76,6 +76,64 @@ class PolygonToolsTest(unittest.TestCase):
         canvas.deleteLater()
 
 
+class DeleteOnePointTest(unittest.TestCase):
+    """A single point of an outline can be chosen and taken away, without touching the rest."""
+
+    def canvas(self, shape=POLY):
+        canvas = LabelCanvas()
+        canvas.set_image(QImage(200, 200, QImage.Format.Format_RGB32))
+        canvas.resize(200, 200)
+        canvas.set_model(LabelModel([shape]))
+        canvas.select(0)
+        return canvas
+
+    def test_the_point_clicked_is_the_one_that_goes(self):
+        canvas = self.canvas()
+        canvas._press_select(0.5, 0.1)                     # the second corner of the outline
+        self.assertTrue(canvas.has_point())
+        self.assertEqual(canvas.sel_handle, 1)
+        self.assertTrue(canvas.delete_point())
+        self.assertEqual(canvas.model.shapes[0].points, ((0.1, 0.1), (0.5, 0.5), (0.1, 0.5)))
+        self.assertFalse(canvas.has_point())               # nothing chosen any more
+        canvas.deleteLater()
+
+    def test_an_outline_keeps_at_least_three_points(self):
+        canvas = self.canvas(Shape(0, ((0.1, 0.1), (0.5, 0.1), (0.3, 0.5))))
+        canvas._press_select(0.5, 0.1)
+        self.assertFalse(canvas.delete_point())            # a triangle has none to spare
+        self.assertEqual(len(canvas.model.shapes[0].points), 3)
+        canvas.deleteLater()
+
+    def test_a_box_has_corners_and_not_points_to_remove(self):
+        canvas = self.canvas(BOX)
+        canvas._press_select(0.1, 0.1)
+        self.assertFalse(canvas.delete_point())
+        self.assertTrue(canvas.model.shapes[0].is_box)
+        canvas.deleteLater()
+
+    def test_delete_takes_the_point_when_one_is_chosen_and_the_shape_otherwise(self):
+        canvas = self.canvas()
+        canvas._press_select(0.5, 0.1)
+        canvas.delete_selected()                           # a point is chosen: only that goes
+        self.assertEqual(len(canvas.model.shapes), 1)
+        self.assertEqual(len(canvas.model.shapes[0].points), 3)
+        canvas.select(0)                                   # choosing the shape again clears the point
+        self.assertFalse(canvas.has_point())
+        canvas.delete_selected()
+        self.assertEqual(canvas.model.shapes, [])
+        canvas.deleteLater()
+
+    def test_choosing_another_shape_forgets_the_point(self):
+        canvas = self.canvas()
+        canvas.set_model(LabelModel([POLY, Shape(1, ((0.6, 0.6), (0.9, 0.6), (0.9, 0.9), (0.6, 0.9)))]))
+        canvas.select(0)
+        canvas._press_select(0.5, 0.1)
+        self.assertTrue(canvas.has_point())
+        canvas.select(1)
+        self.assertFalse(canvas.has_point())
+        canvas.deleteLater()
+
+
 class CreateOrEditTest(unittest.TestCase):
     def test_the_window_says_create_when_there_is_nothing_yet(self):
         source = ImageSource(QImage(40, 40, QImage.Format.Format_RGB32))

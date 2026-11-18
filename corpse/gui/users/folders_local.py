@@ -36,7 +36,8 @@ from common.image_enhance import find_enhanced
 from common.label_store import find_labels
 from common.media_library import (KIND_PHOTO, KIND_PHOTO_STEREO, KIND_VIDEO, KIND_VIDEO_STEREO, LEGACY_DIRS,
                                   Source, default_registry, media_suffixes)
-from common.params import AREA_GROUPS, AREA_MINE, IMAGE_SUFFIXES, STEREO_SIDES, VIDEO_SUFFIXES
+from common.params import (AREA_GROUPS, AREA_MINE, ENHANCED_DIR, IMAGE_SUFFIXES, ORIGINALS_DIR,
+                           STEREO_SIDES, VIDEO_SUFFIXES)
 from common.species import UNNAMED, assign_many, by_species, forget as forget_species, known_species
 from common.paths import MODELS_DIR, TRAINING_DIR
 from common.ui.label_editor import edit_local_labels
@@ -50,20 +51,22 @@ from common.ui.places import desktop, managed
 
 from corpse.functions.users.session import Session
 
-from .enhance_dialog import improve_with_server
+from .enhance_dialog import improve_media, local_ready
 
 SOURCE_ROLE = Qt.ItemDataRole.UserRole + 1                 # id of the registered folder, on its own row
 SPECIES_ROLE = Qt.ItemDataRole.UserRole + 2                # species of a row, in the views by species
-BY_SPECIES, PLAIN_FOLDER, ADDED_FOLDERS = "species", "folder", "sources"
+BY_SPECIES, PLAIN_FOLDER, ADDED_FOLDERS, ONLY_IMPROVED = "species", "folder", "sources", "improved"
 
 
 def tabs() -> List[Tuple[str, str, str, Optional[Path]]]:
     """(name, what the tab shows, kind of the library, folder of the application).
-    The media are shown by species; "Datasets" - the folders as the user added them - is always the last one."""
+    The media are shown by species; "Improved" gathers the improved copies, wherever their original is, and
+    "Datasets" - the folders as the user added them - is always the last one."""
     return [(tr("Photos"), BY_SPECIES, KIND_PHOTO, None),
             (tr("Stereo photos"), BY_SPECIES, KIND_PHOTO_STEREO, None),
             (tr("Videos"), BY_SPECIES, KIND_VIDEO, None),
             (tr("Stereo videos"), BY_SPECIES, KIND_VIDEO_STEREO, None),
+            (tr("Improved"), ONLY_IMPROVED, "", None),
             (tr("YOLO models"), PLAIN_FOLDER, "", MODELS_DIR),
             (tr("Datasets"), ADDED_FOLDERS, "", TRAINING_DIR)]
 
@@ -177,7 +180,6 @@ class LocalFoldersWidget(QWidget):
         self.btn_rename = self._button(folders, tr("Rename"), self._rename)
         self.btn_move = self._button(folders, tr("Move..."), self._move)
         self.btn_delete = self._button(folders, tr("Delete"), self._delete)
-        self.btn_forget = self._button(folders, tr("Remove from the list"), self._forget)
         folders.addStretch(1)
         lay.addLayout(folders)
 
@@ -190,7 +192,7 @@ class LocalFoldersWidget(QWidget):
         files.addWidget(self.labels_on)
         self.btn_labels = self._button(files, tr("Edit labels..."), self._edit_labels)
         self.btn_species = self._button(files, tr("File under a species..."), self._assign_species)
-        self.btn_improve = self._button(files, tr("Improve with the server..."), self._improve)
+        self.btn_improve = self._button(files, tr("Improve..."), self._improve)
         self.btn_send = self._button(files, tr("Send to the server..."), self._send)
         files.addStretch(1)
         self.btn_refresh = self._button(files, tr("Refresh"), self.refresh)
@@ -248,7 +250,7 @@ class LocalFoldersWidget(QWidget):
         self._species_files = {}
         self.tree.setColumnHidden(3, not self.labels_on.isChecked())
         {BY_SPECIES: self._fill_species, PLAIN_FOLDER: self._fill_folder,
-         ADDED_FOLDERS: self._fill_sources}[self.mode]()
+         ADDED_FOLDERS: self._fill_sources, ONLY_IMPROVED: self._fill_improved}[self.mode]()
         self._update_buttons()
 
     def _fill_species(self) -> None:
@@ -266,6 +268,36 @@ class LocalFoldersWidget(QWidget):
         self.crumb.setText(tr("{n} species, {m} files", n=len([n for n in names if n]), m=len(files)))
         self.status.setText(tr("{n} species, {m} files", n=len([n for n in names if n]), m=len(files)) if files
                             else tr("No file yet: add the folders in 'Datasets'."))
+
+    def _fill_improved(self) -> None:
+        """Only the improved copies, of every kind, each one under the name of its original."""
+        total = 0
+        for kind in (KIND_PHOTO, KIND_PHOTO_STEREO, KIND_VIDEO, KIND_VIDEO_STEREO):
+            pairs = [(f, find_enhanced(f)) for f in self.files_of_kind(kind)]
+            pairs = [(original, copy) for original, copy in pairs if copy is not None]
+            total += len(pairs)
+            group = QTreeWidgetItem([kind_label(kind), tr("{n} files", n=len(pairs)), "", ""])
+            self.tree.addTopLevelItem(group)
+            for original, copy in pairs:
+                try:
+                    st = copy.stat()
+                except OSError:
+                    continue
+                child = QTreeWidgetItem([copy.name, fmt_size(st.st_size), fmt_time(st.st_mtime),
+                                         self._label_mark(original)])
+                child.setData(0, Qt.ItemDataRole.UserRole, str(copy))
+                child.setToolTip(0, tr("Improved copy of {path}", path=str(original)))
+                if can_preview(copy.name):
+                    icon = self.thumbs.icon(str(copy))
+                    if icon is not None:
+                        child.setIcon(0, icon)
+                    else:
+                        self._waiting.setdefault(str(copy), []).append(child)
+                group.addChild(child)
+            group.setExpanded(bool(pairs))
+        self.crumb.setText(tr("The improved copies, beside their originals"))
+        self.status.setText(tr("{n} files", n=total) if total
+                            else tr("No improved copy yet: choose a file and press 'Improve...'."))
 
     def _fill_folder(self) -> None:
         """A folder of the application (the models), with what is inside it."""
@@ -331,6 +363,10 @@ class LocalFoldersWidget(QWidget):
         for p in children:
             if p.name.startswith((".", "_")):            # what the application keeps for itself (_pending...)
                 continue
+            if p.is_dir() and p.name in (ENHANCED_DIR, ORIGINALS_DIR):
+                continue                                 # the improved copy and the original it replaced are
+                                                         # two ways of seeing one file: the viewer switches between
+                                                         # them, so they are not folders of their own here
             try:
                 st = p.stat()
             except OSError:
@@ -395,6 +431,19 @@ class LocalFoldersWidget(QWidget):
             return Path(path)
         return self.app_folder() if self.mode == PLAIN_FOLDER else None
 
+    def chosen_media(self) -> List[Path]:
+        """The photos or videos picked one by one: filing under a species works on these, not on a whole species
+        (a species row stands for files that are already filed) and not on a folder."""
+        out = []
+        for item in self.tree.selectedItems():
+            if item.data(0, SPECIES_ROLE) is not None:
+                return []                                    # a species is chosen: nothing to file
+            path = self.path_of(item)
+            if not path or not Path(path).is_file() or not is_media(Path(path)):
+                return []
+            out.append(Path(path))
+        return out
+
     def selected_files(self) -> List[Path]:
         """Every media file chosen in the tree (a species node brings all of its files)."""
         out: List[Path] = []
@@ -428,23 +477,24 @@ class LocalFoldersWidget(QWidget):
         return any(root == path or root in path.parents for root in roots)
 
     def _update_buttons(self) -> None:
+        """A button is on when there is something real to do it to: the row must be a file or a folder on disk
+        (a species is only a way of looking at the files, so it cannot be renamed or deleted)."""
         path = self.current()
         chosen = path is not None
-        folders_tab = self.mode in (ADDED_FOLDERS, PLAIN_FOLDER)
         source = self.current_source()
         media = chosen and path.is_file() and is_media(path)
-        self.btn_add_folder.setEnabled(self.mode == ADDED_FOLDERS)
-        self.btn_add_files.setEnabled(folders_tab and chosen and path.is_dir())
+        folder = chosen and path.is_dir()
+        self.btn_add_folder.setEnabled(self.mode in (ADDED_FOLDERS, BY_SPECIES))   # there the kind is known
+        self.btn_add_files.setEnabled(folder)
         self.btn_open.setEnabled(chosen)
-        self.btn_new.setEnabled(folders_tab and chosen and path.is_dir())
-        for b in (self.btn_rename, self.btn_move, self.btn_delete):
-            b.setEnabled(folders_tab and chosen and not self._is_root(path)
-                         and (source is None or self._in_app_folders(path)))
-        self.btn_forget.setEnabled(source is not None and not self._in_app_folders(path))
+        self.btn_new.setEnabled(folder)
+        for b in (self.btn_rename, self.btn_move):
+            b.setEnabled(chosen and not self._is_root(path) and source is None)    # not a folder of the list
+        self.btn_delete.setEnabled(chosen and not self._is_root(path))             # a root is taken off the list
         self.btn_labels.setEnabled(media)
         self.btn_labels.setText(tr("Edit labels...") if media and find_labels(path) else tr("Create labels..."))
-        self.btn_species.setEnabled(bool(self.selected_files()))
-        self.btn_improve.setEnabled(media and server_ready(self.session))
+        self.btn_species.setEnabled(bool(self.chosen_media()))
+        self.btn_improve.setEnabled(media and (local_ready() or server_ready(self.session)))
         self.btn_send.setEnabled(chosen and server_ready(self.session))
 
     # ---- the actions ----------------------------------------------------
@@ -529,18 +579,6 @@ class LocalFoldersWidget(QWidget):
             self.status.setText(tr("{n} files added", n=copied))
             self.refresh()
 
-    def _forget(self) -> None:
-        """Takes a folder out of the list. The files on disk are not touched."""
-        source_id, path = self.current_source(), self.current()
-        if source_id is None or path is None:
-            return
-        if QMessageBox.question(self, tr("Remove from the list"),
-                                tr("Remove '{name}' from the list? The files in {path} are not touched.",
-                                   name=path.name, path=str(path))) != QMessageBox.StandardButton.Yes:
-            return
-        self.library.remove_source(int(source_id))
-        self.refresh()
-
     def _new_folder(self) -> None:
         path = self.current()
         if path is None or not path.is_dir():
@@ -590,12 +628,22 @@ class LocalFoldersWidget(QWidget):
             self.library.move_source(source.id, new)
 
     def _delete(self) -> None:
+        """Deletes what is chosen. A folder of the list is only taken off the list: its files stay where they are,
+        because the application never owned them."""
         path = self.current()
         if path is None or self._is_root(path):
             return
-        if QMessageBox.question(self, tr("Delete"),
-                                tr("Delete '{name}' from this computer?", name=path.name)) \
-                != QMessageBox.StandardButton.Yes:
+        source_id = self.current_source()
+        if source_id is not None:
+            if QMessageBox.question(self, tr("Delete"),
+                                    tr("Remove '{name}' from the list? The files in {path} are not touched.",
+                                       name=path.name, path=str(path))) != QMessageBox.StandardButton.Yes:
+                return
+            self.library.remove_source(int(source_id))
+            return self.refresh()
+        question = tr("Delete the folder '{name}' and everything in it?", name=path.name) if path.is_dir() \
+            else tr("Delete '{name}' from this computer?", name=path.name)
+        if QMessageBox.question(self, tr("Delete"), question) != QMessageBox.StandardButton.Yes:
             return
         source = self.library.source_of(path)
         try:
@@ -609,7 +657,7 @@ class LocalFoldersWidget(QWidget):
     def _assign_species(self) -> None:
         """Files one or more chosen files under a species: a label of that species is added to each of them, so
         they appear in its view. The files are not moved, and a file can be under several species at once."""
-        files = self.selected_files()
+        files = self.chosen_media()                      # the files picked one by one, never a whole species
         if not files:
             return
         here = known_species(self.files_of_kind(self.kind) if self.kind
@@ -650,7 +698,7 @@ class LocalFoldersWidget(QWidget):
             self._improve_file(path)
 
     def _improve_file(self, path: Path) -> None:
-        kept = improve_with_server(self, self.session, Path(path))
+        kept = improve_media(self, self.session, Path(path))
         if kept is not None:
             self.status.setText(tr("Improved file saved in {path}", path=str(kept.parent)))
             self.refresh()

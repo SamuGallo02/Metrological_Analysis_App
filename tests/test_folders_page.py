@@ -96,12 +96,17 @@ class LocalFoldersTest(unittest.TestCase):
         session = offline_session(tmp)
         return folders_local.LocalFoldersWidget(session), session
 
+    @staticmethod
+    def tab_of(mode: str) -> int:
+        """Which tab shows this (never the number itself: a new tab must not break the tests)."""
+        return [t[1] for t in folders_local.tabs()].index(mode)
+
     def test_datasets_is_always_the_last_tab(self):
         with tempfile.TemporaryDirectory() as tmp:
             w, _ = self.widget(Path(tmp))
             names = [w.tabs.tabText(i) for i in range(w.tabs.count())]
-            self.assertEqual(names, ["Photos", "Stereo photos", "Videos", "Stereo videos", "YOLO models",
-                                     "Datasets"])
+            self.assertEqual(names, ["Photos", "Stereo photos", "Videos", "Stereo videos", "Improved",
+                                     "YOLO models", "Datasets"])
             self.assertEqual(names, [label for label, _mode, _kind, _folder in folders_local.tabs()])
 
     def test_the_media_tabs_show_the_species_and_the_last_one_the_added_folders(self):
@@ -112,9 +117,9 @@ class LocalFoldersTest(unittest.TestCase):
             kinds = [kind for _label, _mode, kind, _folder in folders_local.tabs()]
             self.assertEqual(kinds[:4], list(KINDS))
             self.assertEqual((w.mode, w.kind), (folders_local.BY_SPECIES, KINDS[0]))
-            w.tabs.setCurrentIndex(4)
+            w.tabs.setCurrentIndex(self.tab_of(folders_local.PLAIN_FOLDER))
             self.assertEqual((w.mode, w.app_folder()), (folders_local.PLAIN_FOLDER, MODELS_DIR))
-            w.tabs.setCurrentIndex(5)
+            w.tabs.setCurrentIndex(self.tab_of(folders_local.ADDED_FOLDERS))
             self.assertEqual((w.mode, w.app_folder()), (folders_local.ADDED_FOLDERS, TRAINING_DIR))
             self.assertTrue(MODELS_DIR.is_dir())                        # shown empty, never missing
 
@@ -126,7 +131,7 @@ class LocalFoldersTest(unittest.TestCase):
             folder.mkdir()
             src = w.library.add_source("photo", folder)
             try:
-                w.tabs.setCurrentIndex(5)                               # the folders, as they were added
+                w.tabs.setCurrentIndex(self.tab_of(folders_local.ADDED_FOLDERS))   # as they were added
                 names = []
                 for i in range(w.tree.topLevelItemCount()):
                     group = w.tree.topLevelItem(i)
@@ -153,7 +158,7 @@ class LocalFoldersTest(unittest.TestCase):
             w, _ = self.widget(Path(tmp))
             (MODELS_DIR / "example.json").write_text("{}")
             try:
-                w.tabs.setCurrentIndex(4)                               # the models of the application
+                w.tabs.setCurrentIndex(self.tab_of(folders_local.PLAIN_FOLDER))    # models of the app
                 names = [w.tree.topLevelItem(i).text(0) for i in range(w.tree.topLevelItemCount())]
                 self.assertIn("example.json", names)
                 w.tabs.setCurrentIndex(0)
@@ -166,7 +171,7 @@ class LocalFoldersTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             w, _ = self.widget(Path(tmp))
             self.assertIsNone(w.tree.currentItem())                     # nothing selected: the kind itself
-            w.tabs.setCurrentIndex(4)                                   # a folder of the application
+            w.tabs.setCurrentIndex(self.tab_of(folders_local.PLAIN_FOLDER))       # folder of the app
             self.assertIsNone(w.tree.currentItem())
             self.assertFalse(w.btn_delete.isEnabled())
             self.assertFalse(w.btn_rename.isEnabled())
@@ -184,6 +189,125 @@ class LocalFoldersTest(unittest.TestCase):
             sent = [c for c in session.client.calls if c[0] == "upload"]
             self.assertEqual(sorted(c[2] for c in sent), ["Dive/extra/a.txt", "Dive/extra/sub/b.txt"])
             self.assertEqual((result["files"], result["pending"]), (2, 2))
+
+
+class LocalActionsTest(unittest.TestCase):
+    """What the buttons of the local folders may do: file under a species, delete, take a folder off the list."""
+
+    def widget(self, tmp: Path):
+        return folders_local.LocalFoldersWidget(offline_session(tmp))
+
+    @staticmethod
+    def a_photo(folder: Path, name: str = "a.png") -> Path:
+        from PySide6.QtGui import QImage
+        path = folder / name
+        QImage(40, 30, QImage.Format.Format_RGB32).save(str(path))
+        return path
+
+    def test_filing_under_a_species_needs_files_chosen_one_by_one(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp) / "dive"
+            folder.mkdir()
+            photo = self.a_photo(folder)
+            w = self.widget(Path(tmp))
+            src = w.library.add_source("photo", folder)
+            try:
+                w.refresh()
+                species = w.tree.topLevelItem(0)                   # a species row stands for its files
+                species.setSelected(True)
+                w._update_buttons()
+                self.assertEqual(w.chosen_media(), [])
+                self.assertFalse(w.btn_species.isEnabled())
+                species.setSelected(False)
+                w._expanded(species)
+                species.child(0).setSelected(True)                 # the photo itself
+                w._update_buttons()
+                self.assertEqual(w.chosen_media(), [photo])
+                self.assertTrue(w.btn_species.isEnabled())
+            finally:
+                w.library.remove_source(src.id)
+                w.deleteLater()
+
+    def test_an_empty_folder_can_be_deleted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            outer = Path(tmp) / "dive"
+            empty = outer / "nothing here"
+            empty.mkdir(parents=True)
+            w = self.widget(Path(tmp))
+            src = w.library.add_source("photo", outer)
+            try:
+                w.tabs.setCurrentIndex([t[1] for t in folders_local.tabs()].index(folders_local.ADDED_FOLDERS))
+                row = self.find(w, "nothing here")
+                self.assertIsNotNone(row)
+                w.tree.setCurrentItem(row)
+                w._update_buttons()
+                self.assertTrue(w.btn_delete.isEnabled())
+                with mock.patch.object(folders_local.QMessageBox, "question",
+                                       return_value=folders_local.QMessageBox.StandardButton.Yes):
+                    w._delete()
+                self.assertFalse(empty.exists())
+            finally:
+                w.library.remove_source(src.id)
+                w.deleteLater()
+
+    def test_deleting_a_folder_of_the_list_only_takes_it_off_the_list(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp) / "dive"
+            folder.mkdir()
+            self.a_photo(folder)
+            w = self.widget(Path(tmp))
+            src = w.library.add_source("photo", folder)
+            try:
+                w.tabs.setCurrentIndex([t[1] for t in folders_local.tabs()].index(folders_local.ADDED_FOLDERS))
+                row = self.find(w, "dive")
+                w.tree.setCurrentItem(row)
+                with mock.patch.object(folders_local.QMessageBox, "question",
+                                       return_value=folders_local.QMessageBox.StandardButton.Yes):
+                    w._delete()
+                self.assertTrue(folder.is_dir())                   # the files were never the application's
+                self.assertNotIn("dive", [s.name for s in w.library.sources("photo")])
+            finally:
+                w.deleteLater()
+
+    def test_the_improved_copies_have_a_tab_of_their_own_and_are_not_counted_twice(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp) / "dive"
+            folder.mkdir()
+            photo = self.a_photo(folder)
+            better = folder / "enhanced" / "a.png"
+            better.parent.mkdir()
+            self.a_photo(better.parent)
+            w = self.widget(Path(tmp))
+            src = w.library.add_source("photo", folder)
+            try:
+                self.assertEqual(w.files_of_kind("photo"), [photo])  # the copy is not a file of its own
+                w.tabs.setCurrentIndex([t[1] for t in folders_local.tabs()].index(folders_local.ONLY_IMPROVED))
+                names = []
+                for i in range(w.tree.topLevelItemCount()):
+                    group = w.tree.topLevelItem(i)
+                    names += [group.child(c).text(0) for c in range(group.childCount())]
+                self.assertEqual(names, ["a.png"])
+            finally:
+                w.library.remove_source(src.id)
+                w.deleteLater()
+
+    @staticmethod
+    def find(w, name: str):
+        """The row with this name, wherever it is in the tree (the groups are opened on the way)."""
+        def walk(item):
+            for i in range(item.childCount()):
+                child = item.child(i)
+                w._expanded(child)
+                if child.text(0) == name:
+                    return child
+                found = walk(child)
+                if found is not None:
+                    return found
+            return None
+        root = w.tree.invisibleRootItem()
+        for i in range(root.childCount()):
+            w._expanded(root.child(i))
+        return walk(root)
 
 
 class GroupsPageTest(unittest.TestCase):
