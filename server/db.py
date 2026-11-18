@@ -11,18 +11,20 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from common.errors import AppError
-from common.params import (GROUP_ADMIN, GROUP_MEMBER, GROUP_ROLES, JOB_CANCELLED, JOB_DONE, JOB_FAILED, JOB_QUEUED, JOB_RUNNING, ROLE_SERVER,
-                           ROLE_USER, ROLES)
+from common.params import (GROUP_ADMIN, GROUP_MEMBER, GROUP_NAME_RE, GROUP_ROLES, JOB_CANCELLED, JOB_DONE,
+                           JOB_FAILED, JOB_QUEUED, JOB_RUNNING, ROLE_SERVER, ROLE_USER, ROLES, VIS_GROUP,
+                           VIS_PRIVATE, VIS_PUBLIC, VISIBILITIES)
 from common.security import (hash_password, new_token, token_digest, validate_password, validate_username,
                              verify_password)
 
-from .params import (DEFAULT_QUOTA_MB, LOGIN_LOCK_SECONDS, LOGIN_MAX_FAILS, PROFILE_FIELDS,
+from .params import (DEFAULT_QUOTA_MB, DEFAULT_GROUP_QUOTA_MB, LOGIN_LOCK_SECONDS, LOGIN_MAX_FAILS, PROFILE_FIELDS,
                      SUBMISSION_APPROVED, SUBMISSION_PENDING, SUBMISSION_REJECTED, TOKEN_TTL, KIND_PHOTOS, KIND_DATASET, KIND_MODEL)
 
 _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _COLUMNS = {"full_name": "TEXT NOT NULL DEFAULT ''", "email": "TEXT NOT NULL DEFAULT ''",
             "organization": "TEXT NOT NULL DEFAULT ''", "phone": "TEXT NOT NULL DEFAULT ''",
-            "bio": "TEXT NOT NULL DEFAULT ''", "quota_mb": "INTEGER NOT NULL DEFAULT 0"}
+            "bio": "TEXT NOT NULL DEFAULT ''", "quota_mb": "INTEGER NOT NULL DEFAULT 0",
+            "pending": "INTEGER NOT NULL DEFAULT 0"}     # registered, waiting for an administrator's approval
 
 
 class Database:
@@ -48,7 +50,9 @@ class Database:
               username TEXT NOT NULL, species TEXT NOT NULL, path TEXT NOT NULL,
               status TEXT NOT NULL, photos INTEGER NOT NULL DEFAULT 0,
               created REAL NOT NULL, reviewed_by TEXT, reviewed REAL,
-              group_name TEXT NOT NULL DEFAULT '');
+              group_name TEXT NOT NULL DEFAULT '',
+              visibility TEXT NOT NULL DEFAULT 'public',
+              vis_group TEXT NOT NULL DEFAULT '');
             CREATE TABLE IF NOT EXISTS training_jobs(
               id INTEGER PRIMARY KEY AUTOINCREMENT,
               username TEXT NOT NULL, dataset TEXT NOT NULL, base_model TEXT NOT NULL,
@@ -66,7 +70,8 @@ class Database:
               result TEXT NOT NULL DEFAULT '');
             CREATE TABLE IF NOT EXISTS groups(
               name TEXT PRIMARY KEY COLLATE NOCASE, created REAL NOT NULL, created_by TEXT NOT NULL DEFAULT '',
-              description TEXT NOT NULL DEFAULT '', free_upload INTEGER NOT NULL DEFAULT 0);
+              description TEXT NOT NULL DEFAULT '', free_upload INTEGER NOT NULL DEFAULT 0,
+              quota_mb INTEGER NOT NULL DEFAULT 0);
             CREATE TABLE IF NOT EXISTS group_members(
               group_name TEXT NOT NULL COLLATE NOCASE, username TEXT NOT NULL COLLATE NOCASE,
               added REAL NOT NULL, role TEXT NOT NULL DEFAULT 'member', PRIMARY KEY(group_name, username));
@@ -79,6 +84,8 @@ class Database:
             have = {r[1] for r in c.execute("PRAGMA table_info(submissions)")}
             if "kind" not in have:                           # database created by a previous version
                 c.execute(f"ALTER TABLE submissions ADD COLUMN kind TEXT NOT NULL DEFAULT '{KIND_PHOTOS}'")
+            if "visibility" not in have:                     # before the groups: everything was seen by everyone
+                c.execute(f"ALTER TABLE submissions ADD COLUMN visibility TEXT NOT NULL DEFAULT '{VIS_PUBLIC}'")
             c.execute("CREATE UNIQUE INDEX IF NOT EXISTS one_pending_per_item "       # photos and stereo of a species can both wait
                       "ON submissions(kind, path) WHERE status='pending'")
             self._add_missing_columns(c)
@@ -88,7 +95,8 @@ class Database:
         """Columns added to tables that a server has been using since before: CREATE TABLE IF NOT EXISTS leaves an
         existing table as it is, so they are added here (an empty database already has them and nothing happens)."""
         later = {"groups": (("description", "TEXT NOT NULL DEFAULT ''"),
-                            ("free_upload", "INTEGER NOT NULL DEFAULT 0")),
+                            ("free_upload", "INTEGER NOT NULL DEFAULT 0"),
+                            ("quota_mb", "INTEGER NOT NULL DEFAULT 0")),
                  "group_members": (("role", f"TEXT NOT NULL DEFAULT '{GROUP_MEMBER}'"),),
                  "submissions": (("group_name", "TEXT NOT NULL DEFAULT ''"),)}
         added = False
@@ -111,7 +119,9 @@ class Database:
         return _Ctx(con)
 
     # ---- users ------------------------------------------------------------
-    def create_user(self, username: str, password: str, role: str = ROLE_USER, email: str = "") -> Dict[str, Any]:
+    def create_user(self, username: str, password: str, role: str = ROLE_USER, email: str = "",
+                    pending: bool = False) -> Dict[str, Any]:
+        """pending=True: the account cannot sign in until an administrator enables it."""
         username, password = validate_username(username), validate_password(password)
         email = email.strip() if isinstance(email, str) else ""
         if email and (len(email) > PROFILE_FIELDS["email"] or not _EMAIL.match(email)):
@@ -121,8 +131,9 @@ class Database:
         salt, h = hash_password(password)
         try:
             with self._c() as c:
-                uid = c.execute("INSERT INTO users(username,role,salt,pw_hash,created,email) VALUES(?,?,?,?,?,?)",
-                                (username, role, salt, h, time.time(), email)).lastrowid
+                uid = c.execute("INSERT INTO users(username,role,salt,pw_hash,created,email,active,pending) "
+                                "VALUES(?,?,?,?,?,?,?,?)", (username, role, salt, h, time.time(), email,
+                                                            0 if pending else 1, 1 if pending else 0)).lastrowid
         except sqlite3.IntegrityError:
             raise AppError("Username already taken.", 409)
         return self.get_user(uid)
@@ -155,7 +166,7 @@ class Database:
                     raise AppError("Invalid role.")
                 c.execute("UPDATE users SET role=? WHERE id=?", (role, uid))
             if active is not None:
-                c.execute("UPDATE users SET active=? WHERE id=?", (1 if active else 0, uid))
+                c.execute("UPDATE users SET active=?, pending=0 WHERE id=?", (1 if active else 0, uid))   # enabling approves
                 if not active:
                     c.execute("DELETE FROM tokens WHERE user_id=?", (uid,))
             if quota_mb is not None:
@@ -215,6 +226,8 @@ class Database:
                 raise AppError("Too many attempts: try again in {minutes} min.", 429,
                                minutes=max(1, int((left + 59) // 60)), scope="account", retry_after=int(left) + 1)
             if not r["active"]:
+                if r["pending"] and verify_password(password or "", r["salt"], r["pw_hash"]):
+                    raise AppError("Your account is waiting for approval by an administrator.", 403)
                 raise AppError("Account disabled.", 403)
             if not verify_password(password or "", r["salt"], r["pw_hash"]):
                 fails = r["failed"] + 1
@@ -258,21 +271,30 @@ class Database:
         
     # ---- submissions: folders uploaded by users, waiting for review --------
     def add_submission(self, username: str, species: str, path: str, photos: int = 0,
-                       kind: str = KIND_PHOTOS, group: str = "") -> int:
-        """`group`: published on behalf of a work group the user belongs to (the group is then the author)."""
+                       kind: str = KIND_PHOTOS, group: str = "", visibility: str = VIS_PUBLIC,
+                       vis_group: str = "") -> int:
+        """`group`: published on behalf of a work group the user belongs to (the group is then the author).
+        `visibility` + `vis_group`: who may see it once approved (everybody, one group, or the uploader)."""
+        visibility, vis_group = check_visibility(visibility, vis_group or group)
         try:
             with self._c() as c:
                 return c.execute("INSERT INTO submissions(username,species,path,status,photos,created,kind,"
-                                 "group_name) VALUES(?,?,?,?,?,?,?,?)",
+                                 "group_name,visibility,vis_group) VALUES(?,?,?,?,?,?,?,?,?,?)",
                                  (username, species, path, SUBMISSION_PENDING, photos, time.time(),
-                                  kind, group)).lastrowid
+                                  kind, group, visibility, vis_group)).lastrowid
         except sqlite3.IntegrityError:
             raise AppError("You already have a pending submission for this species.", 409) from None
 
     def list_submissions(self, username: Optional[str] = None, status: Optional[str] = None,
-                         kind: Optional[str] = None) -> List[Dict[str, Any]]:
+                         kind: Optional[str] = None, groups: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+        """username: only that user's rows; with `groups`, also the rows shared with those work groups
+        (never the private ones, which stay with whoever sent them)."""
         where, args = [], []
-        if username is not None:
+        if username is not None and groups:
+            marks = ",".join("?" * len(groups))
+            where.append(f"(username=? OR (vis_group IN ({marks}) COLLATE NOCASE AND visibility!=?))")
+            args += [username, *groups, VIS_PRIVATE]
+        elif username is not None:
             where.append("username=?")
             args.append(username)
         if status is not None:
@@ -294,6 +316,28 @@ class Database:
             if status:
                 query, args = query + " AND status=?", args + [status]
             return c.execute(query, args).rowcount
+
+    def restricted_submissions(self) -> List[Dict[str, Any]]:
+        """The approved items NOT visible to everyone (to hide them from the users who may not see them)."""
+        with self._c() as c:
+            return [dict(r) for r in c.execute(
+                "SELECT id, kind, path, username, visibility, vis_group FROM submissions "
+                "WHERE status=? AND visibility!=?",
+                (SUBMISSION_APPROVED, VIS_PUBLIC))]
+
+    def set_submission_visibility(self, sid: int, visibility: str, vis_group: str = "") -> Dict[str, Any]:
+        """Who may see an item: everyone, one work group, or only whoever sent it."""
+        visibility, vis_group = check_visibility(visibility, vis_group)
+        with self._c() as c:
+            if c.execute("UPDATE submissions SET visibility=?, vis_group=? WHERE id=?",
+                         (visibility, vis_group, sid)).rowcount == 0:
+                raise AppError("Submission not found.", 404)
+        return self.get_submission(sid)
+
+    def user_by_name(self, username: str) -> Optional[Dict[str, Any]]:
+        with self._c() as c:
+            r = c.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
+        return _public(r) if r else None
 
     def get_submission(self, sid: int) -> Dict[str, Any]:
         with self._c() as c:
@@ -322,7 +366,7 @@ class Database:
         """A group shares a folder on the server. Anybody can make one: whoever makes it is its first administrator,
         and the name is used as a folder name, so it is kept simple."""
         name = (name or "").strip()
-        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 _-]{1,39}", name):
+        if not re.fullmatch(GROUP_NAME_RE, name):
             raise AppError("The name of a group has 2 to 40 characters: letters, digits, spaces, - and _.", 422)
         with self._c() as c:
             if c.execute("SELECT 1 FROM groups WHERE name=?", (name,)).fetchone():
@@ -350,16 +394,36 @@ class Database:
                     raise AppError("Group not found.", 404)
         return self.group(name)
 
+    def set_group_quota(self, name: str, quota_mb: Any) -> Dict[str, Any]:
+        """How much room the folder of the group has (0: no limit). Only a server administrator decides it."""
+        try:
+            quota = max(0, int(quota_mb or 0))
+        except (TypeError, ValueError):
+            raise AppError("Invalid quota.", 422) from None
+        with self._c() as c:
+            if not c.execute("UPDATE groups SET quota_mb=? WHERE name=?", (quota, name)).rowcount:
+                raise AppError("Group not found.", 404)
+        return self.group(name)
+
+    def group_quota(self, name: str) -> int:
+        with self._c() as c:
+            row = c.execute("SELECT quota_mb FROM groups WHERE name=?", (name,)).fetchone()
+        return int(row[0]) if row and row[0] else DEFAULT_GROUP_QUOTA_MB
+
     def group_free_upload(self, name: str) -> bool:
         with self._c() as c:
             row = c.execute("SELECT free_upload FROM groups WHERE name=?", (name,)).fetchone()
         return bool(row and row[0])
 
     def delete_group(self, name: str) -> None:
+        """Deletes a group. What was shared only with it stays with whoever sent it (never becomes public)."""
         with self._c() as c:
             if not c.execute("DELETE FROM groups WHERE name=?", (name,)).rowcount:
                 raise AppError("Group not found.", 404)
             c.execute("DELETE FROM group_members WHERE group_name=?", (name,))
+            c.execute("UPDATE submissions SET visibility=? WHERE vis_group=? COLLATE NOCASE AND visibility=?",
+                      (VIS_PRIVATE, name, VIS_GROUP))
+            c.execute("UPDATE submissions SET vis_group='' WHERE vis_group=? COLLATE NOCASE", (name,))
 
     def _group_exists(self, c, group: str) -> None:
         if not c.execute("SELECT 1 FROM groups WHERE name=?", (group,)).fetchone():
@@ -409,9 +473,9 @@ class Database:
 
     def group_members(self, group: str) -> List[Dict[str, str]]:
         with self._c() as c:
-            rows = c.execute("SELECT username, role FROM group_members WHERE group_name=?"
+            rows = c.execute("SELECT username, role, added FROM group_members WHERE group_name=?"
                              " ORDER BY role, username", (group,))
-            return [{"username": r[0], "role": r[1]} for r in rows]
+            return [{"username": r[0], "role": r[1], "added": r[2]} for r in rows]
 
     def group_role(self, group: str, username: str) -> str:
         """The role of a user in a group: administrator, member, or nothing if they do not belong to it."""
@@ -437,12 +501,13 @@ class Database:
 
     def group(self, name: str) -> Dict[str, Any]:
         with self._c() as c:
-            row = c.execute("SELECT name, created, created_by, description, free_upload FROM groups WHERE name=?",
-                            (name,)).fetchone()
+            row = c.execute("SELECT name, created, created_by, description, free_upload, quota_mb "
+                            "FROM groups WHERE name=?", (name,)).fetchone()
         if row is None:
             raise AppError("Group not found.", 404)
         return {"name": row[0], "created": row[1], "created_by": row[2], "description": row[3],
-                "free_upload": bool(row[4]), "members": self.group_members(row[0])}
+                "free_upload": bool(row[4]), "quota_mb": row[5] or DEFAULT_GROUP_QUOTA_MB,
+                "members": self.group_members(row[0])}
 
     def list_groups(self, username: str = "", every: bool = False) -> List[Dict[str, Any]]:
         """With `every` (server administrators) all the groups, otherwise only the user's own. Every group carries
@@ -619,6 +684,20 @@ class _Ctx:
 def _public(r: sqlite3.Row) -> Dict[str, Any]:
     out = {"id": r["id"], "username": r["username"], "role": r["role"], "active": bool(r["active"]),
            "created": r["created"], "last_login": r["last_login"],
-           "quota_mb": r["quota_mb"] or DEFAULT_QUOTA_MB}
+           "quota_mb": r["quota_mb"] or DEFAULT_QUOTA_MB, "pending": bool(r["pending"])}
     out.update({f: r[f] for f in PROFILE_FIELDS})
     return out
+
+
+def check_visibility(visibility: Any, group: Any) -> tuple:
+    """(visibility, group name) checked: a group is required for VIS_GROUP, and is kept otherwise only if given.
+    Whether the user belongs to that group is checked by the caller."""
+    visibility = visibility or VIS_PUBLIC
+    if visibility not in VISIBILITIES:
+        raise AppError("Invalid visibility.", 422)
+    group = str(group or "").strip()
+    if group and not re.fullmatch(GROUP_NAME_RE, group):
+        raise AppError("Group not found.", 404)
+    if visibility == VIS_GROUP and not group:
+        raise AppError("Choose the group that can see it.", 422)
+    return visibility, group

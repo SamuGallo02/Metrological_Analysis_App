@@ -41,3 +41,8 @@ venv/
 venv_mac/
 venv_linux/
 .venv/
+
+# weights of the enhancement networks (nautilus): downloaded, never committed
+weights/*
+!weights/README.md
+deploy/.env

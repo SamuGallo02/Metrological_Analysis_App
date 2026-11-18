@@ -1,0 +1,8 @@
+# Libraries of the analysis run by the web app (python -m webapp serve). The server alone needs none of them.
+# PyTorch is NOT here: install it first for your machine, e.g.
+#   CPU only:     pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+#   NVIDIA GPU:   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+opencv-python-headless>=4.5
+numpy
+ultralytics>=8.3.0
+av>=13                  # video enhancement (nautilus); photos work without it

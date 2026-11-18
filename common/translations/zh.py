@@ -1,7 +1,14 @@
 # Autore: Samuele Gallo
-VERSION = 2
+VERSION = 5
 
 STRINGS = {
+    'Choose the group that can see it.': '请选择可以查看它的工作组。',
+    'Files go inside the folder of a group.': '文件必须放在某个工作组的文件夹内。',
+    'Files stay inside the folder of their group.': '文件只能留在所属工作组的文件夹内。',
+    'Invalid visibility.': '可见性无效。',
+    'Not enough space in the group folder (quota {mb} MB).': '工作组文件夹空间不足（配额 {mb} MB）。',
+    'The folder of a group is created with the group.': '工作组的文件夹随工作组一起创建。',
+    'The folder of a group is removed with the group.': '工作组的文件夹随工作组一起删除。',
     "The server is unreachable: you are working locally only. Users and server folders are available again after you reconnect.": "服务器无法连接：您只能在本地工作。重新连接后，用户和服务器文件夹将再次可用。",
     "Repairing files": "正在修复文件",
     "Checking the files...": "正在检查文件...",
@@ -32,6 +39,7 @@ STRINGS = {
     "About me:": "个人简介：",
     "Access key:": "访问密钥：",
     "Account disabled.": "账户已被禁用。",
+    "Your account is waiting for approval by an administrator.": "您的账户正在等待管理员批准。",
     "Action": "操作",
     "Active": "启用",
     "Already exists.": "已存在。",

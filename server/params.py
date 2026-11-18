@@ -21,6 +21,7 @@ KEY_LOCK_SECONDS = 300
 RATE_LIMIT_PER_MIN = 600             # requests per minute per address (0 = unlimited); stops floods, not normal use
 MAX_JSON = 1 << 20
 DEFAULT_QUOTA_MB = 1024              # personal folder ("mine") of each user
+DEFAULT_GROUP_QUOTA_MB = 4096        # shared folder of each work group
 
 _IMAGES, _VIDEOS = set(IMAGE_SUFFIXES), set(VIDEO_SUFFIXES)
 EXTENSIONS = {
@@ -41,6 +42,7 @@ MAX_BYTES_EXT = {("models", ".json"): 1 << 20,            # model metadata is sm
 #   store/library/<area>/...        approved items, one folder per kind
 #   store/pending/<area>/<user>/... uploads waiting for review (moved to the library, or deleted, by the review)
 #   store/mine/<user>/...           personal folders
+#   store/groups/<group>/...        folders of the work groups
 # The logical path "_pending/..." of an area is what the API shows for its waiting uploads.
 STORE_DIR, LIBRARY_DIR, PENDING_DIR_NAME, MINE_DIR = "store", "library", "pending", "mine"
 GROUPS_DIR = "groups"                # store/groups/<group>/...: one folder per work group

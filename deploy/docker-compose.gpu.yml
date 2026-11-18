@@ -1,0 +1,11 @@
+# Adds the NVIDIA GPU to the web app (needs the NVIDIA driver and the NVIDIA Container Toolkit on the host):
+#   docker compose -f deploy/docker-compose.web.yml -f deploy/docker-compose.gpu.yml up -d --build
+services:
+  webapp:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

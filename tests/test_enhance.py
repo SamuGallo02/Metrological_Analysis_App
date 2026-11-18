@@ -124,7 +124,3 @@ class EnhanceQueueTest(unittest.TestCase):
         job = enhance.send(u, self.photo("en8.png"))
         enhance.cleanup(u, job)
         self.assertNotIn("en8.png", [f["name"] for f in u.list("mine", "improve")])
-
-
-if __name__ == "__main__":
-    unittest.main()

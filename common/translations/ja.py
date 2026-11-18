@@ -1,7 +1,14 @@
 # Autore: Samuele Gallo
-VERSION = 2
+VERSION = 5
 
 STRINGS = {
+    'Choose the group that can see it.': '表示できるグループを選んでください。',
+    'Files go inside the folder of a group.': 'ファイルはグループのフォルダーの中に入れてください。',
+    'Files stay inside the folder of their group.': 'ファイルは自分のグループのフォルダーの中にとどまります。',
+    'Invalid visibility.': '無効な公開範囲です。',
+    'Not enough space in the group folder (quota {mb} MB).': 'グループのフォルダーに空き容量がありません（割り当て {mb} MB）。',
+    'The folder of a group is created with the group.': 'グループのフォルダーはグループと一緒に作られます。',
+    'The folder of a group is removed with the group.': 'グループのフォルダーはグループと一緒に削除されます。',
     'The server is unreachable: you are working locally only. Users and server folders are available again after you reconnect.': 'サーバーに接続できません：ローカルのみで作業しています。再接続すると、ユーザーとサーバーフォルダーが再び使えるようになります。',
     'Repairing files': 'ファイルを修復中',
     'Checking the files...': 'ファイルを確認中...',
@@ -32,6 +39,7 @@ STRINGS = {
     'About me:': '自己紹介:',
     'Access key:': 'アクセスキー:',
     'Account disabled.': 'アカウントは無効です。',
+    "Your account is waiting for approval by an administrator.": "アカウントは管理者の承認待ちです。",
     'Action': '操作',
     'Active': '有効',
     'Already exists.': '既に存在します。',

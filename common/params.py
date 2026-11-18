@@ -63,6 +63,12 @@ AREA_GROUPS = "groups"                                        # shared folder of
 AREA_MINE = "mine"                                            # personal folder on the server: the owner can do everything
 AREAS = AREAS_SHARED + (AREA_GROUPS, AREA_MINE)
 
+# Who sees an approved item of the library: everyone, the uploader and one work group, or the uploader only
+# (administrators see everything).
+VIS_PUBLIC, VIS_GROUP, VIS_PRIVATE = "public", "group", "private"
+VISIBILITIES = (VIS_PUBLIC, VIS_GROUP, VIS_PRIVATE)
+GROUP_NAME_RE = r"[A-Za-z0-9][A-Za-z0-9 _-]{1,39}"            # also the name of the group's folder
+
 # what a submission is about -> the area that holds it once approved
 KIND_PHOTOS, KIND_STEREO, KIND_VIDEO, KIND_DATASET, KIND_MODEL = "photos", "stereo", "video", "dataset", "model"
 KIND_STEREO_VIDEO = "stereo_video"

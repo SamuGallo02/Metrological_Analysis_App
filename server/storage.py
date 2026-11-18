@@ -106,6 +106,12 @@ def _remove_tree(path: Path, strict: bool = True) -> None:
         if strict:
             raise
 
+def _size(folder: Path) -> int:
+    if not folder.exists():
+        return 0
+    return sum(p.stat().st_size for p in folder.rglob("*") if p.is_file() and not p.is_symlink())
+
+
 class Storage:
     """`root` is the data folder; everything this class manages is inside `root/store`."""
 
@@ -308,10 +314,15 @@ class Storage:
 
     # ---- quota -------------------------------------------------------------
     def usage(self, owner: str) -> int:
-        base = self.base(AREA_MINE, owner)
-        if not base.exists():
-            return 0
-        return sum(p.stat().st_size for p in base.rglob("*") if p.is_file() and not p.is_symlink())
+        return _size(self.base(AREA_MINE, owner))
+
+    def group_usage(self, group: str) -> int:
+        """How much the folder of a work group takes, waiting files included: that is what its quota counts."""
+        group = clean_rel(group)
+        return _size(self.base(AREA_GROUPS, "") / group) + _size(self.pending_root(AREA_GROUPS) / group)
+
+    def make_group_folder(self, group: str) -> None:
+        (self.base(AREA_GROUPS, "") / clean_rel(group)).mkdir(parents=True, exist_ok=True)
 
     # ---- reading -----------------------------------------------------------
     def list_dir(self, area: str, rel: str, admin: bool, owner: str = "") -> Dict[str, Any]:
@@ -346,7 +357,8 @@ class Storage:
     # ---- upload -------------------------------------------------------
     def check_new_file(self, area: str, rel: str, admin: bool, username: str, size: int,
                        quota_mb: int = 0) -> Tuple[Path, str]:
-        """Validates an upload BEFORE receiving the data; returns (destination, effective path)."""
+        """Validates an upload BEFORE receiving the data; returns (destination, effective path).
+        quota_mb: of the personal folder (mine), or of the group (groups: rel starts with the group name)."""
         rel = clean_rel(rel)
         if not rel:
             raise AppError("Specify the file name.")
@@ -382,6 +394,15 @@ class Storage:
             old = path.stat().st_size if path.is_file() else 0
             if self.usage(username) - old + size > quota_mb * (1 << 20):
                 raise AppError("Not enough space in your folder (quota {mb} MB).", 413, mb=quota_mb)
+        elif area == AREA_GROUPS and quota_mb:
+            # The group is the first part of the path, or the second one when the file waits for approval.
+            parts = rel.split("/")
+            group = parts[1] if parts and parts[0] == PENDING else (parts[0] if parts else "")
+            if not group or len(parts) < 2:
+                raise AppError("Files go inside the folder of a group.", 422)
+            old = path.stat().st_size if path.is_file() else 0
+            if self.group_usage(group) - old + size > quota_mb * (1 << 20):
+                raise AppError("Not enough space in the group folder (quota {mb} MB).", 413, mb=quota_mb)
         return path, rel
 
     def tmp_path(self, area: str, owner: str = "") -> Path:

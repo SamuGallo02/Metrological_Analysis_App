@@ -48,6 +48,8 @@ def _build_parser() -> argparse.ArgumentParser:
                     "implies --trust-proxy and applies the same safety rules as --lan")
     sv.add_argument("--port", type=int, default=DEFAULT_PORT)
     sv.add_argument("--no-register", action="store_true", help="only administrators create accounts")
+    sv.add_argument("--approve-register", action="store_true",
+                    help="anyone can register, but the account works only after an administrator enables it")
     sv.add_argument("--trust-proxy", action="store_true", help="behind Caddy/nginx: client IP from X-Forwarded-For")
     sv.add_argument("--rate-limit", type=int, default=RATE_LIMIT_PER_MIN, help="requests per minute per address (0 = unlimited)")
     sv.add_argument("--allow-weak-key", action="store_true", help="keep a short admin key even when the server is reachable from the network")
@@ -194,7 +196,7 @@ def cmd_users(data: Path, a) -> int:
     if a.action == "list":
         for u in db.list_users():
             last = time.strftime("%Y-%m-%d %H:%M", time.localtime(u["last_login"])) if u["last_login"] else "never"
-            print(f"{u['id']:>3}  {u['username']:<20} {u['role']:<7} {'active' if u['active'] else 'DISABLED':<9} last login: {last}")
+            print(f"{u['id']:>3}  {u['username']:<20} {u['role']:<7} {'active' if u['active'] else 'PENDING' if u.get('pending') else 'DISABLED':<9} last login: {last}")
         return 0
     u = _find_user(db, a.username)
     if a.action == "passwd":
@@ -210,7 +212,7 @@ def cmd_users(data: Path, a) -> int:
     return 0
 
 
-def cmd_serve(data: Path, a) -> int:
+def cmd_serve(data: Path, a, handler_base=None) -> int:
     host = "0.0.0.0" if a.lan else a.host
     log_file = logsetup.setup(data)
     exposed = a.public or not network.is_loopback(host)          # a tunnel reaches 127.0.0.1 but is public all the same
@@ -221,7 +223,9 @@ def cmd_serve(data: Path, a) -> int:
         print(f"WARNING: the admin access key is shorter than {MIN_KEY_LEN} characters and the server is reachable from the network.")
         print("         The key is DISABLED for this run (admin accounts keep working). Use a longer key, or --allow-weak-key.")
         key = ""
-    httpd = make_server(data, host, a.port, not a.no_register, key, a.trust_proxy or a.public, a.rate_limit)
+    httpd = make_server(data, host, a.port, not a.no_register, key, a.trust_proxy or a.public, a.rate_limit,
+                        **({"handler_base": handler_base} if handler_base else {}),
+                        approve_register=a.approve_register and not a.no_register)
     print(f"Listening on http://{host}:{a.port}  (data in {data.resolve()})")
     print(f"Log file: {log_file}")
     print("Admin access key: " + ("enabled" if key else "DISABLED (set AM_ADMIN_KEY or server/admin_key.txt)"))
@@ -242,7 +246,8 @@ def cmd_serve(data: Path, a) -> int:
     return 0
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: Optional[List[str]] = None, handler_base=None) -> int:
+    """handler_base: a Handler subclass with extra routes (python -m webapp passes the web app's)."""
     a = _build_parser().parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     data = Path(a.data)
@@ -275,7 +280,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         if a.cmd == "users":
             return cmd_users(data, a)
         if a.cmd == "serve":
-            return cmd_serve(data, a)
+            return cmd_serve(data, a, handler_base)
     except (AppError, bk.BackupError) as e:
         print("Error:", e)
         return 1

@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Metrological Analysis</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="topbar" id="topbar" hidden>
+    <a class="brand" href="#/library"><img src="icon.svg" alt="" width="24" height="24"><span data-t>Metrological Analysis</span></a>
+    <button class="menu-toggle" id="menu-toggle" type="button" aria-expanded="false" aria-controls="nav">☰</button>
+    <nav id="nav" class="nav"></nav>
+    <div class="account">
+      <select id="lang" aria-label="Language"></select>
+      <a id="me" href="#/profile"></a>
+      <button id="logout" type="button" class="link" data-t>Sign out</button>
+    </div>
+  </header>
+  <main id="view" tabindex="-1"></main>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <noscript>This application needs JavaScript.</noscript>
+</body>
+</html>

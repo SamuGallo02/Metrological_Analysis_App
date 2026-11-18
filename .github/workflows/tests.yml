@@ -15,7 +15,7 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - name: Server tests
-        run: python -m unittest tests.test_system tests.test_isolation tests.test_server_ops -v
+        run: python -m unittest tests.test_system tests.test_isolation tests.test_server_ops tests.test_webapp tests.test_teams tests.test_enhance tests.test_security -v
       - name: Docker image builds
         if: matrix.python == '3.12'
         run: docker build -f deploy/Dockerfile -t analisi-server .

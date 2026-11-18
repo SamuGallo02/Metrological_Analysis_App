@@ -58,6 +58,7 @@ class ServerConfig:
     allow_register: bool = True
     admin_key: str = ""
     trust_proxy: bool = False                  # True only behind Caddy/nginx: uses X-Forwarded-For for the IP
+    approve_register: bool = False             # True: self-registered accounts wait for an administrator
 
     def client_ip(self, peer: str, forwarded: Optional[str]) -> str:
         if self.trust_proxy and forwarded:

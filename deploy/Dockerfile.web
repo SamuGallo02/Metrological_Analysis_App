@@ -1,0 +1,45 @@
+# The whole web app in one image: server + browser pages + stereo analysis (OpenCV, YOLO) + image enhancement
+# (nautilus, with its weights) + video. Nothing to install on the host but Docker.
+#
+#   NVIDIA GPU (default, ~6 GB):  docker build -f deploy/Dockerfile.web -t analisi-web .
+#   CPU only (~2 GB):             docker build -f deploy/Dockerfile.web -t analisi-web:cpu \
+#                                   --build-arg TORCH_INDEX=https://download.pytorch.org/whl/cpu .
+# Easiest: deploy/docker-compose.web.yml (see docs/WEBAPP.md, "Docker").
+#
+# PyTorch 2.5.1 + CUDA 12.1 works with NVIDIA drivers >= 530 and still supports older cards (Maxwell, e.g. Quadro
+# M4000); newer CUDA builds need newer drivers and drop those cards.
+FROM python:3.12-slim
+
+ARG TORCH_INDEX=https://download.pytorch.org/whl/cu121
+ARG TORCH_VERSION=2.5.1
+ARG TORCHVISION_VERSION=0.20.1
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PIP_NO_CACHE_DIR=1
+
+# libGL/glib: OpenCV (Ultralytics installs the full opencv-python); libgomp: PyTorch on the CPU
+RUN apt-get update && apt-get install -y --no-install-recommends libgl1 libglib2.0-0 libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+RUN pip install torch==${TORCH_VERSION} torchvision==${TORCHVISION_VERSION} --index-url "${TORCH_INDEX}"
+COPY webapp/requirements.txt ./webapp/requirements.txt
+RUN pip install -r webapp/requirements.txt
+
+COPY common ./common
+COPY server ./server
+COPY corpse/__init__.py ./corpse/__init__.py
+COPY corpse/functions ./corpse/functions
+COPY nautilus ./nautilus
+COPY webapp ./webapp
+# Enhancement weights: waternet.pt and funie_gan.pth must be in weights/ when building (see docs/WEBAPP.md).
+# A method whose weights are missing shows as "not installed"; NAUTILUS_WEIGHTS_DIR can point elsewhere at run time.
+COPY weights ./weights
+
+# Everything the server keeps (database, files, results, backups, logs) lives in the volume mounted on /data.
+ENV AM_DATA=/data HOME=/tmp YOLO_CONFIG_DIR=/tmp/ultralytics NAUTILUS_WEIGHTS_DIR=/app/weights
+RUN useradd --system --uid 10001 analisi && mkdir /data && chown analisi /data
+USER analisi
+VOLUME /data
+EXPOSE 8765
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+  CMD python -c "import urllib.request as u; u.urlopen('http://127.0.0.1:8765/api/health', timeout=4)" || exit 1
+# --trust-proxy: the real client address comes from the proxy in front (Caddy, Tailscale serve, Cloudflare...).
+CMD ["sh", "-c", "python -m webapp --data \"$AM_DATA\" serve --host 0.0.0.0 --port 8765 --trust-proxy --approve-register"]

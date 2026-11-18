@@ -33,8 +33,8 @@ class OldDatabaseTest(unittest.TestCase):
             con.commit()
             con.close()
             db = Database(path)
-            self.assertEqual(db.group_members("Dive"), [{"username": "mario", "role": "admin"},
-                                                        {"username": "luca", "role": "member"}])
+            self.assertEqual([(m["username"], m["role"]) for m in db.group_members("Dive")],
+                             [("mario", "admin"), ("luca", "member")])
             self.assertEqual(db.admin_groups("mario"), ["Dive"])
             self.assertEqual(db.group("Dive")["description"], "")
             self.assertFalse(db.group_free_upload("Dive"))
@@ -99,7 +99,7 @@ class GroupsTest(unittest.TestCase):
     def test_whoever_makes_a_group_looks_after_it(self):
         u = self.user("gm1")
         group = u.create_group("Nautilus")
-        self.assertEqual(group["members"], [{"username": "gm1", "role": "admin"}])
+        self.assertEqual([(m["username"], m["role"]) for m in group["members"]], [("gm1", "admin")])
         self.assertEqual([g["role"] for g in u.groups()], ["admin"])
 
     def test_a_name_is_checked_and_unique(self):
@@ -148,7 +148,8 @@ class GroupsTest(unittest.TestCase):
             with self.assertRaises(ApiError) as e:
                 call()
             self.assertEqual(e.exception.status, 409)
-        self.assertEqual(member.leave_group("Alone"), [{"username": "ga1Alone", "role": "admin"}])
+        left = member.leave_group("Alone")
+        self.assertEqual([(m["username"], m["role"]) for m in left], [("ga1Alone", "admin")])
 
     # ---- the files ------------------------------------------------------
     def test_an_administrator_of_the_group_writes_straight_away(self):
@@ -204,7 +205,7 @@ class GroupsTest(unittest.TestCase):
                      lambda: self.put(outside, "Shut/mine.md")):
             with self.assertRaises(ApiError) as e:
                 call()
-            self.assertEqual(e.exception.status, 403)
+            self.assertEqual(e.exception.status, 404)       # not even its existence is told to an outsider
 
     def test_the_root_shows_only_my_groups_and_everything_to_a_server_admin(self):
         boss, member = self.group("Alpha", "gr")

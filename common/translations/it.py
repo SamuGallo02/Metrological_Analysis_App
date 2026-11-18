@@ -1,7 +1,14 @@
 # Autore: Samuele Gallo
-VERSION = 2
+VERSION = 5
 
 STRINGS = {
+    'Choose the group that can see it.': 'Scegli il gruppo che può vederlo.',
+    'Files go inside the folder of a group.': 'I file vanno dentro la cartella di un gruppo.',
+    'Files stay inside the folder of their group.': 'I file restano nella cartella del loro gruppo.',
+    'Invalid visibility.': 'Visibilità non valida.',
+    'Not enough space in the group folder (quota {mb} MB).': 'Spazio insufficiente nella cartella del gruppo (quota {mb} MB).',
+    'The folder of a group is created with the group.': 'La cartella di un gruppo viene creata insieme al gruppo.',
+    'The folder of a group is removed with the group.': 'La cartella di un gruppo viene rimossa insieme al gruppo.',
     "The server is unreachable: you are working locally only. Users and server folders are available again after you reconnect.": "Il server non è raggiungibile: stai lavorando solo in locale. Utenti e cartelle del server torneranno disponibili dopo la riconnessione.",
     "Repairing files": "Riparazione dei file",
     "Checking the files...": "Controllo dei file...",
@@ -32,6 +39,7 @@ STRINGS = {
     "About me:": "Informazioni su di me:",
     "Access key:": "Chiave di accesso:",
     "Account disabled.": "Account disabilitato.",
+    "Your account is waiting for approval by an administrator.": "Il tuo account è in attesa di approvazione da parte di un amministratore.",
     "Action": "Azione",
     "Active": "Attivo",
     "Already exists.": "Esiste già.",

@@ -1,0 +1,47 @@
+# The web app in Docker, on its own (no other file needed).
+#
+#   With an NVIDIA GPU:  docker compose -f deploy/docker-compose.web.yml -f deploy/docker-compose.gpu.yml up -d --build
+#   CPU only:            TORCH_INDEX=https://download.pytorch.org/whl/cpu docker compose -f deploy/docker-compose.web.yml up -d --build
+#   First administrator: docker compose -f deploy/docker-compose.web.yml exec webapp python -m webapp --data /data create-admin NAME
+#   Then open http://127.0.0.1:8765 (AM_PORT changes the port).
+#
+# Settings (environment or a .env file next to this one):
+#   AM_DATA_DIR   where the data lives: a named volume (default) or a folder of the machine, e.g. /srv/analisi-data
+#                 (it must belong to user 10001: sudo chown -R 10001 /srv/analisi-data)
+#   AM_BIND       address the port is published on: 127.0.0.1 (default: only this machine and a proxy on it, such as
+#                 `tailscale serve`), a Tailscale address (100.x.y.z), or 0.0.0.0 for the whole network
+#   AM_ADMIN_KEY  admin access key (empty = disabled)
+#   NAUTILUS_MAX_MEGAPIXELS  WaterNet works in tiles of this size: ~1.4 GB of GPU memory per megapixel
+name: analisi-web
+services:
+  webapp:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.web
+      args:
+        TORCH_INDEX: "${TORCH_INDEX:-https://download.pytorch.org/whl/cu121}"
+    image: analisi-web:latest
+    init: true
+    restart: unless-stopped
+    ports:
+      - "${AM_BIND:-127.0.0.1}:${AM_PORT:-8765}:8765"
+    environment:
+      AM_ADMIN_KEY: "${AM_ADMIN_KEY:-}"
+      NAUTILUS_MAX_MEGAPIXELS: "${NAUTILUS_MAX_MEGAPIXELS:-4}"
+    volumes:
+      - ${AM_DATA_DIR:-analisi-data}:/data
+    shm_size: 1gb
+  backup:                                      # a coherent copy of the database (and the files) every day, last 7 kept
+    image: analisi-web:latest
+    init: true
+    restart: unless-stopped
+    depends_on: [webapp]
+    environment:
+      AM_ADMIN_KEY: ""
+    volumes:
+      - ${AM_DATA_DIR:-analisi-data}:/data
+    entrypoint: ["sh", "-c", "while true; do sleep 86400; python -m server --data /data backup --files --keep 7; done"]
+    healthcheck:
+      disable: true                            # the image's check is for the web server, not for this loop
+volumes:
+  analisi-data:

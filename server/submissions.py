@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional
 from datetime import datetime
 
 from common.errors import AppError
+from common.params import VIS_PUBLIC
 
 from .db import Database
 from .params import (SPECIES_RE, PENDING, SUBMISSION_APPROVED, SUBMISSION_PENDING, SUBMISSION_REJECTED, KIND_PHOTOS,
@@ -18,7 +19,8 @@ from .dataset_tree import count_dataset_images, validate_dataset_dir
 
 
 def submit_species(store: Storage, db: Database, username: str, species: str, kind: str = KIND_PHOTOS,
-                   admin: bool = False, group: str = "") -> Dict[str, Any]:
+                   admin: bool = False, group: str = "", visibility: str = VIS_PUBLIC,
+                   vis_group: str = "") -> Dict[str, Any]:
     """Registers the photos / stereo photos / videos a user uploaded for a species. What an administrator
     sends is approved at once, by the administrator. With `group`, the upload is published on behalf of a work
     group: the group is then the author, in the catalog and in the name of the folder."""
@@ -31,8 +33,10 @@ def submit_species(store: Storage, db: Database, username: str, species: str, ki
     path = f"{PENDING}/{username}/{species}"
     _check_not_waiting(db, username, path, kind)
     items = count_media(folder, kind)
-    sid = db.add_submission(username, species, path, items, kind=kind, group=group)
-    result = {"id": sid, "kind": kind, "group": group, "species": species, "path": path, "photos": items, "pending": not admin}
+    sid = db.add_submission(username, species, path, items, kind=kind, group=group, visibility=visibility,
+                            vis_group=vis_group)
+    result = {"id": sid, "kind": kind, "group": group, "species": species, "path": path, "photos": items,
+              "visibility": visibility, "pending": not admin}
     if admin:
         approve_submission(store, db, sid, username)
         result["pending"] = False
@@ -45,37 +49,41 @@ def _check_not_waiting(db: Database, username: str, path: str, kind: Optional[st
 
 
 def _record(db: Database, username: str, subject: str, path: str, items: int, kind: str, admin: bool,
-            group: str = "") -> int:
+            group: str = "", visibility: str = VIS_PUBLIC, vis_group: str = "") -> int:
     """Registers the submission. What an administrator publishes is approved at once, by the administrator."""
     _check_not_waiting(db, username, path, kind)
-    sid = db.add_submission(username, subject, path, items, kind=kind, group=group)
+    sid = db.add_submission(username, subject, path, items, kind=kind, group=group, visibility=visibility,
+                            vis_group=vis_group)
     if admin:
         db.review_submission(sid, SUBMISSION_APPROVED, username)
     return sid
 
 
 def submit_dataset(store: Storage, db: Database, username: str, name: str, admin: bool = False,
-                   group: str = "") -> Dict[str, Any]:
+                   group: str = "", visibility: str = VIS_PUBLIC, vis_group: str = "") -> Dict[str, Any]:
     folder = store.pending_dataset_dir(username, name, admin)      # 404 se non c'è nulla da inviare
     errors = validate_dataset_dir(folder)
     if errors:
         raise errors[0]                                            # refused: no row is created
     path = name if admin else f"{PENDING}/{username}/{name}"
     images = count_dataset_images(folder)
-    sid = _record(db, username, name, path, images, KIND_DATASET, admin, group)
-    return {"id": sid, "kind": KIND_DATASET, "name": name, "group": group, "path": path, "images": images, "pending": not admin}
+    sid = _record(db, username, name, path, images, KIND_DATASET, admin, group, visibility, vis_group)
+    return {"id": sid, "kind": KIND_DATASET, "name": name, "group": group, "path": path, "images": images,
+            "visibility": visibility, "pending": not admin}
 
 
 def submit_model(store: Storage, db: Database, username: str, species: str, file: str, admin: bool = False,
-                 group: str = "") -> Dict[str, Any]:
-    path = store.pending_model_path(username, species, file, admin)   # 404 se il file non è stato caricato
-    sid = _record(db, username, species, path, 1, KIND_MODEL, admin, group)
+                 group: str = "", visibility: str = VIS_PUBLIC, vis_group: str = "") -> Dict[str, Any]:
+    path = store.pending_model_path(username, species, file, admin)   # 404 if the file was not uploaded
+    sid = _record(db, username, species, path, 1, KIND_MODEL, admin, group, visibility, vis_group)
     return {"id": sid, "kind": KIND_MODEL, "species": species, "file": file, "path": path, "group": group,
-            "pending": not admin}
+            "visibility": visibility, "pending": not admin}
+
 
 def author_of(sub: Dict[str, Any]) -> str:
     """Who signs an upload: the work group it was published for, or the person who sent it."""
     return sub["group_name"] or sub["username"] if "group_name" in sub.keys() else sub["username"]
+
 
 
 def _pending_submission(db: Database, sid: int) -> Dict[str, Any]:
@@ -126,10 +134,11 @@ def catalog(db: Database, kind: str, store: Optional[Storage] = None) -> List[Di
     """The approved items of a kind, for the catalogs: alphabetical by species, then by date.
     Only the date is given, never the time (privacy of the users). Datasets also say which species they contain."""
     rows = db.list_submissions(status=SUBMISSION_APPROVED, kind=kind)
-    items = [{"kind": kind, "species": r["species"], "uploader": author_of(r), "sent_by": r["username"],
+    items = [{"id": r["id"], "kind": kind, "species": r["species"], "uploader": author_of(r), "sent_by": r["username"],
               "group": r["group_name"], "approved_by": r["reviewed_by"],
               "date": datetime.fromtimestamp(r["created"]).date().isoformat(), "path": r["path"],
-              "items": r["photos"]} for r in rows]
+              "items": r["photos"], "visibility": r["visibility"],
+              "vis_group": r["vis_group"] if "vis_group" in r.keys() else ""} for r in rows]
     if kind == KIND_DATASET and store is not None:
         for i in items:
             i["classes"] = store.dataset_classes(i["path"])

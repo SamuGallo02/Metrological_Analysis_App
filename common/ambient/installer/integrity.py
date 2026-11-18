@@ -154,15 +154,19 @@ def launch_repair(project_root: Path, os_name: str, deep: bool = False) -> bool:
 
 
 def fingerprint(venv: Path) -> List[List]:
-    """Cheap signature of what is installed: one `stat` per package instead of one per file."""
+    """Cheap signature of what is installed: one small file read per package instead of one `stat` per file.
+
+    The RECORD of a package changes whenever that package is installed, updated or removed, and it is a few
+    kilobytes: reading it is nothing beside the 25.000 files of the full scan. Its hash is used rather than the
+    date, because two writes of the same size can share a timestamp on a filesystem that counts milliseconds."""
     out: List[List] = []
     for sp in site_packages(venv):
         for info in sorted(sp.glob("*.dist-info")):
             try:
-                st = (info / "RECORD").stat()
+                data = (info / "RECORD").read_bytes()
             except OSError:
                 continue
-            out.append([info.name, st.st_mtime_ns, st.st_size])
+            out.append([info.name, hashlib.sha256(data).hexdigest()[:16], len(data)])
     return out
 
 

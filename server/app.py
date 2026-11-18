@@ -14,15 +14,16 @@ import re
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 from urllib.parse import parse_qs, urlparse
 
 from common.errors import AppError
-from common.params import (AREA_GROUPS, AREA_MINE, AREA_PHOTOS, AREAS_SHARED, GROUP_MEMBER, ROLE_SERVER,
-                           ROLE_USER)
+from common.params import (AREA_GROUPS, AREA_MINE, AREA_PHOTOS, AREAS_SHARED, GROUP_ADMIN, GROUP_MEMBER,
+                           ROLE_SERVER, ROLE_USER)
 
+from .access import Access
 from .config import ServerConfig, key_matches, load_admin_key
-from .db import Database
+from .db import Database, check_visibility
 from .migrate import migrate_legacy
 from .ops import stats
 from .params import API_VERSION, KEY_LOCK_SECONDS, KEY_MAX_FAILS, MAX_JSON, PENDING, RATE_LIMIT_PER_MIN, KIND_AREA
@@ -127,6 +128,7 @@ class Handler(BaseHTTPRequestHandler):
             self.counter[0] += 1
             if path == "/api/health" and method in ("GET", "HEAD"):
                 return self._send(200, {"ok": True, "api": API_VERSION, "register": self.cfg.allow_register,
+                                        "approval": self.cfg.approve_register,
                                         "key": bool(self.cfg.admin_key), "uptime": int(time.time() - self.started)})
             try:
                 self.limiter.hit(self._ip())
@@ -208,9 +210,10 @@ class Handler(BaseHTTPRequestHandler):
         if not self.cfg.allow_register:
             raise AppError("Registration is disabled: ask an administrator for an account.", 403)
         as_admin = self._use_key(d.get("key"))
+        pending = self.cfg.approve_register and not as_admin
         u = self.db.create_user(str(d.get("username", "")), str(d.get("password", "")),
-                                ROLE_SERVER if as_admin else ROLE_USER, email=d.get("email") or "")
-        self.db.log(u["username"], "register.admin" if as_admin else "register")
+                                ROLE_SERVER if as_admin else ROLE_USER, email=d.get("email") or "", pending=pending)
+        self.db.log(u["username"], "register.admin" if as_admin else "register.pending" if pending else "register")
         self._send(201, {"user": u})
 
     # ---- administration ---------------------------------------------------
@@ -328,8 +331,13 @@ class Handler(BaseHTTPRequestHandler):
             if not admin and not self.db.is_group_admin(group, me):
                 raise AppError("Only an administrator of the group can do this.", 403)
 
+        def with_usage(group: Dict[str, Any]) -> Dict[str, Any]:
+            """How much room the folder of the group takes: the web app shows it beside the quota."""
+            return dict(group, usage=self.store.group_usage(group["name"]))
+
         if path == "/api/groups" and method == "GET":
-            return self._send(200, {"groups": self.db.list_groups(me, every=bool(admin and q.get("all")))})
+            groups = self.db.list_groups(me, every=bool(admin and q.get("all")))
+            return self._send(200, {"groups": [with_usage(g) for g in groups]})
         if path == "/api/groups" and method == "POST":
             group = self.db.create_group(str(self._json().get("name", "")), me)
             self.store.mkdir(AREA_GROUPS, group["name"], True, me)
@@ -354,6 +362,13 @@ class Handler(BaseHTTPRequestHandler):
             members = self.db.set_member(group, me, False)       # the last administrator cannot leave alone
             self.db.log(me, "group.leave", AREA_GROUPS, group)
             return self._send(200, {"group": group, "members": members})
+        if path == "/api/groups/quota" and method == "POST":
+            d = self._json()
+            if not admin:                                       # the room on the server is given by whoever runs it
+                raise AppError("Reserved to administrators.", 403)
+            group = self.db.set_group_quota(str(d.get("name", "")), d.get("quota_mb"))
+            self.db.log(me, "group.quota", AREA_GROUPS, f"{group['name']}: {group['quota_mb']} MB")
+            return self._send(200, {"group": with_usage(group)})
         if path == "/api/groups/settings" and method == "POST":
             d = self._json()
             group = str(d.get("name", ""))
@@ -393,24 +408,42 @@ class Handler(BaseHTTPRequestHandler):
         raise AppError("Resource not found.", 404)
 
     # ---- files --------------------------------------------------------------
+    def _has_visible_child(self, acc: Access, area: str, rel: str, owner: str) -> bool:
+        folder, _ = self.store.resolve(area, rel, acc.admin, owner)
+        return any(acc.visible(area, f"{rel}/{c.name}") for c in folder.iterdir() if not c.name.startswith("."))
+
     def _files(self, path: str, method: str, q: Dict[str, str], user: Dict[str, Any], admin: bool) -> None:
         area, rel, name = q.get("area", ""), q.get("path", ""), user["username"]
-        mine = area == AREA_MINE or area == AREA_GROUPS       # own folder, or a group this user belongs to
+        mine, group_area = area == AREA_MINE, area == AREA_GROUPS
+        acc = Access(self.db, user, admin)
+        try:
+            group = acc.group_of(rel) if group_area else ""     # 404 for a group the user does not belong to
+        except AppError:
+            self.close_connection = True                        # an upload body is not read
+            raise
         if path == "/api/files" and method == "GET":
-            return self._send(200, self.store.list_dir(area, rel, admin, name))
+            listing = self.store.list_dir(area, rel, admin, name)
+            return self._send(200, acc.filter_listing(listing, lambda r: self._has_visible_child(acc, area, r, name)))
         if path == "/api/files/download" and method in ("GET", "HEAD"):
+            acc.check_file(area, clean_rel(rel))              # the path that is opened, not the one that was written
             return self._download(area, rel, admin, name)
         if path == "/api/files/upload" and method in ("PUT", "POST"):
-            return self._upload(area, rel, user, admin)
+            return self._upload(area, rel, user, admin, group)
         if path == "/api/files/mkdir" and method == "POST":
             self._drain()
+            if group_area and "/" not in clean_rel(rel):
+                raise AppError("The folder of a group is created with the group.", 403)
             made = self.store.mkdir(area, rel, admin, name)
             self.db.log(name, "mkdir", area, made)
             return self._send(201, {"path": made})
         if (method, path) in (("DELETE", "/api/files"), ("POST", "/api/files/move"), ("POST", "/api/files/approve")):
-            if not (admin or (mine and path != "/api/files/approve")):       # in common areas only the admin
+            own = mine or (group_area and bool(group))
+            if not (admin or (own and path != "/api/files/approve")):        # in common areas only the admin
                 self._drain()
                 raise AppError("Users cannot modify or delete the server's shared files.", 403)
+            if group_area and "/" not in clean_rel(rel):
+                self._drain()
+                raise AppError("The folder of a group is removed with the group.", 403)
             if method == "DELETE":
                 self._drain()
                 self.store.delete(area, rel, name, admin=admin)
@@ -418,7 +451,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, {"ok": True})
             d = self._json()
             if path == "/api/files/move":
-                dst = self.store.move(area, rel, str(d.get("to", "")), name, admin=admin)
+                to = str(d.get("to", ""))
+                if group_area and (acc.group_of(to) != group or "/" not in clean_rel(to)):
+                    raise AppError("Files stay inside the folder of their group.", 403)
+                dst = self.store.move(area, rel, to, name, admin=admin)
                 self.db.log(name, "move", area, f"{rel} -> {dst}")
                 return self._send(200, {"path": dst})
             dst = self.store.approve_model(rel, d.get("name"))
@@ -427,8 +463,16 @@ class Handler(BaseHTTPRequestHandler):
         self._drain()
         raise AppError("Resource not found.", 404)
     
+    def _sharing(self, d: Dict[str, Any], acc: Access) -> Dict[str, Any]:
+        """Who may see an upload: everyone (as before the groups existed), one work group, or the uploader."""
+        visibility, vis_group = check_visibility(d.get("visibility"), d.get("vis_group") or d.get("group"))
+        acc.check_group(vis_group)
+        return {"visibility": visibility, "vis_group": vis_group}
+
     def _species(self, path: str, method: str, q: Dict[str, str], user: Dict[str, Any], admin: bool) -> None:
         name = user["username"]
+        acc = Access(self.db, user, admin)
+
         def on_behalf_of(d: Dict[str, Any]) -> str:
             """The work group an upload is published for: only a group the user belongs to."""
             group = str(d.get("group", ""))
@@ -449,7 +493,7 @@ class Handler(BaseHTTPRequestHandler):
             d = self._json()
             kind = str(d.get("kind") or "photos")
             result = submit_species(self.store, self.db, name, str(d.get("species", "")), kind, admin=admin,
-                                    group=on_behalf_of(d))
+                                    group=on_behalf_of(d), **self._sharing(d, acc))
             self.db.log(name, "species.submit", KIND_AREA[kind], result["path"])
             return self._send(201, result)
         if path == "/api/labels" and method == "POST":                  # an administrator corrects the labels of a photo
@@ -464,13 +508,13 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/datasets/submit" and method == "POST":
             d = self._json()
             result = submit_dataset(self.store, self.db, name, str(d.get("name", "")), admin=admin,
-                                    group=on_behalf_of(d))
+                                    group=on_behalf_of(d), **self._sharing(d, acc))
             self.db.log(name, "dataset.submit", "datasets", result["path"])
             return self._send(201, result)
         if path == "/api/models/submit" and method == "POST":
             d = self._json()
             result = submit_model(self.store, self.db, name, str(d.get("species", "")), str(d.get("file", "")),
-                                  admin=admin, group=on_behalf_of(d))
+                                  admin=admin, group=on_behalf_of(d), **self._sharing(d, acc))
             self.db.log(name, "model.submit", "models", result["path"])
             return self._send(201, result)
         if path == "/api/catalog" and method == "GET":
@@ -478,11 +522,27 @@ class Handler(BaseHTTPRequestHandler):
             kind = q.get("kind", "")
             if kind not in KIND_AREA:
                 raise AppError("Resource not found.", 404)
-            return self._send(200, {"items": catalog(self.db, kind, self.store)})
+            items = [i for i in catalog(self.db, kind, self.store)
+                     if acc.can_see({"username": i["uploader"], "visibility": i["visibility"],
+                                     "vis_group": i.get("vis_group", "")})]
+            return self._send(200, {"items": items})
         if path == "/api/species/submissions" and method == "GET":
+            # default: one's own uploads (all of them for an administrator); include=groups adds what the
+            # work groups of this user share with it
+            groups = list(acc.groups) if q.get("include") in ("groups", "teams") else None
             rows = self.db.list_submissions(username=None if admin else name, status=q.get("status") or None,
-                                            kind=q.get("kind") or None)
+                                            kind=q.get("kind") or None, groups=groups)
             return self._send(200, {"submissions": rows})
+        m = re.fullmatch(r"/api/species/submissions/(\d+)", path)
+        if m and method == "PATCH":                                     # who can see it: the uploader or an admin
+            d = self._json()
+            sub = self.db.get_submission(int(m.group(1)))
+            if not (admin or sub["username"] == name):
+                raise AppError("Submission not found.", 404)
+            share = self._sharing(d, acc)
+            sub = self.db.set_submission_visibility(sub["id"], share["visibility"], share["vis_group"])
+            self.db.log(name, "submission.visibility", sub["visibility"], sub["path"])
+            return self._send(200, {"submission": sub})
         m = re.fullmatch(r"/api/species/submissions/(\d+)/(approve|reject)", path)
         if m and method == "POST":
             self._drain()
@@ -538,11 +598,12 @@ class Handler(BaseHTTPRequestHandler):
                 self.wfile.write(buf)
                 left -= len(buf)
 
-    def _upload(self, area: str, rel: str, user: Dict[str, Any], admin: bool) -> None:
+    def _upload(self, area: str, rel: str, user: Dict[str, Any], admin: bool, group: str = "") -> None:
         size = int(self.headers.get("Content-Length") or 0)
         owner = user["username"]
         try:
-            dest, eff = self.store.check_new_file(area, rel, admin, owner, size, user["quota_mb"])
+            quota = self.db.group_quota(group) if group else user["quota_mb"]
+            dest, eff = self.store.check_new_file(area, rel, admin, owner, size, quota)
             if dest.exists() and not (admin or area in (AREA_MINE, AREA_GROUPS)):
                 raise AppError("A file with this name already exists (you cannot overwrite it).", 409)
         except AppError:
@@ -576,12 +637,15 @@ class _Server(ThreadingHTTPServer):
 
 def make_server(data_dir: Path, host: str = "127.0.0.1", port: int = 8765, allow_register: bool = True,
                 admin_key: Optional[str] = None, trust_proxy: bool = False,
-                rate_limit: Optional[int] = None) -> ThreadingHTTPServer:
+                rate_limit: Optional[int] = None, handler_base: type = Handler,
+                approve_register: bool = False) -> ThreadingHTTPServer:
     """admin_key=None: the key is read from environment/file (see server.config); '' disables it.
-    rate_limit: requests per minute per address (None = RATE_LIMIT_PER_MIN, 0 = unlimited)."""
+    rate_limit: requests per minute per address (None = RATE_LIMIT_PER_MIN, 0 = unlimited).
+    approve_register: accounts created with /api/register (without the admin key) wait for an administrator.
+    handler_base: a subclass of Handler that adds routes (the web app adds its pages and the analysis)."""
     data_dir = Path(data_dir)
     cfg = ServerConfig(data_dir, allow_register, load_admin_key(data_dir) if admin_key is None else admin_key,
-                       trust_proxy)
+                       trust_proxy, approve_register)
     # one subclass per server: several servers in the same process (tests) do not share state
     db = Database(data_dir / "server.db")
     migrate_legacy(data_dir, db)                      # files of the previous layout move into store/ (idempotent)
@@ -589,7 +653,7 @@ def make_server(data_dir: Path, host: str = "127.0.0.1", port: int = 8765, allow
     store.groups_of = db.user_groups                  # who may open which group folder
     store.group_admin_of = db.admin_groups            # and who approves what the others send there
     store.group_free_upload = db.group_free_upload    # unless the group lets its members write freely
-    handler = type("BoundHandler", (Handler,), {
+    handler = type("BoundHandler", (handler_base,), {
         "key_throttle": Throttle(KEY_MAX_FAILS, KEY_LOCK_SECONDS),
         "limiter": RateLimiter(RATE_LIMIT_PER_MIN if rate_limit is None else rate_limit),
         "started": time.time(), "counter": [0], "db": db,
@@ -597,4 +661,6 @@ def make_server(data_dir: Path, host: str = "127.0.0.1", port: int = 8765, allow
     httpd = _Server((host, port), handler)
     httpd.handler = handler
     httpd.daemon_threads = True
+    if hasattr(handler_base, "setup_server"):
+        handler_base.setup_server(httpd, data_dir)       # e.g. the web app's analysis queue, bound to this server
     return httpd

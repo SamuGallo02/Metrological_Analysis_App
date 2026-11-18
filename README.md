@@ -15,6 +15,12 @@ Modelli di segmentazione (**YOLO**) e stereovisione (**Stereo SGBM**) calcolano 
 - **Server** per account e cartelle condivise, in sola libreria standard di Python: autenticazione con password PBKDF2, sessioni a scadenza, ruoli, quote, limite di richieste, backup e strumenti di gestione (vedi sotto).
 - **Qualità**: 84 test automatici (account, permessi, server, isolamento tra moduli, interfaccia, traduzioni) eseguiti a ogni push con GitHub Actions.
 
+## Web app (dal browser)
+
+La stessa applicazione è disponibile anche dal browser, senza installazione per gli utenti: libreria condivisa, caricamenti,
+revisione, gestione utenti, team, **analisi stereo eseguita sul server** e **miglioramento delle immagini subacquee** (nautilus). Avvio: `python -m webapp serve` e poi
+`http://127.0.0.1:8765`. Dettagli, Docker e API: **[`docs/WEBAPP.md`](docs/WEBAPP.md)**.
+
 ## Requisiti
 
 - Windows 10/11, macOS o Linux, con **Python 3.10 o successivo** (con tkinter per la finestra dell'installer).
@@ -57,6 +63,8 @@ datasets/Dataset_Locale/  dati dell'utente: foto, video, dataset di training, mo
 datasets/server_data/     dati del server (database, store/, log, backup)
 librery/                ambienti virtuali creati dall'installer (venv, venv_mac, venv_linux)
 server/                 server HTTP per account e cartelle condivise (non installato dagli utenti)
+webapp/                 web app: pagine per il browser e analisi sul server (python -m webapp serve)
+nautilus/               miglioramento delle immagini subacquee (copiato da underwater-image-enhancement)
 tools/                  demo webcam, acquisizione coppie di test, generazione dei pacchetti lingua
 tests/  docs/           test automatici e documentazione
 common/ambient/requirements/  elenco delle librerie (core e training)
